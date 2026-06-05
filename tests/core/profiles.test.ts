@@ -45,6 +45,25 @@ describe("profiles", () => {
     expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME).toBeUndefined();
   });
 
+  it("creates API profiles without model env when model is omitted", async () => {
+    const context = await createContext();
+    const profile = await createApiProfile(
+      { name: "apiDefaultModel", baseUrl: "https://api.aicodemirror.com/api/claudecode", token: "", model: "" },
+      context
+    );
+
+    expect(profile.type).toBe("api");
+    expect(profile.baseUrl).toBe("https://api.aicodemirror.com/api/claudecode");
+    expect(profile.model).toBe("");
+    expect(profile.tokenStatus).toBe("missing");
+
+    const settings = JSON.parse(await readFile(path.join(profile.dir, "settings.json"), "utf8"));
+    expect(settings.env).toEqual({
+      ANTHROPIC_AUTH_TOKEN: "REPLACE_WITH_FULL_TOKEN",
+      ANTHROPIC_BASE_URL: "https://api.aicodemirror.com/api/claudecode"
+    });
+  });
+
 
   it("creates CCR profiles and preset manifests", async () => {
     const context = await createContext();

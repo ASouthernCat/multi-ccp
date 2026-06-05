@@ -86,11 +86,11 @@ ccp start provider-a
 
 - `ANTHROPIC_BASE_URL`
 - `ANTHROPIC_AUTH_TOKEN`
-- 模型名称
+- 模型名称（可选；留空则使用 Claude Code 默认模型）
 
 #### 自定义 provider 模型
 
-为了简化 provider 配置，`ccp add` 会把你输入的模型名称默认写入所有 Claude Code 默认模型槽位。以 DeepSeek profile 为例，初始配置可能类似：
+为了简化 provider 配置，`ccp add` 会把你输入的模型名称默认写入所有 Claude Code 默认模型槽位。如果留空，`multi-ccp` 不会写入任何模型环境变量，由 Claude Code 使用默认模型。以填写了模型的 DeepSeek profile 为例，初始配置可能类似：
 
 ```json
 {

@@ -152,13 +152,13 @@ export function createProgram(): Command {
   program
     .command("add")
     .argument("<profile>")
-    .description("Create an API profile with base URL, token, and model")
+    .description("Create an API profile with base URL, token, and optional model")
     .action(async (profile: string) => {
       if (!(await ensureProfileCanBeCreated(profile))) return;
       console.log(`Create Claude API profile: ${profile}`);
       const baseUrl = await input({ message: "ANTHROPIC_BASE_URL", required: true });
       const token = await password({ message: "ANTHROPIC_AUTH_TOKEN (hidden, Enter to leave placeholder)", mask: "*" });
-      const model = await input({ message: "Model", required: true });
+      const model = await input({ message: "Model (optional, Enter for Claude Code default)" });
       const ok = await confirm({ message: "Create this profile?", default: true });
       if (!ok) {
         console.log("Cancelled.");

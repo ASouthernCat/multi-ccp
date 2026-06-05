@@ -86,11 +86,11 @@ The command prompts for:
 
 - `ANTHROPIC_BASE_URL`
 - `ANTHROPIC_AUTH_TOKEN`
-- Model name
+- Model name (optional; leave empty to use Claude Code's default model)
 
 #### Customizing Provider Models
 
-`ccp add` keeps provider setup simple by applying the model you enter to all default Claude Code model slots. For example, a DeepSeek profile may initially look like this:
+`ccp add` keeps provider setup simple by applying the model you enter to all default Claude Code model slots. If you leave the model empty, `multi-ccp` does not write any model environment variables and Claude Code uses its default model. For example, a DeepSeek profile with a model may initially look like this:
 
 ```json
 {

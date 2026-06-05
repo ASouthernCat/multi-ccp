@@ -131,21 +131,23 @@ export async function createApiProfile(input: CreateApiProfileInput, context: Pa
   if (!input.baseUrl.trim()) {
     throw new CcpError("ANTHROPIC_BASE_URL is required.");
   }
-  if (!input.model.trim()) {
-    throw new CcpError("Model is required.");
-  }
+  const model = input.model.trim();
 
   await mkdir(profileDir, { recursive: true });
+  const env: ClaudeSettings["env"] = {
+    ANTHROPIC_AUTH_TOKEN: input.token.trim() || "REPLACE_WITH_FULL_TOKEN",
+    ANTHROPIC_BASE_URL: input.baseUrl.trim()
+  };
+  if (model) {
+    env.ANTHROPIC_DEFAULT_HAIKU_MODEL = model;
+    env.ANTHROPIC_DEFAULT_OPUS_MODEL = model;
+    env.ANTHROPIC_DEFAULT_SONNET_MODEL = model;
+    env.ANTHROPIC_MODEL = model;
+  }
+
   await writeSettings(profileDir, {
     theme: "dark",
-    env: {
-      ANTHROPIC_AUTH_TOKEN: input.token.trim() || "REPLACE_WITH_FULL_TOKEN",
-      ANTHROPIC_BASE_URL: input.baseUrl.trim(),
-      ANTHROPIC_DEFAULT_HAIKU_MODEL: input.model.trim(),
-      ANTHROPIC_DEFAULT_OPUS_MODEL: input.model.trim(),
-      ANTHROPIC_DEFAULT_SONNET_MODEL: input.model.trim(),
-      ANTHROPIC_MODEL: input.model.trim()
-    }
+    env
   });
   await writeMeta(profileDir, { version: 1, type: "api", createdAt: new Date().toISOString() });
   return summarizeProfile(input.name, profileDir);
