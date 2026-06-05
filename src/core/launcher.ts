@@ -4,7 +4,7 @@ import path from "node:path";
 import { CcpError } from "./errors.js";
 import { getHomeDir, getHomeWorkDir, getMainClaudeDir, type PathContext } from "./paths.js";
 import { resolveConfigDir } from "./profiles.js";
-import { readMeta } from "./settings.js";
+import { ensureCcrProfileGateway } from "./ccr.js";
 
 const MODEL_ENV_NAMES = [
   "ANTHROPIC_MODEL",
@@ -64,10 +64,7 @@ export async function prepareClaudeLaunch(options: LaunchOptions): Promise<{
   env: NodeJS.ProcessEnv;
 }> {
   const config = await resolveConfigDir(options.name, { allowMain: false, context: options.context });
-  const meta = await readMeta(config.dir);
-  if (meta?.type === "ccr") {
-    throw new CcpError("CCR profiles are not implemented in the TypeScript CLI yet. Use the legacy ccp.ps1 for this profile for now.");
-  }
+  await ensureCcrProfileGateway(config.dir, options.name, options.context);
 
   return {
     command: "claude",

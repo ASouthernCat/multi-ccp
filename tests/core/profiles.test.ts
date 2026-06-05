@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createApiProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
+import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot } from "../../src/core/paths.js";
 
 async function createContext() {
@@ -35,6 +35,34 @@ describe("profiles", () => {
     expect(profile.baseUrl).toBe("https://example.test");
     expect(profile.model).toBe("claude-test");
     expect(profile.tokenStatus).toBe("set");
+  });
+
+
+  it("creates CCR profiles and preset manifests", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    await mkdir(ccrDir, { recursive: true });
+    await writeFile(
+      path.join(ccrDir, "config.json"),
+      JSON.stringify({
+        HOST: "0.0.0.0",
+        PORT: 3456,
+        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-test"] }],
+        Router: { longContextThreshold: 12345 }
+      }),
+      "utf8"
+    );
+
+    const profile = await createCcrProfile({ name: "ccrTest", route: "openai,gpt-test", token: "" }, context);
+    expect(profile.type).toBe("ccr");
+    expect(profile.baseUrl).toBe("http://127.0.0.1:3456/preset/ccrTest");
+    expect(profile.model).toBe("ccr:openai,gpt-test");
+
+    const manifest = JSON.parse(
+      await readFile(path.join(ccrDir, "presets", "ccrTest", "manifest.json"), "utf8")
+    );
+    expect(manifest.Router.default).toBe("openai,gpt-test");
+    expect(manifest.Router.longContextThreshold).toBe(12345);
   });
 
   it("lists profiles sorted by name", async () => {

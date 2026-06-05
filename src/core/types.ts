@@ -37,3 +37,9 @@ export interface CreateApiProfileInput {
 export interface CreateLoginProfileInput {
   name: string;
 }
+
+export interface CreateCcrProfileInput {
+  name: string;
+  route: string;
+  token: string;
+}

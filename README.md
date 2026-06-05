@@ -29,14 +29,23 @@ npm run dev -- help
 ## Commands
 
 ```bash
+ccp help
 ccp list
 ccp add <profile>
 ccp add-login <profile>
+ccp add-ccr <profile>
 ccp remove <profile>
 ccp status <profile|main>
 ccp start <profile> [claude args...]
 ccp path <profile|main>
 ccp edit <profile>
+ccp ccr status
+ccp ccr install
+ccp ccr start
+ccp ccr stop
+ccp ccr restart
+ccp ccr ui
+ccp ccr model
 ```
 
 ## Profile Types
@@ -44,11 +53,11 @@ ccp edit <profile>
 ### API profile
 
 ```bash
-ccp add kimi
-ccp start kimi
+ccp add deepseek
+ccp start deepseek
 ```
 
-Creates `~/.claude-profiles/kimi/settings.json` with Anthropic-compatible API environment variables.
+Creates `~/.claude-profiles/deepseek/settings.json` with Anthropic-compatible API environment variables.
 
 ### Login profile
 
@@ -80,11 +89,12 @@ This TypeScript npm version currently implements the cross-platform profile mana
 - `path`
 - `edit`
 - `start`
+- `add-ccr`
+- CCR preset generation and CCR profile auto-start integration
+- `ccp ccr status|install|start|stop|restart|ui|model`
 
 Planned migrations from the legacy PowerShell tool:
 
-- `add-ccr`
-- `ccp ccr status|install|start|stop|restart|ui|model`
 - `sync-session`
 - `ccp ui`
 

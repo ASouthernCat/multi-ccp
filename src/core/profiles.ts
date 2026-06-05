@@ -2,11 +2,13 @@ import { access, mkdir, readdir } from "node:fs/promises";
 import path from "node:path";
 import { assertProfileName, CcpError } from "./errors.js";
 import { getMainClaudeDir, getProfilesRoot, type PathContext } from "./paths.js";
+import { ensureCcrPreset, getCcrPresetEndpoint } from "./ccr.js";
 import { getSettingsPath, readMeta, readSettings, removeProfileDir, writeMeta, writeSettings } from "./settings.js";
 import type {
   ClaudeSettings,
   CreateApiProfileInput,
   CreateLoginProfileInput,
+  CreateCcrProfileInput,
   ProfileMeta,
   ProfileSummary,
   ProfileType
@@ -151,6 +153,38 @@ export async function createLoginProfile(input: CreateLoginProfileInput, context
   await mkdir(profileDir, { recursive: true });
   await writeSettings(profileDir, { theme: "dark" });
   await writeMeta(profileDir, { version: 1, type: "login", createdAt: new Date().toISOString() });
+  return summarizeProfile(input.name, profileDir);
+}
+
+export async function createCcrProfile(input: CreateCcrProfileInput, context: PathContext = {}): Promise<ProfileSummary> {
+  const profileDir = await assertNewProfile(input.name, context);
+  if (!input.route.trim()) {
+    throw new CcpError("CCR route is required for a preset-bound CCR profile.");
+  }
+
+  const endpoint = await getCcrPresetEndpoint(input.name, context);
+  await mkdir(profileDir, { recursive: true });
+  await writeSettings(profileDir, {
+    theme: "dark",
+    env: {
+      ANTHROPIC_BASE_URL: endpoint,
+      ANTHROPIC_AUTH_TOKEN: input.token.trim() || "ccr-local-secret",
+      NO_PROXY: "127.0.0.1,localhost",
+      DISABLE_TELEMETRY: "1",
+      DISABLE_COST_WARNINGS: "1",
+      API_TIMEOUT_MS: "600000"
+    }
+  });
+  await writeMeta(profileDir, {
+    version: 1,
+    type: "ccr",
+    endpoint,
+    autoStart: true,
+    ccrPreset: input.name,
+    ccrRoute: input.route.trim(),
+    createdAt: new Date().toISOString()
+  });
+  await ensureCcrPreset(input.name, input.route.trim(), context);
   return summarizeProfile(input.name, profileDir);
 }
 

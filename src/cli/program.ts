@@ -1,17 +1,28 @@
-import { confirm, input, password } from "@inquirer/prompts";
+import { confirm, input, password, select } from "@inquirer/prompts";
 import { Command } from "commander";
 import { CcpError } from "../core/errors.js";
 import { launchClaude } from "../core/launcher.js";
 import { resolveConfigDir } from "../core/profiles.js";
 import {
   createApiProfile,
+  createCcrProfile,
   createLoginProfile,
   listProfiles,
   removeProfile,
   summarizeProfile
 } from "../core/profiles.js";
 import { getSettingsPath } from "../core/settings.js";
-import { getCcrStatusPlaceholder } from "../core/ccr.js";
+import {
+  getCcrRouteChoices,
+  getCcrStatus,
+  installCcr,
+  readCcrConfig,
+  invokeCcrCli,
+  printCcrStatus,
+  restartCcrService,
+  startCcrService,
+  stopCcrService
+} from "../core/ccr.js";
 import { openEditor } from "../platform/editor.js";
 
 function printProfile(profile: Awaited<ReturnType<typeof summarizeProfile>>): void {
@@ -115,6 +126,50 @@ export function createProgram(): Command {
     });
 
   program
+    .command("add-ccr")
+    .argument("<profile>")
+    .description("Create a CCR preset-bound profile")
+    .action(async (profile: string) => {
+      const config = await readCcrConfig();
+      const routes = getCcrRouteChoices(config);
+      if (routes.length === 0) {
+        throw new CcpError("No CCR routes found. Run 'ccp ccr model' first.");
+      }
+
+      const route = await select({
+        message: "Bind this profile to a CCR route",
+        choices: routes.map((value) => ({ name: value, value }))
+      });
+
+      let token = "";
+      if (config?.APIKEY) {
+        const useExisting = await confirm({ message: "Use APIKEY from CCR config as ANTHROPIC_AUTH_TOKEN?", default: true });
+        if (useExisting) {
+          token = String(config.APIKEY);
+        }
+      }
+
+      if (!token) {
+        token = await password({ message: "ANTHROPIC_AUTH_TOKEN for CCR (hidden, Enter to use ccr-local-secret)", mask: "*" });
+      }
+
+      console.log("");
+      console.log("Profile: " + profile);
+      console.log("Type:    ccr");
+      console.log("Route:   " + route);
+      console.log("Token:   set");
+      const ok = await confirm({ message: "Create this CCR profile?", default: true });
+      if (!ok) {
+        console.log("Cancelled.");
+        return;
+      }
+
+      const created = await createCcrProfile({ name: profile, route, token });
+      console.log("Created CCR profile '" + created.name + "'.");
+      console.log("Run: ccp start " + created.name);
+    });
+
+  program
     .command("remove")
     .argument("<profile>")
     .description("Delete a profile")
@@ -185,12 +240,43 @@ export function createProgram(): Command {
 
   program
     .command("ccr")
+    .helpOption(false)
     .argument("[action]")
+    .allowUnknownOption(true)
+    .argument("[extraArgs...]", "Arguments passed through to ccr")
     .description("Manage Claude Code Router integration")
-    .action(() => {
-      const status = getCcrStatusPlaceholder();
-      console.log(status.message);
-      process.exitCode = 1;
+    .action(async (action: string | undefined, extraArgs: string[]) => {
+      switch (action) {
+        case undefined:
+        case "status": {
+          printCcrStatus(await getCcrStatus());
+          break;
+        }
+        case "install": {
+          process.exitCode = await installCcr();
+          break;
+        }
+        case "start": {
+          await startCcrService();
+          break;
+        }
+        case "stop": {
+          await stopCcrService();
+          break;
+        }
+        case "restart": {
+          await restartCcrService();
+          break;
+        }
+        case "ui":
+        case "model": {
+          process.exitCode = await invokeCcrCli(action, extraArgs);
+          break;
+        }
+        default: {
+          throw new CcpError(`Unknown ccr command '${action}'. Use 'ccp ccr status|install|start|stop|restart|ui|model'.`);
+        }
+      }
     });
 
   program
