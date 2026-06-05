@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
-import { getProfilesRoot } from "../../src/core/paths.js";
+import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
+import { parseSelectionText, syncSessions } from "../../src/core/sessions.js";
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-test-"));
@@ -94,6 +95,35 @@ describe("profiles", () => {
     expect(profiles[0].name).toBe("legacyCcr");
     expect(profiles[0].type).toBe("ccr");
     expect(profiles[0].model).toBe("ccr:openai,gpt-5.5");
+  });
+
+
+  it("parses sync session selections", () => {
+    expect(parseSelectionText("1 3-4", 5)).toEqual([0, 2, 3]);
+    expect(parseSelectionText("2,2,5", 5)).toEqual([1, 4]);
+    expect(() => parseSelectionText("4-2", 5)).toThrow("Invalid range");
+  });
+
+  it("syncs session logs and assets with --all", async () => {
+    const context = await createContext();
+    const cwd = path.join(context.homeDir, "project");
+    const projectKey = getProjectKey(cwd);
+    const mainDir = path.join(context.homeDir, ".claude");
+    const target = await createLoginProfile({ name: "target" }, context);
+    const sourceProjectDir = path.join(mainDir, "projects", projectKey);
+    const sessionId = "abc123";
+    await mkdir(path.join(sourceProjectDir, sessionId), { recursive: true });
+    await writeFile(
+      path.join(sourceProjectDir, sessionId + ".jsonl"),
+      JSON.stringify({ type: "user", message: { content: "hello sync" } }) + "\n",
+      "utf8"
+    );
+    await writeFile(path.join(sourceProjectDir, sessionId, "asset.txt"), "asset", "utf8");
+
+    const result = await syncSessions({ first: "target", args: ["--all"], cwd, context });
+    expect(result?.counts.copied).toBe(1);
+    expect(await readFile(path.join(target.dir, "projects", projectKey, sessionId + ".jsonl"), "utf8")).toContain("hello sync");
+    expect(await readFile(path.join(target.dir, "projects", projectKey, sessionId, "asset.txt"), "utf8")).toBe("asset");
   });
 
   it("rejects invalid profile names", async () => {

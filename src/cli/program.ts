@@ -26,6 +26,7 @@ import {
   stopCcrService
 } from "../core/ccr.js";
 import { openEditor } from "../platform/editor.js";
+import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
 
 function getPackageVersion(): string {
   try {
@@ -56,6 +57,41 @@ function printProfile(profile: Awaited<ReturnType<typeof summarizeProfile>>): vo
   } else {
     console.log(`${profile.name}\t${profile.baseUrl}`);
   }
+}
+
+
+async function selectSessionFiles(sessions: SessionDisplayInfo[]): Promise<SessionDisplayInfo[]> {
+  if (sessions.length === 0) return [];
+
+  console.log("Select sessions to sync:");
+  sessions.forEach((item, index) => {
+    const when = item.lastWriteTime.toISOString().slice(0, 16).replace("T", " ");
+    const shortId = item.sessionId.length > 8 ? item.sessionId.slice(0, 8) : item.sessionId;
+    console.log("[" + (index + 1) + "] " + when + "  " + item.relativeTime + "  " + shortId + "  " + item.title + "  " + item.sizeKb + "KB");
+  });
+
+  const answer = await input({ message: "Choose numbers/ranges, 'a' for all, or 'q' to cancel" });
+  if (!answer.trim() || answer.trim().toLowerCase() === "q") return [];
+  if (["a", "all"].includes(answer.trim().toLowerCase())) return sessions;
+
+  return parseSelectionText(answer, sessions.length).map((index) => sessions[index]);
+}
+
+async function confirmSessionConflict(details: { sourceFile: string; targetFile: string }): Promise<"yes" | "no" | "all" | "quit"> {
+  console.log("");
+  console.log("Conflict detected:");
+  console.log("  " + details.sourceFile);
+  console.log("Target: " + details.targetFile);
+
+  return select({
+    message: "Overwrite target with source?",
+    choices: [
+      { name: "No", value: "no" as const },
+      { name: "Yes", value: "yes" as const },
+      { name: "All", value: "all" as const },
+      { name: "Quit", value: "quit" as const }
+    ]
+  });
 }
 
 async function showStatus(name: string): Promise<void> {
@@ -309,10 +345,29 @@ export function createProgram(): Command {
 
   program
     .command("sync-session")
+    .argument("<first>")
     .allowUnknownOption(true)
+    .argument("[syncArgs...]", "Use '<source> to <target>' and optional --all")
     .description("Sync Claude Code sessions between profiles")
-    .action(() => {
-      throw new CcpError("sync-session is planned for a later TypeScript CLI release. Use the legacy PowerShell ccp for now.");
+    .action(async (first: string, syncArgs: string[]) => {
+      const result = await syncSessions({
+        first,
+        args: syncArgs,
+        selectSessions: selectSessionFiles,
+        confirmOverwrite: confirmSessionConflict
+      });
+      if (!result) return;
+
+      console.log("Synced current project sessions.");
+      console.log("Project: " + result.projectKey);
+      console.log("From:    " + result.sourceName + " -> " + result.sourceProjectDir);
+      console.log("To:      " + result.targetName + " -> " + result.targetProjectDir);
+      console.log("Selected: " + result.selected);
+      console.log("copied=" + result.counts.copied + ", updated=" + result.counts.updated + ", unchanged=" + result.counts.unchanged + ", overwritten=" + result.counts.overwritten + ", conflict=" + result.counts.conflict);
+      if (result.conflicts.length > 0) {
+        console.log("Conflicts skipped:");
+        result.conflicts.forEach((name) => console.log("  " + name));
+      }
     });
 
   program

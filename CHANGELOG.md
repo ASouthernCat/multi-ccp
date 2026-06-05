@@ -9,3 +9,4 @@
 - Added CCR base commands for `status`, `install`, `start`, `stop`, `restart`, `ui`, and `model`.
 - Added CCR preset-bound profile creation with `add-ccr`.
 - Added CCR profile gateway preparation before `ccp start`.
+- Added session synchronization with `sync-session`.
