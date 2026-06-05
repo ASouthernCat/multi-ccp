@@ -1,4 +1,5 @@
 import { confirm, input, password, select } from "@inquirer/prompts";
+import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { CcpError } from "../core/errors.js";
 import { launchClaude } from "../core/launcher.js";
@@ -25,6 +26,16 @@ import {
   stopCcrService
 } from "../core/ccr.js";
 import { openEditor } from "../platform/editor.js";
+
+function getPackageVersion(): string {
+  try {
+    const packageJsonUrl = new URL("../../package.json", import.meta.url);
+    const packageJson = JSON.parse(readFileSync(packageJsonUrl, "utf8")) as { version?: string };
+    return packageJson.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 async function ensureProfileCanBeCreated(name: string): Promise<boolean> {
   if (!(await profileExists(name))) {
@@ -88,7 +99,7 @@ export function createProgram(): Command {
   program
     .name("ccp")
     .description("Claude Code profile manager")
-    .version("0.1.0");
+    .version(getPackageVersion());
 
   program
     .command("list")
