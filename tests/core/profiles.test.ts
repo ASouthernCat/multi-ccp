@@ -36,6 +36,13 @@ describe("profiles", () => {
     expect(profile.baseUrl).toBe("https://example.test");
     expect(profile.model).toBe("claude-test");
     expect(profile.tokenStatus).toBe("set");
+
+    const settings = JSON.parse(await readFile(path.join(profile.dir, "settings.json"), "utf8"));
+    expect(settings.env.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-test");
+    expect(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("claude-test");
+    expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("claude-test");
+    expect(settings.env.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
+    expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL_NAME).toBeUndefined();
   });
 
 

@@ -143,9 +143,7 @@ export async function createApiProfile(input: CreateApiProfileInput, context: Pa
       ANTHROPIC_BASE_URL: input.baseUrl.trim(),
       ANTHROPIC_DEFAULT_HAIKU_MODEL: input.model.trim(),
       ANTHROPIC_DEFAULT_OPUS_MODEL: input.model.trim(),
-      ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: input.model.trim(),
       ANTHROPIC_DEFAULT_SONNET_MODEL: input.model.trim(),
-      ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: input.model.trim(),
       ANTHROPIC_MODEL: input.model.trim()
     }
   });
