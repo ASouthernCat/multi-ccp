@@ -6,6 +6,8 @@
 
 当你希望为工作、个人项目、不同 API provider、不同模型路由分别使用独立 Claude Code 会话时，可以使用 `multi-ccp`，无需手动切换环境变量或反复编辑配置文件。
 
+![multi-ccp](docs/images/image.png)
+
 ## 功能特性
 
 - 使用独立 profile 运行多个 Claude Code 会话窗口。

@@ -6,6 +6,8 @@ English | [简体中文](README.zh-CN.md)
 
 Use it when you want separate Claude Code sessions for work, personal projects, different API providers, or different model routes without manually switching environment variables or editing config files.
 
+![multi-ccp](docs/images/image.png)
+
 ## Features
 
 - Run multiple Claude Code windows with independent profiles.
