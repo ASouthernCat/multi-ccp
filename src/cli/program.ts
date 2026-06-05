@@ -8,6 +8,7 @@ import {
   createCcrProfile,
   createLoginProfile,
   listProfiles,
+  profileExists,
   removeProfile,
   summarizeProfile
 } from "../core/profiles.js";
@@ -24,6 +25,19 @@ import {
   stopCcrService
 } from "../core/ccr.js";
 import { openEditor } from "../platform/editor.js";
+
+async function ensureProfileCanBeCreated(name: string): Promise<boolean> {
+  if (!(await profileExists(name))) {
+    return true;
+  }
+
+  const config = await resolveConfigDir(name, { allowMain: false });
+  console.log(`Profile '${name}' already exists:`);
+  console.log(config.dir);
+  console.log("Use a different profile name, or remove the existing profile first with:");
+  console.log(`  ccp remove ${name}`);
+  return false;
+}
 
 function printProfile(profile: Awaited<ReturnType<typeof summarizeProfile>>): void {
   if (profile.model) {
@@ -93,6 +107,7 @@ export function createProgram(): Command {
     .argument("<profile>")
     .description("Create an API profile with base URL, token, and model")
     .action(async (profile: string) => {
+      if (!(await ensureProfileCanBeCreated(profile))) return;
       console.log(`Create Claude API profile: ${profile}`);
       const baseUrl = await input({ message: "ANTHROPIC_BASE_URL", required: true });
       const token = await password({ message: "ANTHROPIC_AUTH_TOKEN (hidden, Enter to leave placeholder)", mask: "*" });
@@ -112,6 +127,7 @@ export function createProgram(): Command {
     .argument("<profile>")
     .description("Create a login profile that stores a separate Claude Code account login state")
     .action(async (profile: string) => {
+      if (!(await ensureProfileCanBeCreated(profile))) return;
       console.log(`Create Claude login profile: ${profile}`);
       console.log("This profile will not set ANTHROPIC_BASE_URL or ANTHROPIC_AUTH_TOKEN.");
       const ok = await confirm({ message: "Create this login profile?", default: true });
@@ -130,6 +146,7 @@ export function createProgram(): Command {
     .argument("<profile>")
     .description("Create a CCR preset-bound profile")
     .action(async (profile: string) => {
+      if (!(await ensureProfileCanBeCreated(profile))) return;
       const config = await readCcrConfig();
       const routes = getCcrRouteChoices(config);
       if (routes.length === 0) {

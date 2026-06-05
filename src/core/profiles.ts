@@ -27,6 +27,11 @@ export function getProfileDir(name: string, context: PathContext = {}): string {
   return path.join(getProfilesRoot(context), name);
 }
 
+export async function profileExists(name: string, context: PathContext = {}): Promise<boolean> {
+  assertProfileName(name);
+  return exists(getProfileDir(name, context));
+}
+
 export async function resolveConfigDir(
   name: string,
   options: { allowMain?: boolean; context?: PathContext } = {}
