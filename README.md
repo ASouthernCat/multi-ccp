@@ -1,5 +1,9 @@
 # multi-ccp
 
+[![NPM Version][npm-version]][npm-url]
+[![NPM Downloads][npm-downloads]][npm-url]
+[![License][license]][license-url]
+
 English | [简体中文](README.zh-CN.md)
 
 `multi-ccp` is a profile and session manager for Claude Code. It installs the `ccp` command and helps you run multiple Claude Code windows with fully isolated configuration directories, model providers, login state, and history.
@@ -277,3 +281,9 @@ npm pack --dry-run
 ## License
 
 MIT
+
+[npm-version]: https://img.shields.io/npm/v/multi-ccp?style=flat-square
+[npm-downloads]: https://img.shields.io/npm/dm/multi-ccp?style=flat-square
+[npm-url]: https://www.npmjs.com/package/multi-ccp
+[license]: https://img.shields.io/npm/l/multi-ccp?style=flat-square
+[license-url]: LICENSE

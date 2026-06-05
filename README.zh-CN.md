@@ -1,5 +1,9 @@
 # multi-ccp
 
+[![NPM Version][npm-version]][npm-url]
+[![NPM Downloads][npm-downloads]][npm-url]
+[![License][license]][license-url]
+
 [English](README.md) | 简体中文
 
 `multi-ccp` 是一个 Claude Code profile 和历史会话管理工具。它会安装 `ccp` 命令，帮助你运行多个 Claude Code 会话窗口，并让每个窗口拥有独立隔离的配置目录、模型 provider、登录状态和历史记录。
@@ -277,3 +281,9 @@ npm pack --dry-run
 ## License
 
 MIT
+
+[npm-version]: https://img.shields.io/npm/v/multi-ccp?style=flat-square
+[npm-downloads]: https://img.shields.io/npm/dm/multi-ccp?style=flat-square
+[npm-url]: https://www.npmjs.com/package/multi-ccp
+[license]: https://img.shields.io/npm/l/multi-ccp?style=flat-square
+[license-url]: LICENSE
