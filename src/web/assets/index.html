@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="ccp-ui-token" content="__CCP_UI_TOKEN__" />
+    <title>multi-ccp</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+    <main class="shell">
+      <header class="topbar">
+        <section class="brand-block">
+          <div class="brand-mark">ccp</div>
+          <div>
+            <h1>multi-ccp</h1>
+          </div>
+        </section>
+        <section class="top-actions">
+          <button class="ghost icon-action icon-only" id="themeToggle" type="button" aria-label="切换深色" title="切换深色"><span class="ui-icon" data-icon="moon"></span></button>
+          <button class="ghost icon-action icon-only" id="refreshBtn" type="button" aria-label="刷新" title="刷新"><span class="ui-icon" data-icon="refresh"></span></button>
+          <button class="primary icon-action" id="newProfileBtn" type="button"><span class="ui-icon" data-icon="plus"></span><span>New</span></button>
+        </section>
+      </header>
+
+      <section class="summary-grid" id="summaryGrid" aria-live="polite"></section>
+
+      <section class="workspace" id="workspace">
+        <div class="board" id="profileBoard"></div>
+        <aside class="drawer" id="drawer" aria-live="polite" aria-hidden="true">
+          <div class="drawer-rail">
+            <button class="icon-btn" id="drawerClose" type="button" title="关闭">×</button>
+          </div>
+          <div class="empty-drawer">
+            <p class="eyebrow">profile details</p>
+            <h2>选择一个 Profile</h2>
+            <p>点击左侧卡片后，详情和编辑面板会从右侧展开。</p>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <dialog id="newProfileDialog" class="modal">
+      <form method="dialog" class="modal-card" id="newProfileForm">
+        <div class="modal-head">
+          <div>
+            <p class="eyebrow">create profile</p>
+            <h2>快速创建 Profile</h2>
+          </div>
+          <button class="icon-btn" value="cancel" formnovalidate type="button" data-dialog-close="newProfileDialog">×</button>
+        </div>
+        <label>类型
+          <select name="kind" id="newKind">
+            <option value="api">API Profile</option>
+            <option value="login">Login Profile</option>
+            <option value="ccr">CCR Profile</option>
+          </select>
+        </label>
+        <label>Profile 名称 <input name="name" required autocomplete="off" /></label>
+        <div data-kind-fields="api">
+          <label>Base URL <input name="baseUrl" placeholder="https://api.example.com/anthropic" /></label>
+          <label>Auth Token <input name="token" type="password" placeholder="留空则写入占位符" /></label>
+          <label>Model <input name="model" placeholder="留空使用 Claude Code 默认模型" /></label>
+        </div>
+        <div data-kind-fields="ccr" hidden>
+          <label>CCR Route / Preset <input name="route" list="ccrRoutes" placeholder="provider,model" /></label>
+          <datalist id="ccrRoutes"></datalist>
+          <p class="hint">CCR 的 provider、model、route 具体配置请在 Claude Code Router UI 中修改。</p>
+        </div>
+        <div data-kind-fields="login" hidden>
+          <p class="hint">Login Profile 不保存 Claude 账号密码，只隔离 Claude Code 的登录状态。</p>
+        </div>
+        <menu class="modal-actions">
+          <button class="ghost" value="cancel" formnovalidate type="button" data-dialog-close="newProfileDialog">取消</button>
+          <button class="primary" id="createProfileSubmit" value="default" type="button">创建</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <dialog id="ccrDialog" class="modal">
+      <div class="modal-card" id="ccrPanel"></div>
+    </dialog>
+
+    <div class="toast-region" id="toastRegion"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

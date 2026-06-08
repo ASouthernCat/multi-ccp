@@ -25,6 +25,7 @@ import {
   startCcrService,
   stopCcrService
 } from "../core/ccr.js";
+import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
 
@@ -373,8 +374,11 @@ export function createProgram(): Command {
   program
     .command("ui")
     .description("Start the local web UI")
-    .action(() => {
-      throw new CcpError("Web UI is planned. It will use vanilla web components and no Vue/React runtime.");
+    .option("--host <host>", "Host to bind", "127.0.0.1")
+    .option("--port <port>", "Port to listen on", (value) => Number(value), 7821)
+    .option("--no-open", "Do not open the UI in the default browser")
+    .action(async (options: { host: string; port: number; open: boolean }) => {
+      await startUiServer({ host: options.host, port: options.port, open: options.open });
     });
 
   return program;
