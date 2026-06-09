@@ -46,25 +46,38 @@ How do I use multi-ccp to manage multiple Claude Code profiles?
 
 如果你想查看完整命令说明，可以继续阅读下面的示例。
 
-创建一个兼容 Anthropic API 的 provider profile：
+打开本地 Web UI，用可视化方式查看 profile 和创建配置：
 
 ```bash
-ccp add provider-a
-ccp start provider-a
+ccp ui
+```
+
+Web UI 是 CLI 的本地辅助界面，可用于查看 profile、基于预设创建 profile、编辑 profile 配置，以及打开 CCR 管理入口。
+
+![multi-ccp](docs/images/cli-ui.png)
+
+交互式创建一个 profile：
+
+```bash
+ccp add
+ccp start <profile-name>
+```
+
+`ccp add` 会让你选择内置预设模板或自定义配置，例如 DeepSeek、AI CodeMirror、Mimo、CCR GPT、Manual CCR、Claude Login 或 Custom API。
+
+如果你想直接使用某个内置预设，也可以指定 `--preset`：
+
+```bash
+ccp add --preset deepseek
+ccp add --preset deepseek my-ds
+ccp start my-ds
 ```
 
 为另一个 provider、账号或项目上下文创建独立 profile：
 
 ```bash
-ccp add provider-b
-ccp start provider-b
-```
-
-创建一个使用 Claude Code 正常账号登录流程的 profile：
-
-```bash
-ccp add-login work
-ccp start work
+ccp add
+ccp start <profile-name>
 ```
 
 列出和查看 profile：
@@ -82,11 +95,11 @@ ccp path work
 API profile 用于兼容 Anthropic API 的 provider。它会将 API 环境变量写入该 profile 的 `settings.json`。
 
 ```bash
-ccp add provider-a
-ccp start provider-a
+ccp add
+ccp start <profile-name>
 ```
 
-命令会提示你输入：
+选择 API 预设时，命令会提示你输入 profile 名称和 token。选择 Custom API 时，命令会提示你输入：
 
 - `ANTHROPIC_BASE_URL`
 - `ANTHROPIC_AUTH_TOKEN`
@@ -138,8 +151,8 @@ ccp edit deepseek
 Login profile 用于 Claude Code 的账号登录模式。它不会设置 `ANTHROPIC_BASE_URL` 或 `ANTHROPIC_AUTH_TOKEN`。
 
 ```bash
-ccp add-login work
-ccp start work
+ccp add
+ccp start <profile-name>
 ```
 
 当 Claude Code 要求你登录时，登录状态会保存在这个 profile 的配置目录下。另一个 profile 可以使用不同账号或不同登录状态：
@@ -149,6 +162,8 @@ ccp add-login personal
 ccp start personal
 ```
 
+`ccp add-login <profile>` 仍可作为直接创建登录 profile 的兼容入口。
+
 ### Claude Code Router Profiles
 
 CCR profile 绑定到 [Claude Code Router](https://github.com/musistudio/claude-code-router) preset。Claude Code Router 是一个独立的开源项目，可以将 Claude Code 请求路由到不同模型 provider。`multi-ccp` 会集成它的 config 和 preset system，让每个 profile 可以使用自己的 provider route。
@@ -156,8 +171,8 @@ CCR profile 绑定到 [Claude Code Router](https://github.com/musistudio/claude-
 ```bash
 ccp ccr status
 ccp ccr model
-ccp add-ccr gpt-route
-ccp start gpt-route
+ccp add
+ccp start <profile-name>
 ```
 
 CCR profile 会把 route 写入 `.ccp.json`，并让 Claude Code 指向类似这样的 preset endpoint：
@@ -197,7 +212,9 @@ ccp sync-session work to main
 ```bash
 ccp help
 ccp list
-ccp add <profile>
+ccp ui
+ccp add [profile]
+ccp add --preset <preset> [profile]
 ccp add-login <profile>
 ccp add-ccr <profile>
 ccp remove <profile>

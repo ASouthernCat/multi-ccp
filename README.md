@@ -46,25 +46,38 @@ How do I use multi-ccp to manage multiple Claude Code profiles?
 
 Then continue with the examples below when you want the full command reference.
 
-Create a profile for an Anthropic-compatible API provider:
+Open the local Web UI to browse profiles and create configurations visually:
 
 ```bash
-ccp add provider-a
-ccp start provider-a
+ccp ui
+```
+
+The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, and open CCR management shortcuts.
+
+![multi-ccp](docs/images/cli-ui.png)
+
+Create a profile interactively:
+
+```bash
+ccp add
+ccp start <profile-name>
+```
+
+`ccp add` lets you choose a built-in preset template or custom configuration, including DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
+
+If you want to create directly from a built-in preset, pass `--preset`:
+
+```bash
+ccp add --preset deepseek
+ccp add --preset deepseek my-ds
+ccp start my-ds
 ```
 
 Create another isolated profile for a different provider, account, or project context:
 
 ```bash
-ccp add provider-b
-ccp start provider-b
-```
-
-Create a profile that uses Claude Code's normal account login flow:
-
-```bash
-ccp add-login work
-ccp start work
+ccp add
+ccp start <profile-name>
 ```
 
 List and inspect profiles:
@@ -82,11 +95,11 @@ ccp path work
 API profiles are for Anthropic-compatible providers. They store API environment variables in the profile's `settings.json`.
 
 ```bash
-ccp add provider-a
-ccp start provider-a
+ccp add
+ccp start <profile-name>
 ```
 
-The command prompts for:
+When you choose an API preset, the command prompts for a profile name and token. When you choose Custom API, it prompts for:
 
 - `ANTHROPIC_BASE_URL`
 - `ANTHROPIC_AUTH_TOKEN`
@@ -138,8 +151,8 @@ See the [DeepSeek API documentation](https://api-docs.deepseek.com/) for provide
 Login profiles are for Claude Code account-based authentication. They do not set `ANTHROPIC_BASE_URL` or `ANTHROPIC_AUTH_TOKEN`.
 
 ```bash
-ccp add-login work
-ccp start work
+ccp add
+ccp start <profile-name>
 ```
 
 When Claude Code asks you to sign in, the login state is stored under that profile's config directory. Another profile can use a different account or login state:
@@ -149,6 +162,8 @@ ccp add-login personal
 ccp start personal
 ```
 
+`ccp add-login <profile>` remains available as a direct compatibility entrypoint.
+
 ### Claude Code Router Profiles
 
 CCR profiles are bound to [Claude Code Router](https://github.com/musistudio/claude-code-router) presets. Claude Code Router is a separate open source project that can route Claude Code requests to different model providers. `multi-ccp` integrates with its config and preset system so each profile can use its own provider route.
@@ -156,8 +171,8 @@ CCR profiles are bound to [Claude Code Router](https://github.com/musistudio/cla
 ```bash
 ccp ccr status
 ccp ccr model
-ccp add-ccr gpt-route
-ccp start gpt-route
+ccp add
+ccp start <profile-name>
 ```
 
 A CCR profile stores its route in `.ccp.json` and points Claude Code at a preset endpoint such as:
@@ -197,7 +212,9 @@ The sync command tracks hashes in `.ccp-sync`, copies session assets, and prompt
 ```bash
 ccp help
 ccp list
-ccp add <profile>
+ccp ui
+ccp add [profile]
+ccp add --preset <preset> [profile]
 ccp add-login <profile>
 ccp add-ccr <profile>
 ccp remove <profile>

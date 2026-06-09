@@ -6,6 +6,7 @@ import { ensureCcrPreset, getCcrPresetEndpoint } from "./ccr.js";
 import { getSettingsPath, readMeta, readSettings, removeProfileDir, writeMeta, writeSettings } from "./settings.js";
 import type {
   ClaudeSettings,
+  CreateApiProfileFromEnvInput,
   CreateApiProfileInput,
   CreateLoginProfileInput,
   CreateCcrProfileInput,
@@ -153,6 +154,22 @@ export async function createApiProfile(input: CreateApiProfileInput, context: Pa
   return summarizeProfile(input.name, profileDir);
 }
 
+export async function createApiProfileFromEnv(input: CreateApiProfileFromEnvInput, context: PathContext = {}): Promise<ProfileSummary> {
+  const profileDir = await assertNewProfile(input.name, context);
+  const baseUrl = input.env.ANTHROPIC_BASE_URL?.trim();
+  if (!baseUrl) {
+    throw new CcpError("ANTHROPIC_BASE_URL is required.");
+  }
+
+  await mkdir(profileDir, { recursive: true });
+  await writeSettings(profileDir, {
+    theme: "dark",
+    env: { ...input.env, ANTHROPIC_BASE_URL: baseUrl }
+  });
+  await writeMeta(profileDir, { version: 1, type: "api", preset: input.preset, createdAt: new Date().toISOString() });
+  return summarizeProfile(input.name, profileDir);
+}
+
 export async function createLoginProfile(input: CreateLoginProfileInput, context: PathContext = {}): Promise<ProfileSummary> {
   const profileDir = await assertNewProfile(input.name, context);
   await mkdir(profileDir, { recursive: true });
@@ -167,7 +184,8 @@ export async function createCcrProfile(input: CreateCcrProfileInput, context: Pa
     throw new CcpError("CCR route is required for a preset-bound CCR profile.");
   }
 
-  const endpoint = await getCcrPresetEndpoint(input.name, context);
+  const presetName = input.presetName?.trim() || input.name;
+  const endpoint = await getCcrPresetEndpoint(presetName, context);
   await mkdir(profileDir, { recursive: true });
   await writeSettings(profileDir, {
     theme: "dark",
@@ -185,11 +203,12 @@ export async function createCcrProfile(input: CreateCcrProfileInput, context: Pa
     type: "ccr",
     endpoint,
     autoStart: true,
-    ccrPreset: input.name,
+    ccrPreset: presetName,
     ccrRoute: input.route.trim(),
+    preset: input.presetId,
     createdAt: new Date().toISOString()
   });
-  await ensureCcrPreset(input.name, input.route.trim(), context);
+  await ensureCcrPreset(presetName, input.route.trim(), context);
   return summarizeProfile(input.name, profileDir);
 }
 

@@ -10,6 +10,7 @@ export interface ProfileMeta {
   version: number;
   type: Exclude<ProfileType, "unknown">;
   createdAt?: string;
+  preset?: string;
   endpoint?: string;
   autoStart?: boolean;
   ccrPreset?: string;
@@ -34,6 +35,12 @@ export interface CreateApiProfileInput {
   model: string;
 }
 
+export interface CreateApiProfileFromEnvInput {
+  name: string;
+  env: Record<string, string>;
+  preset?: string;
+}
+
 export interface CreateLoginProfileInput {
   name: string;
 }
@@ -42,4 +49,6 @@ export interface CreateCcrProfileInput {
   name: string;
   route: string;
   token: string;
+  presetName?: string;
+  presetId?: string;
 }

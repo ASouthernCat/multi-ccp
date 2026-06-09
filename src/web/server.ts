@@ -16,7 +16,8 @@ import {
   resolveConfigDir,
   summarizeProfile
 } from "../core/profiles.js";
-import { getCcrRouteChoices, getCcrStatus, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
+import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
+import { createApiProfileFromPreset, createCcrProfileFromPreset, listProfilePresets } from "../core/presets.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
 import type { ClaudeSettings, ProfileMeta, ProfileSummary } from "../core/types.js";
 
@@ -236,17 +237,18 @@ function setOptionalEnv(settings: ClaudeSettings, key: string, value: string): v
 async function updateCcrBinding(name: string, body: Record<string, unknown>): Promise<WebProfile> {
   const config = await resolveConfigDir(name, { allowMain: false });
   const route = String(body.route ?? "").trim();
-  const preset = String(body.preset ?? name).trim() || name;
   if (!route) throw new CcpError("CCR route is required.");
 
   const meta = (await readMeta(config.dir)) as ProfileMeta | undefined;
   if (!meta || meta.type !== "ccr") throw new CcpError(`Profile '${name}' is not a CCR profile.`);
+  const preset = String(body.preset ?? meta.ccrPreset ?? name).trim() || name;
   meta.ccrRoute = route;
   meta.ccrPreset = preset;
   await writeMeta(config.dir, meta);
+  await ensureCcrPreset(preset, route);
   const summarized = await summarizeProfile(name, config.dir);
   const ccr = await getCcrStatus();
-  addActivity("success", `Updated CCR binding for '${name}'.`);
+  addActivity("success", `Updated CCR route for '${name}'.`);
   return toWebProfile(summarized, false, ccr.running, true);
 }
 
@@ -293,6 +295,25 @@ function openBrowser(url: string): void {
 async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, token: string): Promise<void> {
   try {
     if (req.method !== "GET") requireToken(req, token);
+
+    if (pathname === "/api/presets") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      return json(res, 200, { presets: listProfilePresets() });
+    }
+
+    if (pathname === "/api/profiles/preset") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, string>>(req);
+      const presetId = body.presetId ?? "";
+      let created: ProfileSummary;
+      if (body.kind === "ccr") {
+        created = await createCcrProfileFromPreset({ presetId, name: body.name, token: body.token });
+      } else {
+        created = await createApiProfileFromPreset({ presetId, name: body.name, token: body.token ?? "" });
+      }
+      addActivity("success", `Created profile '${created.name}' from preset '${presetId}'.`);
+      return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
+    }
 
     if (pathname === "/api/dashboard") {
       if (req.method !== "GET") return methodNotAllowed(res);
@@ -343,26 +364,23 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return json(res, 200, { status: await getCcrStatus() });
     }
 
-    if (pathname === "/api/profiles/api") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+    if (pathname === "/api/profiles/api" && req.method === "POST") {
       const body = await readJsonBody<Record<string, string>>(req);
       const created = await createApiProfile({ name: body.name ?? "", baseUrl: body.baseUrl ?? "", token: body.token ?? "", model: body.model ?? "" });
       addActivity("success", `Created API profile '${created.name}'.`);
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
     }
 
-    if (pathname === "/api/profiles/login") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+    if (pathname === "/api/profiles/login" && req.method === "POST") {
       const body = await readJsonBody<Record<string, string>>(req);
       const created = await createLoginProfile({ name: body.name ?? "" });
       addActivity("success", `Created login profile '${created.name}'.`);
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
     }
 
-    if (pathname === "/api/profiles/ccr") {
-      if (req.method !== "POST") return methodNotAllowed(res);
+    if (pathname === "/api/profiles/ccr" && req.method === "POST") {
       const body = await readJsonBody<Record<string, string>>(req);
-      const created = await createCcrProfile({ name: body.name ?? "", route: body.route ?? "", token: body.token ?? "" });
+      const created = await createCcrProfile({ name: body.name ?? "", presetName: body.presetName, route: body.route ?? "", token: body.token ?? "" });
       addActivity("success", `Created CCR profile '${created.name}'.`);
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
     }

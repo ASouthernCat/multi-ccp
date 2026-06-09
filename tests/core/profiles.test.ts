@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
 import { parseSelectionText, syncSessions } from "../../src/core/sessions.js";
+import { ensureCcrProfileGateway } from "../../src/core/ccr.js";
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-test-"));
@@ -85,6 +86,9 @@ describe("profiles", () => {
     expect(profile.baseUrl).toBe("http://127.0.0.1:3456/preset/ccrTest");
     expect(profile.model).toBe("ccr:openai,gpt-test");
 
+    const settings = JSON.parse(await readFile(path.join(profile.dir, "settings.json"), "utf8"));
+    expect(settings.env.ANTHROPIC_MODEL).toBeUndefined();
+
     const manifest = JSON.parse(
       await readFile(path.join(ccrDir, "presets", "ccrTest", "manifest.json"), "utf8")
     );
@@ -121,6 +125,50 @@ describe("profiles", () => {
     expect(profiles[0].name).toBe("legacyCcr");
     expect(profiles[0].type).toBe("ccr");
     expect(profiles[0].model).toBe("ccr:openai,gpt-5.5");
+  });
+
+  it("removes legacy model overrides from CCR profiles before launch", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    await mkdir(ccrDir, { recursive: true });
+    await writeFile(
+      path.join(ccrDir, "config.json"),
+      JSON.stringify({
+        HOST: "127.0.0.1",
+        PORT: 65432,
+        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-5.5"] }]
+      }),
+      "utf8"
+    );
+
+    const dir = path.join(getProfilesRoot(context), "legacyGpt");
+    await mkdir(dir, { recursive: true });
+    await writeFile(
+      path.join(dir, "settings.json"),
+      JSON.stringify({
+        theme: "dark",
+        env: {
+          ANTHROPIC_BASE_URL: "http://127.0.0.1:3456/preset/legacyGpt",
+          ANTHROPIC_AUTH_TOKEN: "ccr-local-secret",
+          ANTHROPIC_MODEL: "gpt-5.5",
+          ANTHROPIC_DEFAULT_SONNET_MODEL: "gpt-5.5",
+          CLAUDE_CODE_SUBAGENT_MODEL: "gpt-5.5"
+        }
+      }),
+      "utf8"
+    );
+    await writeFile(
+      path.join(dir, ".ccp.json"),
+      JSON.stringify({ version: 1, type: "ccr", ccrPreset: "legacyGpt", ccrRoute: "openai,gpt-5.5", autoStart: false }),
+      "utf8"
+    );
+
+    await expect(ensureCcrProfileGateway(dir, "legacyGpt", context)).rejects.toThrow("CCR endpoint is not reachable");
+
+    const settings = JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8"));
+    expect(settings.env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
+    expect(settings.env.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined();
   });
 
 

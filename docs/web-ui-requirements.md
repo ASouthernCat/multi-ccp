@@ -409,18 +409,28 @@ ccp start work --dangerously-skip-permissions
 + New Profile
 ```
 
-点击后选择类型：
+点击后选择预设模板或自定义配置：
 
-- API Profile；
-- Login Profile；
-- CCR Profile。
+- API preset；
+- CCR preset；
+- Custom API；
+- Manual CCR；
+- Claude Login。
+
+对应 CLI 主入口：
+
+```bash
+ccp add [profile]
+ccp add --preset <preset> [profile]
+```
 
 ### 8.1 创建 API Profile
 
 对应 CLI：
 
 ```bash
-ccp add <profile>
+ccp add
+ccp add --preset deepseek [profile]
 ```
 
 表单字段：
@@ -451,6 +461,7 @@ ccp add <profile>
 对应 CLI：
 
 ```bash
+ccp add
 ccp add-login <profile>
 ```
 
@@ -473,6 +484,8 @@ ccp start <profile>
 对应 CLI：
 
 ```bash
+ccp add
+ccp add --preset ccr-gpt [profile]
 ccp add-ccr <profile>
 ```
 

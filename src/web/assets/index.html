@@ -46,40 +46,63 @@
         <div class="modal-head">
           <div>
             <p class="eyebrow">create profile</p>
-            <h2>快速创建 Profile</h2>
+            <h2>New Profile</h2>
           </div>
           <button class="icon-btn" value="cancel" formnovalidate type="button" data-dialog-close="newProfileDialog">×</button>
         </div>
-        <label>类型
-          <select name="kind" id="newKind">
-            <option value="api">API Profile</option>
-            <option value="login">Login Profile</option>
-            <option value="ccr">CCR Profile</option>
-          </select>
-        </label>
-        <label>Profile 名称 <input name="name" required autocomplete="off" /></label>
-        <div data-kind-fields="api">
-          <label>Base URL <input name="baseUrl" placeholder="https://api.example.com/anthropic" /></label>
-          <label>Auth Token <input name="token" type="password" placeholder="留空则写入占位符" /></label>
-          <label>Model <input name="model" placeholder="留空使用 Claude Code 默认模型" /></label>
-        </div>
-        <div data-kind-fields="ccr" hidden>
-          <label>CCR Route / Preset <input name="route" list="ccrRoutes" placeholder="provider,model" /></label>
-          <datalist id="ccrRoutes"></datalist>
-          <p class="hint">CCR 的 provider、model、route 具体配置请在 Claude Code Router UI 中修改。</p>
-        </div>
-        <div data-kind-fields="login" hidden>
-          <p class="hint">Login Profile 不保存 Claude 账号密码，只隔离 Claude Code 的登录状态。</p>
+        <div class="preset-layout">
+          <aside class="preset-picker">
+            <div class="preset-search">
+              <span class="ui-icon" data-icon="search"></span>
+              <input id="presetSearch" type="search" placeholder="搜索预设..." autocomplete="off" />
+            </div>
+            <div class="preset-filters" id="presetFilters">
+              <button class="chip active" type="button" data-preset-filter="all">All</button>
+              <button class="chip" type="button" data-preset-filter="api">API</button>
+              <button class="chip" type="button" data-preset-filter="ccr">CCR</button>
+              <button class="chip" type="button" data-preset-filter="custom">Custom</button>
+              <button class="chip" type="button" data-preset-filter="login">Login</button>
+            </div>
+            <div class="preset-list" id="presetList"></div>
+          </aside>
+          <section class="preset-detail">
+            <input type="hidden" name="kind" id="newKind" value="api" />
+            <input type="hidden" name="presetId" id="presetId" value="custom-api" />
+            <div id="presetSummary" class="preset-summary"></div>
+            <label>Profile 名称 <input name="name" id="newProfileName" required autocomplete="off" /></label>
+            <div data-kind-fields="api">
+              <label>API Key <input name="token" id="newToken" type="password" placeholder="输入 key；留空则写入占位符" /></label>
+            </div>
+            <div data-kind-fields="custom-api" hidden>
+              <label>Base URL <input name="baseUrl" required placeholder="https://api.example.com/anthropic" /></label>
+              <label>Auth Token <input name="customToken" type="password" placeholder="留空则写入占位符" /></label>
+              <label>Model <input name="model" placeholder="留空使用 Claude Code 默认模型" /></label>
+            </div>
+            <div data-kind-fields="ccr" hidden>
+              <label>CCR Token <input name="ccrToken" type="password" placeholder="留空使用预设默认值" /></label>
+              <p class="hint">该模板会按预设模型路由生成 CCR preset。CCR provider/model 请在 CCR UI 中管理。</p>
+            </div>
+            <div data-kind-fields="manual-ccr" hidden>
+              <label>模型路由 <select name="route" id="manualCcrRoute" required><option value="">加载 CCR 路由中...</option></select></label>
+              <label>CCR Preset 名称 <input name="manualCcrPreset" placeholder="默认使用 Profile 名称" autocomplete="off" /></label>
+              <label>CCR Token <input name="manualCcrToken" type="password" placeholder="留空使用 ccr-local-secret" /></label>
+              <p class="hint">模型路由来自 Claude Code Router 的 provider/model 配置；如果没有想要的模型，请先打开 CCR UI 添加。</p>
+            </div>
+            <div data-kind-fields="login" hidden>
+              <p class="hint">Login Profile 不保存 Claude 账号密码，只隔离 Claude Code 的登录状态。</p>
+            </div>
+          </section>
         </div>
         <menu class="modal-actions">
           <button class="ghost" value="cancel" formnovalidate type="button" data-dialog-close="newProfileDialog">取消</button>
           <button class="primary" id="createProfileSubmit" value="default" type="button">创建</button>
         </menu>
+        <div class="dialog-toast-region"></div>
       </form>
     </dialog>
 
     <dialog id="ccrDialog" class="modal">
-      <div class="modal-card" id="ccrPanel"></div>
+      <div class="modal-card ccr-card" id="ccrPanel"></div>
     </dialog>
 
     <div class="toast-region" id="toastRegion"></div>

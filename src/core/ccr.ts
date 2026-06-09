@@ -30,6 +30,18 @@ export interface CcrStatus {
   apiKeyStatus: "set" | "missing";
 }
 
+const CCR_MODEL_ENV_NAMES = [
+  "ANTHROPIC_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+  "CLAUDE_CODE_SUBAGENT_MODEL"
+];
+
+
 function stripBom(value: string): string {
   return value.replace(/^﻿/, "");
 }
@@ -324,8 +336,16 @@ export async function updateCcrProfileEndpoint(
     settings.env ??= {};
     if (settings.env.ANTHROPIC_BASE_URL !== endpoint) {
       settings.env.ANTHROPIC_BASE_URL = endpoint;
-      await writeSettings(profileDir, settings);
       changed = true;
+    }
+    for (const name of CCR_MODEL_ENV_NAMES) {
+      if (settings.env[name] !== undefined) {
+        delete settings.env[name];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await writeSettings(profileDir, settings);
     }
   }
 
