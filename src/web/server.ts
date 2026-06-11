@@ -1,12 +1,12 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { CcpError } from "../core/errors.js";
-import { getMainClaudeDir } from "../core/paths.js";
+import { assertProfileName, CcpError } from "../core/errors.js";
+import { getHomeWorkDir, getMainClaudeDir } from "../core/paths.js";
 import {
   createApiProfile,
   createCcrProfile,
@@ -292,7 +292,117 @@ function openBrowser(url: string): void {
   child.unref();
 }
 
-async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, token: string): Promise<void> {
+function terminalCommandForProfile(name: string): string {
+  return name.toLowerCase() === "main" ? "claude" : `ccp start ${name}`;
+}
+
+function spawnDetached(command: string, args: string[], cwd?: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, detached: true, stdio: "ignore" });
+    child.once("error", reject);
+    child.once("spawn", () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+async function spawnFirstAvailable(commands: { command: string; args: string[] }[], cwd?: string): Promise<void> {
+  let lastError: unknown;
+  for (const candidate of commands) {
+    try {
+      await spawnDetached(candidate.command, candidate.args, cwd);
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  const reason = lastError instanceof Error ? ` ${lastError.message}` : "";
+  throw new CcpError(`Failed to open terminal.${reason}`);
+}
+
+function ensureLocalhostActionAllowed(host: string): void {
+  if (!["127.0.0.1", "localhost", "::1"].includes(host)) {
+    throw new CcpError("This local system action is only available when ccp ui is bound to localhost.");
+  }
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+async function openTerminal(commandLine: string, cwd: string): Promise<void> {
+  if (process.platform === "win32") {
+    await spawnDetached("cmd.exe", ["/d", "/c", "start", "", "/D", cwd, "cmd.exe", "/k", commandLine], cwd);
+    return;
+  }
+
+  const commandInCwd = `cd ${shellQuote(cwd)} && ${commandLine}`;
+
+  if (process.platform === "darwin") {
+    const script = `tell application "Terminal" to do script ${JSON.stringify(commandInCwd)}`;
+    await spawnDetached("osascript", ["-e", script], cwd);
+    return;
+  }
+
+  await spawnFirstAvailable([
+    { command: "x-terminal-emulator", args: ["-e", "sh", "-lc", commandInCwd] },
+    { command: "gnome-terminal", args: ["--", "sh", "-lc", commandInCwd] },
+    { command: "konsole", args: ["-e", "sh", "-lc", commandInCwd] },
+    { command: "xfce4-terminal", args: ["-e", `sh -lc ${JSON.stringify(commandInCwd)}`] },
+    { command: "xterm", args: ["-e", "sh", "-lc", commandInCwd] }
+  ], cwd);
+}
+
+async function revealPathInFileManager(filePath: string): Promise<void> {
+  if (process.platform === "win32") {
+    await spawnDetached("explorer.exe", [`/select,${filePath}`]);
+    return;
+  }
+
+  if (process.platform === "darwin") {
+    await spawnDetached("open", ["-R", filePath]);
+    return;
+  }
+
+  try {
+    await spawnDetached("dbus-send", [
+      "--session",
+      "--dest=org.freedesktop.FileManager1",
+      "--type=method_call",
+      "/org/freedesktop/FileManager1",
+      "org.freedesktop.FileManager1.ShowItems",
+      `array:string:${pathToFileURL(filePath).href}`,
+      "string:"
+    ]);
+  } catch {
+    await spawnDetached("xdg-open", [path.dirname(filePath)]);
+  }
+}
+
+async function revealProfileSettings(name: string, host: string): Promise<string> {
+  ensureLocalhostActionAllowed(host);
+  if (name.toLowerCase() !== "main") assertProfileName(name);
+  const config = await resolveConfigDir(name, { allowMain: true });
+  const profile = await summarizeProfile(config.name, config.dir);
+  await revealPathInFileManager(profile.settingsPath);
+  addActivity("success", `Opened settings path for '${config.name}'.`);
+  return profile.settingsPath;
+}
+
+async function launchProfileTerminal(name: string, host: string): Promise<string> {
+  ensureLocalhostActionAllowed(host);
+  if (name.toLowerCase() !== "main") assertProfileName(name);
+  const config = await resolveConfigDir(name, { allowMain: true });
+  const cwd = getHomeWorkDir();
+  await mkdir(cwd, { recursive: true });
+  const commandLine = terminalCommandForProfile(config.name);
+  await openTerminal(commandLine, cwd);
+  addActivity("success", `Opened terminal for '${config.name}'.`);
+  return commandLine;
+}
+
+async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: string, token: string, host: string): Promise<void> {
   try {
     if (req.method !== "GET") requireToken(req, token);
 
@@ -385,6 +495,22 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
     }
 
+    const revealSettingsMatch = pathname.match(/^\/api\/profiles\/([^/]+)\/reveal-settings$/);
+    if (revealSettingsMatch) {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const name = decodeURIComponent(revealSettingsMatch[1]);
+      const settingsPath = await revealProfileSettings(name, host);
+      return json(res, 200, { path: settingsPath });
+    }
+
+    const terminalMatch = pathname.match(/^\/api\/profiles\/([^/]+)\/terminal$/);
+    if (terminalMatch) {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const name = decodeURIComponent(terminalMatch[1]);
+      const command = await launchProfileTerminal(name, host);
+      return json(res, 200, { command });
+    }
+
     const profileMatch = pathname.match(/^\/api\/profiles\/([^/]+)$/);
     if (profileMatch) {
       const name = decodeURIComponent(profileMatch[1]);
@@ -424,18 +550,29 @@ export async function startUiServer(options: UiServerOptions = {}): Promise<void
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", `http://${host}:${port}`);
     if (url.pathname.startsWith("/api/")) {
-      await handleApi(req, res, url.pathname, token);
+      await handleApi(req, res, url.pathname, token, host);
       return;
     }
     await serveStatic(res, url.pathname, token);
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => resolve());
-  });
-
   const url = `http://${host}:${port}/`;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(port, host, () => resolve());
+    });
+  } catch (error) {
+    server.close();
+    if (error instanceof Error && (error as NodeJS.ErrnoException).code === "EADDRINUSE") {
+      console.log(`ccp ui is already running at ${url}`);
+      if (options.open !== false) openBrowser(url);
+      return;
+    }
+    throw error;
+  }
+
   addActivity("info", `UI started at ${url}`);
   console.log(`ccp ui running at ${url}`);
   console.log("Press Ctrl+C to stop.");
