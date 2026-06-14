@@ -6,6 +6,7 @@ import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, r
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
 import { parseSelectionText, syncSessions } from "../../src/core/sessions.js";
 import { ensureCcrProfileGateway } from "../../src/core/ccr.js";
+import { createApiProfileFromPreset, createCcrProfileFromPreset } from "../../src/core/presets.js";
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-test-"));
@@ -65,7 +66,6 @@ describe("profiles", () => {
     });
   });
 
-
   it("creates CCR profiles and preset manifests", async () => {
     const context = await createContext();
     const ccrDir = path.join(context.homeDir, ".claude-code-router");
@@ -96,6 +96,36 @@ describe("profiles", () => {
     expect(manifest.Router.longContextThreshold).toBe(12345);
   });
 
+  it("creates CCR preset profiles by auto-configuring AICodeMirror provider templates", async () => {
+    const context = await createContext();
+
+    const profile = await createCcrProfileFromPreset({
+      presetId: "ccr-gpt",
+      name: "ccrPresetAuto",
+      token: "",
+      providerApiKey: "provider-secret"
+    }, context);
+
+    expect(profile.type).toBe("ccr");
+    expect(profile.baseUrl).toBe("http://127.0.0.1:3456/preset/ccr-gpt");
+    expect(profile.model).toBe("ccr:aicodemirror,gpt-5.5");
+
+    const ccrConfig = JSON.parse(await readFile(path.join(context.homeDir, ".claude-code-router", "config.json"), "utf8"));
+    expect(ccrConfig.Providers).toEqual([
+      {
+        name: "aicodemirror",
+        api_base_url: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/chat/completions",
+        api_key: "provider-secret",
+        models: ["gpt-5.5"]
+      }
+    ]);
+
+    const manifest = JSON.parse(
+      await readFile(path.join(context.homeDir, ".claude-code-router", "presets", "ccr-gpt", "manifest.json"), "utf8")
+    );
+    expect(manifest.Router.default).toBe("aicodemirror,gpt-5.5");
+  });
+
   it("lists profiles sorted by name", async () => {
     const context = await createContext();
     await createLoginProfile({ name: "zeta" }, context);
@@ -104,6 +134,7 @@ describe("profiles", () => {
     const profiles = await listProfiles(context);
     expect(profiles.map((item) => item.name)).toEqual(["alpha", "zeta"]);
   });
+
 
 
   it("reads legacy PowerShell JSON files with a UTF-8 BOM", async () => {

@@ -79,8 +79,9 @@
               <label>Model <input name="model" placeholder="留空使用 Claude Code 默认模型" /></label>
             </div>
             <div data-kind-fields="ccr" hidden>
+              <label>Provider API Key <input name="ccrProviderApiKey" type="password" placeholder="填写该 CCR 模板的 provider key" /></label>
               <label>CCR Token <input name="ccrToken" type="password" placeholder="留空使用预设默认值" /></label>
-              <p class="hint">该模板会按预设模型路由生成 CCR preset。CCR provider/model 请在 CCR UI 中管理。</p>
+              <p class="hint">该模板会自动写入所需 CCR provider/model，并生成对应 CCR preset。</p>
             </div>
             <div data-kind-fields="manual-ccr" hidden>
               <label>模型路由 <select name="route" id="manualCcrRoute" required><option value="">加载 CCR 路由中...</option></select></label>

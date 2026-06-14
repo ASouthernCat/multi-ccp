@@ -16,7 +16,7 @@ import {
   resolveConfigDir,
   summarizeProfile
 } from "../core/profiles.js";
-import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
+import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, installCcr, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
 import { createApiProfileFromPreset, createCcrProfileFromPreset, listProfilePresets } from "../core/presets.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
 import type { ClaudeSettings, ProfileMeta, ProfileSummary } from "../core/types.js";
@@ -177,6 +177,29 @@ async function getAllProfiles(includeSettings = false): Promise<WebProfile[]> {
   return profiles;
 }
 
+function ccrWebStatus(status: Awaited<ReturnType<typeof getCcrStatus>>, profilesUsingCcr?: number) {
+  return {
+    ...status,
+    uiUrl: `${status.endpoint.replace(/\/$/, "")}/ui/`,
+    profilesUsingCcr
+  };
+}
+
+function ccrRoutesMessage(reason: Awaited<ReturnType<typeof getCcrStatus>>["routesReason"]): string | undefined {
+  switch (reason) {
+    case "not_installed":
+      return "CCR is not installed.";
+    case "config_missing":
+      return "CCR config was not found. Install CCR or open CCR model setup first.";
+    case "no_providers":
+      return "CCR config has no providers. Open CCR UI/model setup to add one.";
+    case "no_routes":
+      return "CCR config has no provider/model routes.";
+    default:
+      return undefined;
+  }
+}
+
 function dashboardFromProfiles(profiles: WebProfile[], ccr: Awaited<ReturnType<typeof getCcrStatus>>) {
   const count = (type: WebProfile["type"]) => profiles.filter((profile) => profile.type === type).length;
   return {
@@ -188,13 +211,7 @@ function dashboardFromProfiles(profiles: WebProfile[], ccr: Awaited<ReturnType<t
       ccr: count("ccr"),
       needsAttention: profiles.filter((profile) => profile.status !== "ready").length
     },
-    ccr: {
-      installed: ccr.installed,
-      running: ccr.running,
-      endpoint: ccr.endpoint,
-      uiUrl: `${ccr.endpoint.replace(/\/$/, "")}/ui/`,
-      apiKeyStatus: ccr.apiKeyStatus
-    },
+    ccr: ccrWebStatus(ccr),
     activity: activity.slice(0, 8)
   };
 }
@@ -417,7 +434,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       const presetId = body.presetId ?? "";
       let created: ProfileSummary;
       if (body.kind === "ccr") {
-        created = await createCcrProfileFromPreset({ presetId, name: body.name, token: body.token });
+        created = await createCcrProfileFromPreset({ presetId, name: body.name, token: body.token, providerApiKey: body.providerApiKey });
       } else {
         created = await createApiProfileFromPreset({ presetId, name: body.name, token: body.token ?? "" });
       }
@@ -445,12 +462,21 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (req.method !== "GET") return methodNotAllowed(res);
       const status = await getCcrStatus();
       const profiles = await getAllProfiles();
-      return json(res, 200, { ...status, uiUrl: `${status.endpoint.replace(/\/$/, "")}/ui/`, profilesUsingCcr: profiles.filter((profile) => profile.type === "ccr").length });
+      return json(res, 200, ccrWebStatus(status, profiles.filter((profile) => profile.type === "ccr").length));
     }
 
     if (pathname === "/api/ccr/routes") {
       if (req.method !== "GET") return methodNotAllowed(res);
-      return json(res, 200, { routes: getCcrRouteChoices(await readCcrConfig()) });
+      const status = await getCcrStatus();
+      return json(res, 200, { routes: getCcrRouteChoices(await readCcrConfig()), reason: status.routesReason, message: ccrRoutesMessage(status.routesReason) });
+    }
+
+    if (pathname === "/api/ccr/install") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const code = await installCcr();
+      if (code !== 0) throw new CcpError(`CCR install failed with exit code ${code}.`);
+      addActivity("success", "CCR installed.");
+      return json(res, 200, { status: ccrWebStatus(await getCcrStatus()) });
     }
 
     if (pathname === "/api/ccr/start") {

@@ -8,8 +8,23 @@ import { readMeta, readSettings, writeMeta, writeSettings } from "./settings.js"
 
 export interface CcrProvider {
   name?: string;
+  api_base_url?: string;
+  api_key?: string;
   models?: string[];
   [key: string]: unknown;
+}
+
+export interface CcrProviderTemplate {
+  name: string;
+  api_base_url: string;
+  api_key?: string;
+  models: string[];
+}
+
+export interface EnsureCcrProviderTemplateResult {
+  changed: boolean;
+  route: string;
+  providerName: string;
 }
 
 export interface CcrConfig {
@@ -21,6 +36,7 @@ export interface CcrConfig {
   [key: string]: unknown;
 }
 
+
 export interface CcrStatus {
   installed: boolean;
   command?: string;
@@ -28,6 +44,13 @@ export interface CcrStatus {
   endpoint: string;
   running: boolean;
   apiKeyStatus: "set" | "missing";
+  configExists: boolean;
+  hasProviders: boolean;
+  routeCount: number;
+  ready: boolean;
+  statusText: "Not Installed" | "Needs Config" | "Offline" | "Running";
+  nextAction: "install" | "configure" | "start" | "open";
+  routesReason?: "not_installed" | "config_missing" | "no_providers" | "no_routes";
 }
 
 const CCR_MODEL_ENV_NAMES = [
@@ -142,15 +165,32 @@ export async function getCcrStatus(context: PathContext = {}): Promise<CcrStatus
   const config = await readCcrConfig(context);
   const endpoint = getCcrEndpoint(config);
   const command = getCcrCommand();
+  const installed = Boolean(command);
+  const configExists = Boolean(config);
+  const hasProviders = Boolean(config?.Providers?.length);
+  const routeCount = getCcrRouteChoices(config).length;
+  const running = await testTcpEndpoint(endpoint);
+  const ready = installed && configExists && hasProviders && routeCount > 0 && running;
+  const statusText: CcrStatus["statusText"] = !installed ? "Not Installed" : !configExists || !hasProviders ? "Needs Config" : running ? "Running" : "Offline";
+  const nextAction: CcrStatus["nextAction"] = !installed ? "install" : !configExists || !hasProviders || routeCount === 0 ? "configure" : running ? "open" : "start";
+
   return {
-    installed: Boolean(command),
+    installed,
     command,
     configPath: getClaudeCodeRouterConfigPath(context),
     endpoint,
-    running: await testTcpEndpoint(endpoint),
-    apiKeyStatus: config?.APIKEY ? "set" : "missing"
+    running,
+    apiKeyStatus: config?.APIKEY ? "set" : "missing",
+    configExists,
+    hasProviders,
+    routeCount,
+    ready,
+    statusText,
+    nextAction,
+    routesReason: getCcrRoutesReason({ installed, configExists, hasProviders, routeCount })
   };
 }
+
 
 export async function invokeCcrCli(action: string, extraArgs: string[] = []): Promise<number> {
   if (!isCcrInstalled()) {
@@ -225,14 +265,31 @@ export async function restartCcrService(context: PathContext = {}): Promise<void
 }
 
 export function printCcrStatus(status: CcrStatus): void {
+  console.log(`CCR status:    ${status.statusText}`);
   console.log(`CCR installed: ${status.installed}`);
   if (status.command) {
     console.log(`CCR command:   ${status.command}`);
   }
   console.log(`Config:        ${status.configPath}`);
+  console.log(`Config ready:  ${status.configExists && status.hasProviders}`);
+  console.log(`Routes:        ${status.routeCount}`);
   console.log(`Endpoint:      ${status.endpoint}`);
   console.log(`Running:       ${status.running}`);
   console.log(`APIKEY:        ${status.apiKeyStatus}`);
+  switch (status.nextAction) {
+    case "install":
+      console.log("Next:          ccp ccr install");
+      break;
+    case "configure":
+      console.log("Next:          ccp ccr model");
+      break;
+    case "start":
+      console.log("Next:          ccp ccr start");
+      break;
+    case "open":
+      console.log("Next:          ccp ccr ui");
+      break;
+  }
 }
 
 
@@ -259,8 +316,77 @@ export function getCcrRouteChoices(config?: CcrConfig): string[] {
   return choices.sort((a, b) => a.localeCompare(b));
 }
 
+export function getCcrRoutesReason(status: Pick<CcrStatus, "installed" | "configExists" | "hasProviders" | "routeCount">): CcrStatus["routesReason"] {
+  if (!status.installed) return "not_installed";
+  if (!status.configExists) return "config_missing";
+  if (!status.hasProviders) return "no_providers";
+  if (status.routeCount === 0) return "no_routes";
+  return undefined;
+}
+
 function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function normalizeUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+export async function ensureCcrProviderTemplate(
+  template: CcrProviderTemplate,
+  options: { apiKey?: string; providerName?: string } = {},
+  context: PathContext = {}
+): Promise<EnsureCcrProviderTemplateResult> {
+  const providerName = options.providerName?.trim() || template.name;
+  const model = template.models[0];
+  if (!providerName || !model) {
+    throw new CcpError("CCR provider template must include a provider name and at least one model.");
+  }
+
+  const configPath = getClaudeCodeRouterConfigPath(context);
+  const config = (await readCcrConfig(context)) ?? { HOST: "127.0.0.1", PORT: 3456, Providers: [] };
+  config.Providers ??= [];
+  let changed = false;
+  let provider = config.Providers.find((item) => item.name === providerName);
+
+  if (!provider) {
+    provider = {
+      ...cloneJson(template),
+      name: providerName,
+      models: [...template.models]
+    };
+    config.Providers.push(provider);
+    changed = true;
+  } else {
+    const currentBaseUrl = typeof provider.api_base_url === "string" ? provider.api_base_url : "";
+    if (currentBaseUrl && normalizeUrl(currentBaseUrl) !== normalizeUrl(template.api_base_url)) {
+      throw new CcpError(`CCR provider '${providerName}' already exists with a different api_base_url. Rename the provider or update it in CCR UI.`);
+    }
+    if (!currentBaseUrl) {
+      provider.api_base_url = template.api_base_url;
+      changed = true;
+    }
+    provider.models ??= [];
+    for (const item of template.models) {
+      if (!provider.models.includes(item)) {
+        provider.models.push(item);
+        changed = true;
+      }
+    }
+  }
+
+  const apiKey = options.apiKey?.trim() || template.api_key?.trim();
+  if (apiKey && provider.api_key !== apiKey) {
+    provider.api_key = apiKey;
+    changed = true;
+  }
+
+  if (changed) {
+    await mkdir(getClaudeCodeRouterDir(context), { recursive: true });
+    await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
+  }
+
+  return { changed, route: `${providerName},${model}`, providerName };
 }
 
 function newCcrRouterForRoute(config: CcrConfig, route: string): Record<string, unknown> {
