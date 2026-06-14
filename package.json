@@ -1,6 +1,6 @@
 {
   "name": "multi-ccp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Cross-platform Claude Code profile manager for API, login, and router workflows.",
   "type": "module",
   "bin": {
