@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile, stat, writeFile, copyFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, rm, stat, writeFile, copyFile } from "node:fs/promises";
 import crypto from "node:crypto";
 import path from "node:path";
 import { CcpError } from "./errors.js";
@@ -66,6 +66,83 @@ export interface SyncSessionResult {
   selected: number;
   counts: SyncCounts;
   conflicts: string[];
+}
+
+export interface SessionProjectInfo {
+  projectKey: string;
+  dir: string;
+  exists: boolean;
+  sessionCount: number;
+  assetCount: number;
+  lastWriteTime?: Date;
+  relativeTime: string;
+  matchedInTarget?: boolean;
+}
+
+export interface SessionProjectListResult {
+  source: { name: string; dir: string; isMain: boolean };
+  target: { name: string; dir: string; isMain: boolean };
+  sourceProjects: SessionProjectInfo[];
+  targetProjects: SessionProjectInfo[];
+}
+
+export interface SessionSyncDiffInfo extends SessionDisplayInfo {
+  status: SyncStatus;
+  hasAssets: boolean;
+  targetExists: boolean;
+  targetLastWriteTime?: Date;
+}
+
+export interface SessionProjectScanResult {
+  source: { name: string; dir: string; isMain: boolean };
+  target: { name: string; dir: string; isMain: boolean };
+  projectKey: string;
+  sourceProjectDir: string;
+  targetProjectDir: string;
+  targetProjectExists: boolean;
+  sessions: SessionSyncDiffInfo[];
+  counts: SyncCounts;
+}
+
+export type SyncProjectSessionAction = "sync" | "overwrite" | "skip";
+
+export interface SyncProjectSessionSelection {
+  name: string;
+  action: SyncProjectSessionAction;
+}
+
+export interface ProjectSyncCounts extends SyncCounts {
+  skipped: number;
+}
+
+export interface SyncSessionProjectResult {
+  projectKey: string;
+  sourceName: string;
+  targetName: string;
+  sourceProjectDir: string;
+  targetProjectDir: string;
+  selected: number;
+  counts: ProjectSyncCounts;
+  conflicts: string[];
+  skipped: string[];
+}
+
+export interface DeleteSessionProjectResult {
+  sourceName: string;
+  projectKey: string;
+  projectDir: string;
+  removed: boolean;
+}
+
+export interface DeleteSessionProjectSessionResult {
+  sourceName: string;
+  projectKey: string;
+  projectDir: string;
+  sessionName: string;
+  sessionFile: string;
+  assetDir: string;
+  removedSession: boolean;
+  removedAssets: boolean;
 }
 
 function parseSyncArgs(first: string, args: string[]): { sourceName: string; targetName: string; syncAll: boolean } {
@@ -148,6 +225,124 @@ async function copySessionAssetsMissingOnly(sourceProjectDir: string, targetProj
     force: false,
     errorOnExist: false
   });
+}
+
+function assertSafeProjectKey(projectKey: string): string {
+  const key = projectKey.trim();
+  if (!key) throw new CcpError("Project key is required.");
+  if (key === "." || key === ".." || key.includes("\0") || /[\\/]/.test(key)) {
+    throw new CcpError("Invalid project key.");
+  }
+  return key;
+}
+
+function assertSafeSessionName(sessionName: string): string {
+  const name = sessionName.trim();
+  const sessionId = path.basename(name, ".jsonl");
+  if (!name || !name.endsWith(".jsonl") || !sessionId || sessionId === "." || sessionId === ".." || name.includes("\0") || /[\\/]/.test(name)) {
+    throw new CcpError("Invalid session name.");
+  }
+  return name;
+}
+
+function resolveChildPath(parent: string, child: string, label: string): string {
+  const parentPath = path.resolve(parent);
+  const childPath = path.resolve(child);
+  const relative = path.relative(parentPath, childPath);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new CcpError(`${label} is outside the expected directory.`);
+  }
+  return childPath;
+}
+
+function projectDirInConfig(configDir: string, projectKey: string): string {
+  const projectsRoot = path.join(configDir, "projects");
+  return resolveChildPath(projectsRoot, path.join(projectsRoot, assertSafeProjectKey(projectKey)), "Project path");
+}
+
+function sessionFileInProject(projectDir: string, sessionName: string): string {
+  return resolveChildPath(projectDir, path.join(projectDir, assertSafeSessionName(sessionName)), "Session path");
+}
+
+async function getProjectSessionFiles(projectDir: string): Promise<SessionDisplayInfo[]> {
+  if (!(await exists(projectDir))) {
+    return [];
+  }
+
+  const entries = await readdir(projectDir, { withFileTypes: true });
+  const jsonlFiles = entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+    .map((entry) => path.join(projectDir, entry.name))
+    .sort((a, b) => a.localeCompare(b));
+
+  const sessionFiles = await Promise.all(jsonlFiles.map(getSessionDisplayInfo));
+  sessionFiles.sort((a, b) => b.lastWriteTime.getTime() - a.lastWriteTime.getTime());
+  return sessionFiles;
+}
+
+async function countProjectAssets(projectDir: string): Promise<number> {
+  if (!(await exists(projectDir))) {
+    return 0;
+  }
+  const entries = await readdir(projectDir, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory()).length;
+}
+
+async function listProjectsInConfig(configDir: string): Promise<SessionProjectInfo[]> {
+  const projectsDir = path.join(configDir, "projects");
+  if (!(await exists(projectsDir))) {
+    return [];
+  }
+
+  const entries = await readdir(projectsDir, { withFileTypes: true });
+  const projects = await Promise.all(entries
+    .filter((entry) => entry.isDirectory())
+    .map(async (entry): Promise<SessionProjectInfo> => {
+      const dir = path.join(projectsDir, entry.name);
+      const sessions = await getProjectSessionFiles(dir);
+      const assetCount = await countProjectAssets(dir);
+      const lastWriteTime = sessions[0]?.lastWriteTime;
+      return {
+        projectKey: entry.name,
+        dir,
+        exists: true,
+        sessionCount: sessions.length,
+        assetCount,
+        lastWriteTime,
+        relativeTime: lastWriteTime ? relativeTime(lastWriteTime) : "no sessions"
+      };
+    }));
+
+  return projects.sort((a, b) => {
+    const aTime = a.lastWriteTime?.getTime() ?? 0;
+    const bTime = b.lastWriteTime?.getTime() ?? 0;
+    return bTime - aTime || a.projectKey.localeCompare(b.projectKey);
+  });
+}
+
+async function getSessionDiffStatus(
+  sourceFile: string,
+  targetFile: string,
+  meta: SyncMeta,
+  metaKey: string
+): Promise<{ status: SyncStatus; targetExists: boolean; targetLastWriteTime?: Date }> {
+  const sourceHash = await fileSha256(sourceFile);
+  if (!(await exists(targetFile))) {
+    return { status: "copied", targetExists: false };
+  }
+
+  const targetFileStat = await stat(targetFile);
+  const targetHash = await fileSha256(targetFile);
+  if (sourceHash === targetHash) {
+    return { status: "unchanged", targetExists: true, targetLastWriteTime: targetFileStat.mtime };
+  }
+
+  const existingRecord = meta.records[metaKey];
+  if (existingRecord?.lastSyncedHash && targetHash === existingRecord.lastSyncedHash) {
+    return { status: "updated", targetExists: true, targetLastWriteTime: targetFileStat.mtime };
+  }
+
+  return { status: "conflict", targetExists: true, targetLastWriteTime: targetFileStat.mtime };
 }
 
 async function syncSessionFile(
@@ -332,16 +527,183 @@ export async function planSyncSession(options: SyncSessionOptions): Promise<Sync
     return { source, target, projectKey, sourceProjectDir, targetProjectDir, sessionFiles: [], syncAll: parsed.syncAll };
   }
 
-  const entries = await readdir(sourceProjectDir, { withFileTypes: true });
-  const jsonlFiles = entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-    .map((entry) => path.join(sourceProjectDir, entry.name))
-    .sort((a, b) => a.localeCompare(b));
-
-  const sessionFiles = await Promise.all(jsonlFiles.map(getSessionDisplayInfo));
-  sessionFiles.sort((a, b) => b.lastWriteTime.getTime() - a.lastWriteTime.getTime());
+  const sessionFiles = await getProjectSessionFiles(sourceProjectDir);
 
   return { source, target, projectKey, sourceProjectDir, targetProjectDir, sessionFiles, syncAll: parsed.syncAll };
+}
+
+export async function listSessionProjects(options: { sourceName: string; targetName: string; context?: PathContext }): Promise<SessionProjectListResult> {
+  const source = await resolveConfigDir(options.sourceName, { allowMain: true, context: options.context });
+  const target = await resolveConfigDir(options.targetName, { allowMain: true, context: options.context });
+  if (source.dir.toLowerCase() === target.dir.toLowerCase()) {
+    throw new CcpError("Source and target must be different profiles.");
+  }
+
+  const [sourceProjects, targetProjects] = await Promise.all([
+    listProjectsInConfig(source.dir),
+    listProjectsInConfig(target.dir)
+  ]);
+  const targetKeys = new Set(targetProjects.map((project) => project.projectKey));
+
+  return {
+    source,
+    target,
+    sourceProjects: sourceProjects.map((project) => ({ ...project, matchedInTarget: targetKeys.has(project.projectKey) })),
+    targetProjects
+  };
+}
+
+export async function scanSessionProject(options: {
+  sourceName: string;
+  targetName: string;
+  projectKey: string;
+  context?: PathContext;
+}): Promise<SessionProjectScanResult> {
+  const source = await resolveConfigDir(options.sourceName, { allowMain: true, context: options.context });
+  const target = await resolveConfigDir(options.targetName, { allowMain: true, context: options.context });
+  if (source.dir.toLowerCase() === target.dir.toLowerCase()) {
+    throw new CcpError("Source and target must be different profiles.");
+  }
+
+  const projectKey = assertSafeProjectKey(options.projectKey);
+
+  const sourceProjectDir = projectDirInConfig(source.dir, projectKey);
+  const targetProjectDir = projectDirInConfig(target.dir, projectKey);
+  const sessionFiles = await getProjectSessionFiles(sourceProjectDir);
+  const meta = await readSyncMeta(syncMetaPath(target.dir, projectKey), projectKey);
+  const sessions = await Promise.all(sessionFiles.map(async (session): Promise<SessionSyncDiffInfo> => {
+    const targetFile = path.join(targetProjectDir, session.name);
+    const metaKey = `${source.name}|${session.name}`;
+    const diff = await getSessionDiffStatus(session.filePath, targetFile, meta, metaKey);
+    return {
+      ...session,
+      status: diff.status,
+      hasAssets: await exists(path.join(sourceProjectDir, session.sessionId)),
+      targetExists: diff.targetExists,
+      targetLastWriteTime: diff.targetLastWriteTime
+    };
+  }));
+
+  const counts: SyncCounts = { copied: 0, updated: 0, unchanged: 0, overwritten: 0, conflict: 0 };
+  for (const session of sessions) {
+    counts[session.status]++;
+  }
+
+  return {
+    source,
+    target,
+    projectKey,
+    sourceProjectDir,
+    targetProjectDir,
+    targetProjectExists: await exists(targetProjectDir),
+    sessions,
+    counts
+  };
+}
+
+export async function deleteSessionProject(options: {
+  sourceName: string;
+  projectKey: string;
+  context?: PathContext;
+}): Promise<DeleteSessionProjectResult> {
+  const source = await resolveConfigDir(options.sourceName, { allowMain: true, context: options.context });
+  const projectKey = assertSafeProjectKey(options.projectKey);
+  const projectDir = projectDirInConfig(source.dir, projectKey);
+  const removed = await exists(projectDir);
+  await rm(projectDir, { recursive: true, force: true });
+  return {
+    sourceName: source.name,
+    projectKey,
+    projectDir,
+    removed
+  };
+}
+
+export async function deleteSessionProjectSession(options: {
+  sourceName: string;
+  projectKey: string;
+  sessionName: string;
+  context?: PathContext;
+}): Promise<DeleteSessionProjectSessionResult> {
+  const source = await resolveConfigDir(options.sourceName, { allowMain: true, context: options.context });
+  const projectKey = assertSafeProjectKey(options.projectKey);
+  const sessionName = assertSafeSessionName(options.sessionName);
+  const projectDir = projectDirInConfig(source.dir, projectKey);
+  const sessionFile = sessionFileInProject(projectDir, sessionName);
+  const assetDir = resolveChildPath(projectDir, path.join(projectDir, path.basename(sessionName, ".jsonl")), "Session asset path");
+  const removedSession = await exists(sessionFile);
+  const removedAssets = await exists(assetDir);
+
+  await rm(sessionFile, { force: true });
+  await rm(assetDir, { recursive: true, force: true });
+
+  return {
+    sourceName: source.name,
+    projectKey,
+    projectDir,
+    sessionName,
+    sessionFile,
+    assetDir,
+    removedSession,
+    removedAssets
+  };
+}
+
+export async function syncSessionProject(options: {
+  sourceName: string;
+  targetName: string;
+  projectKey: string;
+  selections: SyncProjectSessionSelection[];
+  context?: PathContext;
+}): Promise<SyncSessionProjectResult> {
+  const scan = await scanSessionProject(options);
+  const selectionsByName = new Map(options.selections.map((selection) => [selection.name, selection.action]));
+  const selectedSessions = scan.sessions.filter((session) => selectionsByName.has(session.name));
+  const counts: ProjectSyncCounts = { copied: 0, updated: 0, unchanged: 0, overwritten: 0, conflict: 0, skipped: 0 };
+  const conflicts: string[] = [];
+  const skipped: string[] = [];
+
+  await mkdir(scan.targetProjectDir, { recursive: true });
+  const metaPath = syncMetaPath(scan.target.dir, scan.projectKey);
+  const meta = await readSyncMeta(metaPath, scan.projectKey);
+
+  for (const session of [...selectedSessions].sort((a, b) => a.name.localeCompare(b.name))) {
+    const action = selectionsByName.get(session.name) ?? "skip";
+    if (action === "skip") {
+      counts.skipped++;
+      skipped.push(session.name);
+      continue;
+    }
+
+    const targetFile = path.join(scan.targetProjectDir, session.name);
+    const metaKey = `${scan.source.name}|${session.name}`;
+    let status = await syncSessionFile(session.filePath, targetFile, meta, metaKey, scan.source.name, action === "overwrite");
+
+    if (status === "conflict" && action === "overwrite") {
+      status = await syncSessionFile(session.filePath, targetFile, meta, metaKey, scan.source.name, true);
+    }
+
+    counts[status]++;
+    if (status !== "conflict") {
+      await copySessionAssetsMissingOnly(scan.sourceProjectDir, scan.targetProjectDir, session.sessionId);
+    } else {
+      conflicts.push(session.name);
+    }
+  }
+
+  await writeSyncMeta(metaPath, meta);
+
+  return {
+    projectKey: scan.projectKey,
+    sourceName: scan.source.name,
+    targetName: scan.target.name,
+    sourceProjectDir: scan.sourceProjectDir,
+    targetProjectDir: scan.targetProjectDir,
+    selected: selectedSessions.length,
+    counts,
+    conflicts,
+    skipped
+  };
 }
 
 export async function syncSessions(options: SyncSessionOptions): Promise<SyncSessionResult | undefined> {

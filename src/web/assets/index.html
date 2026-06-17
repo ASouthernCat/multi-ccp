@@ -19,6 +19,7 @@
         </section>
         <section class="top-actions">
           <button class="ghost icon-action icon-only" id="themeToggle" type="button" aria-label="切换深色" title="切换深色"><span class="ui-icon" data-icon="moon"></span></button>
+          <button class="ghost icon-action" id="topSyncWorkspace" type="button" title="打开 Sync Workspace"><span class="ui-icon" data-icon="history"></span><span>Sync</span></button>
           <button class="ghost icon-action icon-only" id="refreshBtn" type="button" aria-label="刷新" title="刷新"><span class="ui-icon" data-icon="refresh"></span></button>
           <button class="primary icon-action" id="newProfileBtn" type="button"><span class="ui-icon" data-icon="plus"></span><span>New</span></button>
         </section>
@@ -104,6 +105,14 @@
 
     <dialog id="ccrDialog" class="modal">
       <div class="modal-card ccr-card" id="ccrPanel"></div>
+    </dialog>
+
+    <dialog id="syncDialog" class="modal">
+      <div class="modal-card sync-card" id="syncPanel"></div>
+    </dialog>
+
+    <dialog id="syncConfirmDialog" class="modal">
+      <div class="modal-card sync-confirm-card" id="syncConfirmPanel"></div>
     </dialog>
 
     <div class="toast-region" id="toastRegion"></div>

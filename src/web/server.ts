@@ -19,6 +19,7 @@ import {
 import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, installCcr, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
 import { createApiProfileFromPreset, createCcrProfileFromPreset, listProfilePresets } from "../core/presets.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
+import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, scanSessionProject, syncSessionProject, type SyncProjectSessionSelection } from "../core/sessions.js";
 import type { ClaudeSettings, ProfileMeta, ProfileSummary } from "../core/types.js";
 
 export interface UiServerOptions {
@@ -456,6 +457,61 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (pathname === "/api/activity") {
       if (req.method !== "GET") return methodNotAllowed(res);
       return json(res, 200, { activity });
+    }
+
+    if (pathname === "/api/sessions/projects") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, string>>(req);
+      return json(res, 200, await listSessionProjects({
+        sourceName: body.sourceName ?? "",
+        targetName: body.targetName ?? ""
+      }));
+    }
+
+    if (pathname === "/api/sessions/scan") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, string>>(req);
+      return json(res, 200, await scanSessionProject({
+        sourceName: body.sourceName ?? "",
+        targetName: body.targetName ?? "",
+        projectKey: body.projectKey ?? ""
+      }));
+    }
+
+    if (pathname === "/api/sessions/sync") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<{ sourceName?: string; targetName?: string; projectKey?: string; selections?: SyncProjectSessionSelection[] }>(req);
+      const result = await syncSessionProject({
+        sourceName: body.sourceName ?? "",
+        targetName: body.targetName ?? "",
+        projectKey: body.projectKey ?? "",
+        selections: Array.isArray(body.selections) ? body.selections : []
+      });
+      addActivity("success", `Synced sessions ${result.sourceName} -> ${result.targetName} for ${result.projectKey}.`);
+      return json(res, 200, result);
+    }
+
+    if (pathname === "/api/sessions/project/delete") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<{ profileName?: string; sourceName?: string; projectKey?: string }>(req);
+      const result = await deleteSessionProject({
+        sourceName: body.profileName ?? body.sourceName ?? "",
+        projectKey: body.projectKey ?? ""
+      });
+      addActivity("success", `Deleted session project ${result.sourceName}:${result.projectKey}.`);
+      return json(res, 200, result);
+    }
+
+    if (pathname === "/api/sessions/session/delete") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<{ sourceName?: string; projectKey?: string; sessionName?: string }>(req);
+      const result = await deleteSessionProjectSession({
+        sourceName: body.sourceName ?? "",
+        projectKey: body.projectKey ?? "",
+        sessionName: body.sessionName ?? ""
+      });
+      addActivity("success", `Deleted source session ${result.sourceName}:${result.projectKey}/${result.sessionName}.`);
+      return json(res, 200, result);
     }
 
     if (pathname === "/api/ccr/status") {

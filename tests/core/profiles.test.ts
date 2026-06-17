@@ -1,16 +1,25 @@
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
-import { parseSelectionText, syncSessions } from "../../src/core/sessions.js";
+import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, parseSelectionText, scanSessionProject, syncSessionProject, syncSessions } from "../../src/core/sessions.js";
 import { ensureCcrProfileGateway } from "../../src/core/ccr.js";
 import { createApiProfileFromPreset, createCcrProfileFromPreset } from "../../src/core/presets.js";
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-test-"));
   return { homeDir };
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe("profiles", () => {
@@ -229,6 +238,97 @@ describe("profiles", () => {
     expect(result?.counts.copied).toBe(1);
     expect(await readFile(path.join(target.dir, "projects", projectKey, sessionId + ".jsonl"), "utf8")).toContain("hello sync");
     expect(await readFile(path.join(target.dir, "projects", projectKey, sessionId, "asset.txt"), "utf8")).toBe("asset");
+  });
+
+  it("scans profile projects and syncs selected sessions with overwrite choices", async () => {
+    const context = await createContext();
+    const cwd = path.join(context.homeDir, "project");
+    const projectKey = getProjectKey(cwd);
+    const mainDir = path.join(context.homeDir, ".claude");
+    const target = await createLoginProfile({ name: "target" }, context);
+    const sourceProjectDir = path.join(mainDir, "projects", projectKey);
+    const targetProjectDir = path.join(target.dir, "projects", projectKey);
+
+    await mkdir(path.join(sourceProjectDir, "new-session"), { recursive: true });
+    await mkdir(targetProjectDir, { recursive: true });
+    await writeFile(
+      path.join(sourceProjectDir, "new-session.jsonl"),
+      JSON.stringify({ type: "user", message: { content: "new source" } }) + "\n",
+      "utf8"
+    );
+    await writeFile(path.join(sourceProjectDir, "new-session", "asset.txt"), "asset", "utf8");
+    await writeFile(
+      path.join(sourceProjectDir, "conflict-session.jsonl"),
+      JSON.stringify({ type: "user", message: { content: "source conflict" } }) + "\n",
+      "utf8"
+    );
+    await writeFile(
+      path.join(targetProjectDir, "conflict-session.jsonl"),
+      JSON.stringify({ type: "user", message: { content: "target conflict" } }) + "\n",
+      "utf8"
+    );
+
+    const projects = await listSessionProjects({ sourceName: "main", targetName: "target", context });
+    expect(projects.sourceProjects[0].projectKey).toBe(projectKey);
+    expect(projects.sourceProjects[0].matchedInTarget).toBe(true);
+
+    const scan = await scanSessionProject({ sourceName: "main", targetName: "target", projectKey, context });
+    expect(scan.counts.copied).toBe(1);
+    expect(scan.counts.conflict).toBe(1);
+
+    const result = await syncSessionProject({
+      sourceName: "main",
+      targetName: "target",
+      projectKey,
+      context,
+      selections: [
+        { name: "new-session.jsonl", action: "sync" },
+        { name: "conflict-session.jsonl", action: "overwrite" }
+      ]
+    });
+
+    expect(result.counts.copied).toBe(1);
+    expect(result.counts.overwritten).toBe(1);
+    expect(await readFile(path.join(targetProjectDir, "new-session.jsonl"), "utf8")).toContain("new source");
+    expect(await readFile(path.join(targetProjectDir, "new-session", "asset.txt"), "utf8")).toBe("asset");
+    expect(await readFile(path.join(targetProjectDir, "conflict-session.jsonl"), "utf8")).toContain("source conflict");
+  });
+
+  it("deletes source session projects and individual source sessions", async () => {
+    const context = await createContext();
+    const cwd = path.join(context.homeDir, "project");
+    const projectKey = getProjectKey(cwd);
+    const mainDir = path.join(context.homeDir, ".claude");
+    const projectDir = path.join(mainDir, "projects", projectKey);
+
+    await mkdir(path.join(projectDir, "remove-session"), { recursive: true });
+    await writeFile(path.join(projectDir, "remove-session.jsonl"), "remove session\n", "utf8");
+    await writeFile(path.join(projectDir, "remove-session", "asset.txt"), "asset", "utf8");
+    await writeFile(path.join(projectDir, "keep-session.jsonl"), "keep session\n", "utf8");
+
+    const removedSession = await deleteSessionProjectSession({
+      sourceName: "main",
+      projectKey,
+      sessionName: "remove-session.jsonl",
+      context
+    });
+
+    expect(removedSession.removedSession).toBe(true);
+    expect(removedSession.removedAssets).toBe(true);
+    expect(await pathExists(path.join(projectDir, "remove-session.jsonl"))).toBe(false);
+    expect(await pathExists(path.join(projectDir, "remove-session"))).toBe(false);
+    expect(await readFile(path.join(projectDir, "keep-session.jsonl"), "utf8")).toContain("keep session");
+
+    await expect(deleteSessionProjectSession({
+      sourceName: "main",
+      projectKey,
+      sessionName: "../keep-session.jsonl",
+      context
+    })).rejects.toThrow("Invalid session name");
+
+    const removedProject = await deleteSessionProject({ sourceName: "main", projectKey, context });
+    expect(removedProject.removed).toBe(true);
+    expect(await pathExists(projectDir)).toBe(false);
   });
 
   it("rejects invalid profile names", async () => {
