@@ -1,5 +1,5 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
 import { CcpError } from "./errors.js";
@@ -301,8 +301,27 @@ export function getCcrPresetDir(name: string, context: PathContext = {}): string
   return path.join(getCcrPresetRoot(context), name);
 }
 
+export function getCcrPresetManifestPath(name: string, context: PathContext = {}): string {
+  return path.join(getCcrPresetDir(name, context), "manifest.json");
+}
+
+export function getCcrPidPath(context: PathContext = {}): string {
+  return path.join(getClaudeCodeRouterDir(context), ".claude-code-router.pid");
+}
+
 export async function getCcrPresetEndpoint(name: string, context: PathContext = {}): Promise<string> {
   return `${await getCcrEndpointFromConfig(context)}/preset/${name}`;
+}
+
+async function getFileMtimeMs(filePath: string): Promise<number | undefined> {
+  try {
+    return (await stat(filePath)).mtimeMs;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 export function getCcrRouteChoices(config?: CcrConfig): string[] {
@@ -330,6 +349,107 @@ function cloneJson<T>(value: T): T {
 
 function normalizeUrl(value: string): string {
   return value.trim().replace(/\/+$/, "");
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function routeExists(config: CcrConfig, route: string): boolean {
+  const [providerName, modelName] = route.split(",", 2).map((item) => item.trim());
+  if (!providerName || !modelName) {
+    return false;
+  }
+
+  const provider = config.Providers?.find((item) => item.name === providerName);
+  return Boolean(provider?.models?.includes(modelName));
+}
+
+function ensureRouterRoute(config: CcrConfig, route: string): boolean {
+  let changed = false;
+  let router: Record<string, unknown>;
+  if (isPlainRecord(config.Router)) {
+    router = config.Router;
+  } else {
+    router = {};
+    config.Router = router;
+    changed = true;
+  }
+
+  const routeKeys = ["default", "background", "think", "longContext", "webSearch"] as const;
+  for (const key of routeKeys) {
+    const current = typeof router[key] === "string" ? router[key].trim() : "";
+    if (!current || !routeExists(config, current)) {
+      router[key] = route;
+      changed = true;
+    }
+  }
+
+  if (typeof router.longContextThreshold !== "number") {
+    const threshold = Number(router.longContextThreshold ?? 60000);
+    router.longContextThreshold = Number.isFinite(threshold) ? threshold : 60000;
+    changed = true;
+  }
+
+  if (router.image !== undefined && typeof router.image === "string" && router.image.trim() && !routeExists(config, router.image)) {
+    router.image = "";
+    changed = true;
+  }
+
+  return changed;
+}
+
+async function readCcrPid(context: PathContext = {}): Promise<number | undefined> {
+  let raw = "";
+  try {
+    raw = await readFile(getCcrPidPath(context), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+
+  const pid = Number(raw.trim());
+  return Number.isInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+function parseEpochMs(output: string): number | undefined {
+  const value = Number(output.trim());
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function parseDateMs(output: string): number | undefined {
+  const value = Date.parse(output.trim());
+  return Number.isFinite(value) ? value : undefined;
+}
+
+async function getProcessStartTimeMs(pid: number): Promise<number | undefined> {
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return undefined;
+  }
+
+  if (process.platform === "win32") {
+    const command = [
+      "$p = Get-CimInstance Win32_Process -Filter \"ProcessId = " + pid + "\" -ErrorAction SilentlyContinue",
+      "if ($p) { [DateTimeOffset]$p.CreationDate | ForEach-Object { $_.ToUnixTimeMilliseconds() } }"
+    ].join("; ");
+    const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", command], { encoding: "utf8" });
+    if (result.status !== 0) {
+      return undefined;
+    }
+    return parseEpochMs(result.stdout);
+  }
+
+  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+  if (result.status !== 0) {
+    return undefined;
+  }
+  return parseDateMs(result.stdout);
 }
 
 export async function ensureCcrProviderTemplate(
@@ -381,16 +501,88 @@ export async function ensureCcrProviderTemplate(
     changed = true;
   }
 
+  const route = `${providerName},${model}`;
+  if (ensureRouterRoute(config, route)) {
+    changed = true;
+  }
+
   if (changed) {
     await mkdir(getClaudeCodeRouterDir(context), { recursive: true });
     await writeFile(configPath, JSON.stringify(config, null, 2) + "\n", "utf8");
   }
 
-  return { changed, route: `${providerName},${model}`, providerName };
+  return { changed, route, providerName };
+}
+
+export async function reloadCcrRuntimeWhenChanged(
+  changed: boolean,
+  context: PathContext = {},
+  options: {
+    testEndpoint?: typeof testTcpEndpoint;
+    restart?: typeof restartCcrService;
+    allowCustomHomeDir?: boolean;
+  } = {}
+): Promise<boolean> {
+  if (!changed) {
+    return false;
+  }
+  if (context.homeDir && !options.allowCustomHomeDir) {
+    return false;
+  }
+
+  const endpoint = await getCcrEndpointFromConfig(context);
+  const testEndpoint = options.testEndpoint ?? testTcpEndpoint;
+  if (!(await testEndpoint(endpoint))) {
+    return false;
+  }
+
+  console.log("CCR config changed. Restarting CCR...");
+  const restart = options.restart ?? restartCcrService;
+  await restart(context);
+  return true;
+}
+
+export async function reloadCcrRuntimeIfPresetOutdated(
+  presetName: string,
+  context: PathContext = {},
+  options: {
+    testEndpoint?: typeof testTcpEndpoint;
+    restart?: typeof restartCcrService;
+    getProcessStartTimeMs?: (pid: number) => Promise<number | undefined>;
+    allowCustomHomeDir?: boolean;
+  } = {}
+): Promise<boolean> {
+  if (context.homeDir && !options.allowCustomHomeDir) {
+    return false;
+  }
+
+  const endpoint = await getCcrEndpointFromConfig(context);
+  const testEndpoint = options.testEndpoint ?? testTcpEndpoint;
+  if (!(await testEndpoint(endpoint))) {
+    return false;
+  }
+
+  const [presetMtimeMs, pid] = await Promise.all([
+    getFileMtimeMs(getCcrPresetManifestPath(presetName, context)),
+    readCcrPid(context)
+  ]);
+  if (presetMtimeMs === undefined || pid === undefined) {
+    return false;
+  }
+
+  const processStartTimeMs = await (options.getProcessStartTimeMs ?? getProcessStartTimeMs)(pid);
+  if (processStartTimeMs === undefined || presetMtimeMs <= processStartTimeMs) {
+    return false;
+  }
+
+  console.log(`CCR preset '${presetName}' changed after CCR started. Restarting CCR...`);
+  const restart = options.restart ?? restartCcrService;
+  await restart(context);
+  return true;
 }
 
 function newCcrRouterForRoute(config: CcrConfig, route: string): Record<string, unknown> {
-  const router = config.Router ?? {};
+  const router = isPlainRecord(config.Router) ? config.Router : {};
   return {
     default: route,
     background: route,
@@ -431,7 +623,7 @@ export async function ensureCcrPreset(profileName: string, route: string, contex
   };
 
   const presetDir = getCcrPresetDir(profileName, context);
-  const manifestPath = path.join(presetDir, "manifest.json");
+  const manifestPath = getCcrPresetManifestPath(profileName, context);
   const nextJson = JSON.stringify(manifest, null, 2);
   let currentJson = "";
   try {
@@ -521,9 +713,10 @@ export async function ensureCcrProfileGateway(
 
   const rootEndpoint = await getCcrEndpointFromConfig(context);
   let running = await testTcpEndpoint(rootEndpoint);
-  if (presetChanged && running) {
-    console.log("CCR preset changed. Restarting CCR...");
-    await restartCcrService(context);
+  if (await reloadCcrRuntimeWhenChanged(presetChanged, context)) {
+    running = await testTcpEndpoint(rootEndpoint);
+  }
+  if (!presetChanged && running && await reloadCcrRuntimeIfPresetOutdated(presetName, context)) {
     running = await testTcpEndpoint(rootEndpoint);
   }
 

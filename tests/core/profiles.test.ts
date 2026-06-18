@@ -1,11 +1,12 @@
-import { mkdir, mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, parseSelectionText, scanSessionProject, syncSessionProject, syncSessions } from "../../src/core/sessions.js";
-import { ensureCcrProfileGateway } from "../../src/core/ccr.js";
+import { removeProfileDir } from "../../src/core/settings.js";
+import { ensureCcrProfileGateway, reloadCcrRuntimeIfPresetOutdated, reloadCcrRuntimeWhenChanged } from "../../src/core/ccr.js";
 import { createApiProfileFromPreset, createCcrProfileFromPreset } from "../../src/core/presets.js";
 
 async function createContext() {
@@ -128,11 +129,104 @@ describe("profiles", () => {
         models: ["gpt-5.5"]
       }
     ]);
+    expect(ccrConfig.Router).toMatchObject({
+      default: "aicodemirror,gpt-5.5",
+      background: "aicodemirror,gpt-5.5",
+      think: "aicodemirror,gpt-5.5",
+      longContext: "aicodemirror,gpt-5.5",
+      longContextThreshold: 60000,
+      webSearch: "aicodemirror,gpt-5.5"
+    });
 
     const manifest = JSON.parse(
       await readFile(path.join(context.homeDir, ".claude-code-router", "presets", "ccr-gpt", "manifest.json"), "utf8")
     );
     expect(manifest.Router.default).toBe("aicodemirror,gpt-5.5");
+  });
+
+  it("repairs invalid CCR router arrays when adding provider templates", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    await mkdir(ccrDir, { recursive: true });
+    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ Router: [] }), "utf8");
+
+    await createCcrProfileFromPreset({ presetId: "ccr-gpt", name: "ccrPresetRepairsRouter", providerApiKey: "" }, context);
+
+    const ccrConfig = JSON.parse(await readFile(path.join(ccrDir, "config.json"), "utf8"));
+    expect(Array.isArray(ccrConfig.Router)).toBe(false);
+    expect(ccrConfig.Router).toMatchObject({
+      default: "aicodemirror,gpt-5.5",
+      background: "aicodemirror,gpt-5.5",
+      think: "aicodemirror,gpt-5.5",
+      longContext: "aicodemirror,gpt-5.5",
+      longContextThreshold: 60000,
+      webSearch: "aicodemirror,gpt-5.5"
+    });
+  });
+
+  it("keeps existing usable CCR router bindings when adding provider templates", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    await mkdir(ccrDir, { recursive: true });
+    await writeFile(
+      path.join(ccrDir, "config.json"),
+      JSON.stringify({
+        HOST: "127.0.0.1",
+        PORT: 3456,
+        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-4.1"] }],
+        Router: { default: "openai,gpt-4.1", longContextThreshold: 12345 }
+      }),
+      "utf8"
+    );
+
+    await createCcrProfileFromPreset({ presetId: "ccr-gpt", name: "ccrPresetKeepsRouter", providerApiKey: "" }, context);
+
+    const ccrConfig = JSON.parse(await readFile(path.join(ccrDir, "config.json"), "utf8"));
+    expect(ccrConfig.Router.default).toBe("openai,gpt-4.1");
+    expect(ccrConfig.Router.longContextThreshold).toBe(12345);
+    expect(ccrConfig.Router.background).toBe("aicodemirror,gpt-5.5");
+    expect(ccrConfig.Providers.map((provider: { name: string }) => provider.name)).toEqual(["openai", "aicodemirror"]);
+  });
+
+  it("restarts a running CCR service after config changes", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    await mkdir(ccrDir, { recursive: true });
+    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ PORT: 3456, Providers: [] }), "utf8");
+    const testEndpoint = vi.fn().mockResolvedValue(true);
+    const restart = vi.fn().mockResolvedValue(undefined);
+
+    await expect(reloadCcrRuntimeWhenChanged(true, context, { testEndpoint, restart, allowCustomHomeDir: true })).resolves.toBe(true);
+
+    expect(restart).toHaveBeenCalledOnce();
+    expect(testEndpoint).toHaveBeenCalledWith("http://127.0.0.1:3456");
+  });
+
+  it("restarts a running CCR service when a preset was written after service start", async () => {
+    const context = await createContext();
+    const ccrDir = path.join(context.homeDir, ".claude-code-router");
+    const presetDir = path.join(ccrDir, "presets", "ccrLate");
+    await mkdir(presetDir, { recursive: true });
+    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ PORT: 3456, Providers: [] }), "utf8");
+    await writeFile(path.join(ccrDir, ".claude-code-router.pid"), "12345", "utf8");
+    await writeFile(path.join(presetDir, "manifest.json"), JSON.stringify({ name: "ccrLate" }), "utf8");
+    const serviceStart = new Date("2026-01-01T00:00:00.000Z");
+    const presetWrite = new Date("2026-01-01T00:00:05.000Z");
+    await utimes(path.join(presetDir, "manifest.json"), presetWrite, presetWrite);
+    const testEndpoint = vi.fn().mockResolvedValue(true);
+    const restart = vi.fn().mockResolvedValue(undefined);
+    const getProcessStartTimeMs = vi.fn().mockResolvedValue(serviceStart.getTime());
+
+    await expect(reloadCcrRuntimeIfPresetOutdated("ccrLate", context, {
+      testEndpoint,
+      restart,
+      getProcessStartTimeMs,
+      allowCustomHomeDir: true
+    })).resolves.toBe(true);
+
+    expect(restart).toHaveBeenCalledOnce();
+    expect(getProcessStartTimeMs).toHaveBeenCalledWith(12345);
+    expect(testEndpoint).toHaveBeenCalledWith("http://127.0.0.1:3456");
   });
 
   it("lists profiles sorted by name", async () => {
@@ -344,5 +438,37 @@ describe("profiles", () => {
 
     await removeProfile("removeMe", context);
     await expect(resolveConfigDir("removeMe", { allowMain: false, context })).rejects.toThrow("does not exist");
+  });
+
+  it("retries transient Windows delete locks when removing profile directories", async () => {
+    const busy = Object.assign(new Error("busy"), { code: "EBUSY", path: "locked-file" });
+    const remove = vi.fn()
+      .mockRejectedValueOnce(busy)
+      .mockResolvedValueOnce(undefined);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await removeProfileDir("locked-profile", { remove, sleep, maxAttempts: 2 });
+
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(250);
+  });
+
+  it("preserves the original transient delete error after retries are exhausted", async () => {
+    const denied = Object.assign(new Error("denied"), { code: "EACCES", path: "locked-file" });
+    const remove = vi.fn().mockRejectedValue(denied);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+    let thrown: unknown;
+
+    try {
+      await removeProfileDir("locked-profile", { remove, sleep, maxAttempts: 2 });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(Error);
+    expect((thrown as Error).message).toContain("locked-file");
+    expect((thrown as Error & { cause?: unknown }).cause).toBe(denied);
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(250);
   });
 });

@@ -48,6 +48,41 @@ export async function writeMeta(profileDir: string, meta: ProfileMeta): Promise<
   await writeJsonFile(getMetaPath(profileDir), meta);
 }
 
-export async function removeProfileDir(profileDir: string): Promise<void> {
-  await rm(profileDir, { recursive: true, force: true });
+function isTransientRemoveError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException).code;
+  return code === "EBUSY" || code === "EACCES" || code === "ENOTEMPTY" || code === "EPERM";
+}
+
+interface RemoveProfileDirOptions {
+  remove?: typeof rm;
+  sleep?: (ms: number) => Promise<void>;
+  maxAttempts?: number;
+}
+
+export async function removeProfileDir(profileDir: string, options: RemoveProfileDirOptions = {}): Promise<void> {
+  const remove = options.remove ?? rm;
+  const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const maxAttempts = options.maxAttempts ?? (process.platform === "win32" ? 8 : 3);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await remove(profileDir, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!isTransientRemoveError(error) || attempt === maxAttempts) {
+        break;
+      }
+      await sleep(attempt * 250);
+    }
+  }
+
+  const error = lastError as NodeJS.ErrnoException;
+  if (isTransientRemoveError(error)) {
+    throw new CcpError(
+      `Failed to delete profile because a file is still in use: ${error.path ?? profileDir}. Close any Claude Code, git, or plugin processes using this profile and try again.`,
+      { cause: error }
+    );
+  }
+  throw lastError;
 }
