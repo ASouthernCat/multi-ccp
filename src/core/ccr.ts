@@ -6,6 +6,12 @@ import { CcpError } from "./errors.js";
 import { getClaudeCodeRouterConfigPath, getClaudeCodeRouterDir, type PathContext } from "./paths.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "./settings.js";
 
+/** Pinned to CCR 2.x. CCR 3.x is a rewrite and is not compatible with multi-ccp. */
+export const CCR_NPM_PACKAGE = "@musistudio/claude-code-router";
+export const CCR_PINNED_VERSION = "2.0.0";
+export const CCR_INSTALL_SPEC = `${CCR_NPM_PACKAGE}@${CCR_PINNED_VERSION}`;
+export const CCR_INSTALL_COMMAND = `npm install -g ${CCR_INSTALL_SPEC}`;
+
 export interface CcrProvider {
   name?: string;
   api_base_url?: string;
@@ -215,7 +221,7 @@ export async function installCcr(): Promise<number> {
   }
 
   return new Promise((resolve, reject) => {
-    const child = spawnCli("npm", ["install", "-g", "@musistudio/claude-code-router"]);
+    const child = spawnCli("npm", ["install", "-g", CCR_INSTALL_SPEC]);
     child.on("error", (error: Error) => reject(new CcpError(`Failed to install CCR: ${error.message}`)));
     child.on("exit", (code: number | null) => resolve(code ?? 0));
   });

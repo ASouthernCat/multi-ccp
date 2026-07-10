@@ -236,6 +236,8 @@ ccp ccr ui
 ccp ccr model
 ```
 
+`ccp ccr install` 会固定安装 `@musistudio/claude-code-router@2.0.0`。CCR 3.x 是一次不兼容重写，当前 multi-ccp 不支持。
+
 历史会话同步命令：
 
 ```bash

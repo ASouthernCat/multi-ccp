@@ -236,6 +236,8 @@ ccp ccr ui
 ccp ccr model
 ```
 
+`ccp ccr install` pins CCR to `@musistudio/claude-code-router@2.0.0`. CCR 3.x is a rewrite and is not compatible with multi-ccp.
+
 Session sync commands:
 
 ```bash

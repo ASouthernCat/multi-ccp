@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9
+
+- `ccp ccr install` 固定安装 `@musistudio/claude-code-router@2.0.0`，避免默认装到不兼容的 CCR 3.x。
+
 ## 0.1.8
 
 - 修复 CCR `Router` 为数组等非法结构时无法写入的问题，补全缺失的路由绑定（`default`/`background`/`think`/`longContext`/`webSearch`），保留已有的可用绑定与 `longContextThreshold`。

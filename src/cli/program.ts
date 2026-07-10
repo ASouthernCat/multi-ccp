@@ -15,6 +15,7 @@ import {
 } from "../core/profiles.js";
 import { getSettingsPath } from "../core/settings.js";
 import {
+  CCR_INSTALL_COMMAND,
   getCcrRouteChoices,
   getCcrStatus,
   installCcr,
@@ -92,7 +93,7 @@ async function ensureCcrSetupForProfileCreation(options: { requireRoutes: boolea
   let status = await getCcrStatus();
   if (!status.installed) {
     console.log("CCR is required for this profile, but it is not installed.");
-    const ok = await confirm({ message: "Install CCR now? This runs: npm install -g @musistudio/claude-code-router", default: true });
+    const ok = await confirm({ message: `Install CCR now? This runs: ${CCR_INSTALL_COMMAND}`, default: true });
     if (!ok) {
       throw new CcpError("CCR is not installed. Run 'ccp ccr install' first.");
     }
