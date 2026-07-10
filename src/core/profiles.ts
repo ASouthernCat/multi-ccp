@@ -66,6 +66,7 @@ export async function resolveConfigDir(
     return { name: "main", dir, isMain: true };
   }
 
+  assertProfileName(name);
   const dir = getProfileDir(name, context);
   if (!(await exists(dir))) {
     throw new CcpError(`Profile '${name}' does not exist: ${dir}`);

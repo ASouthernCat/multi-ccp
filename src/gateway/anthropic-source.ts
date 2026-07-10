@@ -1,6 +1,9 @@
 import type {
   CanonicalContent,
   CanonicalMessage,
+  CanonicalOutputConfig,
+  CanonicalOutputFormat,
+  CanonicalReasoningEffort,
   CanonicalRequest,
   CanonicalTool,
   CanonicalToolChoice
@@ -20,12 +23,12 @@ const TOP_LEVEL_FIELDS = new Set([
   "stream",
   "tools",
   "tool_choice",
+  "output_config",
   "metadata"
 ]);
 
 const UNSUPPORTED_TOP_LEVEL_FIELDS = new Set([
   "context_management",
-  "output_config",
   "top_k",
   "container",
   "mcp_servers",
@@ -211,26 +214,36 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
   return result;
 }
 
-function parseMessages(value: unknown): CanonicalMessage[] {
+function parseMessages(value: unknown): { messages: CanonicalMessage[]; instructions: string[] } {
   if (!Array.isArray(value) || value.length === 0) {
     throw invalidRequest("messages: Expected a non-empty array.");
   }
 
-  return value.map((entry, index) => {
+  const messages: CanonicalMessage[] = [];
+  const instructions: string[] = [];
+  value.forEach((entry, index) => {
     const path = `messages[${index}]`;
     const message = requireObject(entry, path);
     rejectExtraFields(message, new Set(["role", "content"]), `${path}.`);
+    if (message.role === "system" || message.role === "developer") {
+      if (!("content" in message)) {
+        throw invalidRequest(`${path}.content: Field required.`);
+      }
+      instructions.push(...parseSystem(message.content));
+      return;
+    }
     if (message.role !== "user" && message.role !== "assistant") {
-      throw invalidRequest(`${path}.role: Expected user or assistant.`);
+      throw invalidRequest(`${path}.role: Expected user or assistant, received '${String(message.role)}'.`);
     }
     if (!("content" in message)) {
       throw invalidRequest(`${path}.content: Field required.`);
     }
-    return {
+    messages.push({
       role: message.role,
       content: parseMessageContent(message.content, message.role, `${path}.content`)
-    };
+    });
   });
+  return { messages, instructions };
 }
 
 function parseTools(value: unknown): CanonicalTool[] | undefined {
@@ -319,6 +332,50 @@ function parseStopSequences(value: unknown): string[] | undefined {
   return [...value] as string[];
 }
 
+const REASONING_EFFORTS = new Set<CanonicalReasoningEffort>([
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max"
+]);
+
+function parseOutputFormat(value: unknown): CanonicalOutputFormat {
+  const format = requireObject(value, "output_config.format");
+  rejectExtraFields(format, new Set(["type", "schema"]), "output_config.format.");
+  if (format.type !== "json_schema") {
+    throw invalidRequest(`output_config.format.type: Unsupported value '${String(format.type)}'.`);
+  }
+  return {
+    type: "json_schema",
+    schema: requireObject(format.schema, "output_config.format.schema")
+  };
+}
+
+function parseOutputConfig(value: unknown): CanonicalOutputConfig | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const outputConfig = requireObject(value, "output_config");
+  rejectExtraFields(outputConfig, new Set(["effort", "format"]), "output_config.");
+
+  let effort: CanonicalReasoningEffort | undefined;
+  if (outputConfig.effort !== undefined) {
+    const parsed = requireString(outputConfig.effort, "output_config.effort") as CanonicalReasoningEffort;
+    if (!REASONING_EFFORTS.has(parsed)) {
+      throw invalidRequest(`output_config.effort: Unsupported value '${parsed}'.`);
+    }
+    effort = parsed;
+  }
+  const format = outputConfig.format === undefined ? undefined : parseOutputFormat(outputConfig.format);
+  return {
+    ...(effort === undefined ? {} : { effort }),
+    ...(format === undefined ? {} : { format })
+  };
+}
+
 export function parseAnthropicMessagesRequest(input: unknown): CanonicalRequest {
   const request = requireObject(input, "request");
 
@@ -356,17 +413,20 @@ export function parseAnthropicMessagesRequest(input: unknown): CanonicalRequest 
   const temperature = parseOptionalSamplingNumber(request.temperature, "temperature");
   const topP = parseOptionalSamplingNumber(request.top_p, "top_p");
   const stop = parseStopSequences(request.stop_sequences);
+  const outputConfig = parseOutputConfig(request.output_config);
+  const parsedMessages = parseMessages(request.messages);
 
   return {
     clientModel: requireString(request.model, "model"),
-    system: parseSystem(request.system),
-    messages: parseMessages(request.messages),
+    system: [...parseSystem(request.system), ...parsedMessages.instructions],
+    messages: parsedMessages.messages,
     maxOutputTokens: maxTokens as number,
     ...(temperature === undefined ? {} : { temperature }),
     ...(topP === undefined ? {} : { topP }),
     ...(stop === undefined ? {} : { stop }),
     ...(tools === undefined ? {} : { tools }),
     ...(toolChoice === undefined ? {} : { toolChoice }),
+    ...(outputConfig === undefined ? {} : { outputConfig }),
     stream: request.stream === undefined ? false : requireBoolean(request.stream, "stream")
   };
 }

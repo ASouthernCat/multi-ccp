@@ -12,7 +12,11 @@ export async function runGatewayMain(): Promise<void> {
   const handle = createGatewayServer({
     context,
     registry: new GatewayRegistry(context),
-    instanceId: process.env.CCP_GATEWAY_INSTANCE_ID
+    instanceId: process.env.CCP_GATEWAY_INSTANCE_ID,
+    onRequestComplete: (entry) => {
+      if (!entry.profileName) return;
+      console.log(JSON.stringify({ event: "gateway_request", ...entry }));
+    }
   });
   await handle.listen({ host: config.host, port: config.port });
   console.log(`multi-ccp gateway listening at ${getGatewayEndpoint(config)} (${handle.instanceId})`);

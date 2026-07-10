@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,6 +18,7 @@ import { getGatewayEndpoint, readGatewayRuntimeConfig } from "../gateway/config.
 
 export const GATEWAY_SERVICE_NAME = "multi-ccp-gateway";
 export const GATEWAY_PROTOCOL_VERSION = 1;
+const DEFAULT_GATEWAY_LOG_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface GatewayRuntimeState {
   version: 1;
@@ -63,6 +64,7 @@ export interface GatewayLifecycleDeps {
   processExists?: (pid: number) => boolean;
   now?: () => number;
   processArgs?: () => { command: string; args: string[] };
+  maxLogBytes?: number;
 }
 
 export async function ensureBuiltinGatewayProfile(
@@ -156,10 +158,12 @@ export async function startGateway(
     const instanceId = (deps.randomId ?? randomUUID)();
     const processSpec = (deps.processArgs ?? resolveGatewayProcessArgs)();
     const logPath = getGatewayLogPath(context);
+    rotateGatewayLog(logPath, deps.maxLogBytes ?? DEFAULT_GATEWAY_LOG_MAX_BYTES);
     const logFd = openSync(logPath, "a");
     let child: ChildProcess;
     try {
       child = (deps.spawnProcess ?? spawn)(processSpec.command, processSpec.args, {
+        cwd: getGatewayDir(context),
         detached: true,
         windowsHide: true,
         stdio: ["ignore", logFd, logFd],
@@ -201,6 +205,17 @@ export async function startGateway(
     }
   } finally {
     await release();
+  }
+}
+
+function rotateGatewayLog(logPath: string, maxBytes: number): void {
+  try {
+    if (statSync(logPath).size < Math.max(1, maxBytes)) return;
+    const backupPath = `${logPath}.1`;
+    rmSync(backupPath, { force: true });
+    renameSync(logPath, backupPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
 }
 

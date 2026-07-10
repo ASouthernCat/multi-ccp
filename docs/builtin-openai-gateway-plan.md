@@ -794,7 +794,8 @@ Authorization: Bearer <localToken>
 |---|---|
 | thinking | 返回 400，message 必须包含字段名和 adaptive / unsupported 原因 |
 | context_management | 返回 400，不静默丢弃 |
-| output_config | 返回 400，不静默丢弃 |
+| output_config.effort | 保存到 Canonical IR，由 target compatibility 映射为 `reasoning_effort`、`output_config.effort` 或明确省略 |
+| output_config.format | 保存到 Canonical IR，映射为 OpenAI strict `response_format`、`output_config.format`，或在不支持时返回 400 |
 | top_k | 返回 400；OpenAI Chat Completions 没有等价标准字段 |
 | metadata | 仅保留安全的本地诊断字段，不转发到上游 |
 | 未知顶层字段 | 返回 400，并包含精确字段名 |
@@ -1102,6 +1103,7 @@ Anthropic：
 - OpenAI content 转 text block。
 - refusal 有文本时作为 text block 返回。
 - 每个 function tool_call 转成 tool_use block。
+- `tool_calls: null` 和 `function_call: null` 按未调用工具处理；非 null 的非法类型仍返回 api_error。
 - tool call 名称通过 request-local `targetToSource` map 恢复为 Claude Code 原始工具名。
 - tool call id 规范化为 Anthropic 接受的 `[A-Za-z0-9_-]+`；非法字符替换后附加摘要，避免不同原始 id 发生碰撞。
 - arguments 必须在响应返回前解析成 JSON object。
@@ -1188,6 +1190,7 @@ StreamState 是 canonical stream converter 的内部状态。Anthropic emitter �
 - 一个 OpenAI chunk 同时包含 delta 和 finish_reason 时，必须先处理 delta，再处理 finish。
 - choices 为空但包含 usage 的最终 chunk 是合法 chunk，不能当成无效响应。
 - 同一个 chunk 中多个不同 tool index 必须分别处理，不能只读取 tool_calls[0]。
+- `delta.tool_calls: null` 按无工具增量处理；已开始的工具调用在后续 chunk 中返回 `id/name/arguments: null` 时按该字段未更新处理。
 
 ### 16.4 文本 block
 
@@ -1374,6 +1377,7 @@ Claude Code 会根据部分上游 400 的错误文字自动禁用 thinking、无
 
 - 上游 SSE 中显式 error event：转换为 Anthropic error event，保留 message。
 - JSON/SSE 解析错误：发送 gateway 生成的 api_error。
+- HTTP 状态无法在流开始后修改，但内部请求日志必须把这类流式失败记录为 502，不能记录为成功 200。
 - 客户端断连：取消上游并内部记 499，不再写 error event。
 - incomplete stream：发送一次 api_error，不发送 message_stop。
 
@@ -1528,7 +1532,7 @@ Compatibility: OpenAI conservative defaults
 2. API Base URL 或完整 Chat Completions URL。
 3. API key。
 4. model。
-5. 是否进入高级兼容性设置。
+5. 选择现代 OpenAI Chat Completions、传统 OpenAI-compatible 或高级自定义映射。
 
 高级设置：
 
@@ -1538,6 +1542,8 @@ Compatibility: OpenAI conservative defaults
 - supportsSampling。
 - parallelToolCalls。
 - streamUsage。
+- reasoningEffort。
+- structuredOutput。
 
 完成后：
 
@@ -1766,7 +1772,7 @@ source adapter
 - agent ID 不参与鉴权，A profile 的 agent ID 不能访问 B profile。
 - anthropic-beta 只记录存在性 / 哈希，不硬编码 allowlist。
 - request model 保存为 clientModel，但上游使用 profile model。
-- thinking / context_management / output_config 返回包含精确字段名的 400。
+- thinking / context_management 返回包含精确字段名的 400；output_config effort 与 format 按 target compatibility 转换。
 - upstream 400 转换 envelope 后 message 原文不变。
 
 ### 24.4 请求转换

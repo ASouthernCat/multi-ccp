@@ -7,6 +7,7 @@ import {
   getGatewaySecretPath,
   readGatewayProfileSecret,
   repairGatewayProfileSettings,
+  validateGatewayProfileConfig,
   writeGatewayProfileSecret
 } from "../../src/core/gateway-profile.js";
 import { readMeta, readSettings, writeSettings } from "../../src/core/settings.js";
@@ -80,6 +81,26 @@ describe("gateway profile storage", () => {
     if (process.platform !== "win32") {
       expect((await stat(getGatewaySecretPath(profile.dir))).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("normalizes legacy compatibility config with conservative output mappings", () => {
+    const config = validateGatewayProfileConfig({
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      chatCompletionsUrl: "https://example.test/v1/chat/completions",
+      model: "legacy-model",
+      compatibility: {
+        instructionRole: "system",
+        maxTokensField: "max_tokens",
+        supportsStop: true,
+        supportsSampling: true,
+        parallelToolCalls: "unsupported",
+        streamUsage: "omit"
+      }
+    });
+
+    expect(config.compatibility.reasoningEffort).toBe("omit");
+    expect(config.compatibility.structuredOutput).toBe("unsupported");
   });
 
   it("repairs derived settings without overwriting unrelated profile settings", async () => {

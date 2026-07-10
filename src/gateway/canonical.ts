@@ -27,6 +27,18 @@ export interface CanonicalToolChoice {
   disableParallelToolUse?: boolean;
 }
 
+export type CanonicalReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+export interface CanonicalOutputFormat {
+  type: "json_schema";
+  schema: Record<string, unknown>;
+}
+
+export interface CanonicalOutputConfig {
+  effort?: CanonicalReasoningEffort;
+  format?: CanonicalOutputFormat;
+}
+
 export interface CanonicalRequest {
   clientModel: string;
   system: string[];
@@ -37,6 +49,7 @@ export interface CanonicalRequest {
   stop?: string[];
   tools?: CanonicalTool[];
   toolChoice?: CanonicalToolChoice;
+  outputConfig?: CanonicalOutputConfig;
   stream: boolean;
 }
 

@@ -7,14 +7,18 @@
     "ccp": "dist/cli/index.js"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.js.map",
+    "dist/**/*.d.ts",
+    "dist/**/*.css",
+    "dist/**/*.html",
     "README.md",
     "README.zh-CN.md",
     "LICENSE",
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
     "dev": "tsx src/cli/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",

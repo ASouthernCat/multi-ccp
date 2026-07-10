@@ -67,6 +67,8 @@ ccp start <profile-name>
 
 `ccp add` 会让你选择内置预设模板或自定义配置，例如 OpenAI Gateway、Custom OpenAI-Compatible Gateway、DeepSeek、AI CodeMirror、Mimo、CCR GPT、Manual CCR、Claude Login 或 Custom API。
 
+Profile 名称可以包含字母、数字、点号、下划线和连字符，因此 `gpt-5.6` 是合法名称。名称必须以字母或数字开头，不能以点号结尾，也不能使用 Windows 保留设备名。
+
 如果你想直接使用某个内置预设，也可以指定 `--preset`：
 
 ```bash
@@ -201,11 +203,13 @@ ccp add --preset custom-gateway company-model
 ccp start company-model
 ```
 
-自定义流程会询问完整 Chat Completions URL、上游模型、API key、instruction role、token limit 字段、sampling/stop 支持、并行工具调用支持以及流式 usage 行为。
+自定义流程会先提供“现代 OpenAI Chat Completions”“传统 OpenAI-compatible”“高级自定义映射”三种兼容档案。只有高级模式才逐项询问 instruction role、token limit、sampling、stop、并行工具调用、流式 usage、Claude effort 与结构化输出映射。
 
 所有 gateway profile 共用一个仅监听 loopback 的服务：`http://127.0.0.1:3921`。每个 Claude Code 进程使用独立的 profile path 和本地 token，因此不同供应商 profile 可以安全并发运行。启动第二个 gateway profile 时会复用现有服务，不会重启或中断正在执行的流。
 
-第一期支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、并行工具调用、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
+网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token 或 API key。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
+
+第一期支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
 
 ## 历史会话同步
 

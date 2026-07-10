@@ -17,6 +17,7 @@ import type {
 } from "./types.js";
 import {
   getGatewayEndpoint,
+  mergeGatewayCompatibility,
   normalizeChatCompletionsUrl,
   readGatewayRuntimeConfig
 } from "../gateway/config.js";
@@ -52,15 +53,16 @@ export function validateGatewayProfileConfig(value: unknown): GatewayProfileConf
   if (!config.chatCompletionsUrl?.trim() || !config.model?.trim()) {
     throw new CcpError("Gateway Chat Completions URL and model are required.");
   }
-  const compatibility = config.compatibility;
+  const compatibility = mergeGatewayCompatibility(config.provider, config.compatibility);
   if (
-    !compatibility ||
     !["system", "developer"].includes(compatibility.instructionRole) ||
     !["max_tokens", "max_completion_tokens"].includes(compatibility.maxTokensField) ||
     typeof compatibility.supportsStop !== "boolean" ||
     typeof compatibility.supportsSampling !== "boolean" ||
     !["supported", "unsupported"].includes(compatibility.parallelToolCalls) ||
-    !["include", "omit"].includes(compatibility.streamUsage)
+    !["include", "omit"].includes(compatibility.streamUsage) ||
+    !["reasoning_effort", "output_config", "omit"].includes(compatibility.reasoningEffort) ||
+    !["response_format", "output_config", "unsupported"].includes(compatibility.structuredOutput)
   ) {
     throw new CcpError("Gateway compatibility config is invalid.");
   }

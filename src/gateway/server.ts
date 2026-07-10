@@ -8,8 +8,10 @@ import {
 import type { AddressInfo } from "node:net";
 import { assertProfileName, CcpError } from "../core/errors.js";
 import type { PathContext } from "../core/paths.js";
+import type { GatewayCompatibility } from "../core/types.js";
 import { authorizeLocalGatewayRequest } from "./auth.js";
 import { parseAnthropicMessagesRequest } from "./anthropic-source.js";
+import type { CanonicalReasoningEffort, CanonicalUsage } from "./canonical.js";
 import {
   GatewayProtocolError,
   invalidRequest,
@@ -40,9 +42,18 @@ interface RegistryLike {
 
 export interface GatewayRequestLog {
   requestId: string;
+  completedAt: string;
   method: string;
   pathname: string;
   profileName?: string;
+  model?: string;
+  clientModel?: string;
+  stream?: boolean;
+  effort?: CanonicalReasoningEffort;
+  effortMapping?: GatewayCompatibility["reasoningEffort"];
+  upstreamFields?: string[];
+  inputTokens?: number;
+  outputTokens?: number;
   sessionId?: string;
   agentId?: string;
   parentAgentId?: string;
@@ -81,9 +92,22 @@ interface RequestState {
   startedAt: number;
   pathname: string;
   profileName?: string;
+  model?: string;
+  clientModel?: string;
+  stream?: boolean;
+  effort?: CanonicalReasoningEffort;
+  effortMapping?: GatewayCompatibility["reasoningEffort"];
+  upstreamFields?: string[];
+  inputTokens?: number;
+  outputTokens?: number;
   status: number;
   clientDisconnected: boolean;
   timedOut: boolean;
+}
+
+interface GatewayStreamResult {
+  usage: CanonicalUsage;
+  error?: GatewayError;
 }
 
 class ClientDisconnectedError extends Error {
@@ -284,6 +308,12 @@ async function handleRequest(
       model: snapshot.config.model,
       compatibility: snapshot.config.compatibility
     });
+    state.model = snapshot.config.model;
+    state.clientModel = canonical.clientModel;
+    state.stream = canonical.stream;
+    state.effort = canonical.outputConfig?.effort;
+    state.effortMapping = snapshot.config.compatibility.reasoningEffort;
+    state.upstreamFields = Object.keys(converted.body).sort();
     const upstream = await fetchUpstream(snapshot, converted.body, controller.signal, deps.fetchImpl, state);
 
     if (!upstream.ok) {
@@ -299,8 +329,10 @@ async function handleRequest(
     }
 
     if (canonical.stream) {
-      state.status = 200;
-      await pipeStreamingResponse(res, upstream, converted.toolNames, snapshot.config.model, controller.signal);
+      const result = await pipeStreamingResponse(res, upstream, converted.toolNames, snapshot.config.model, controller.signal);
+      state.inputTokens = result.usage.inputTokens;
+      state.outputTokens = result.usage.outputTokens;
+      state.status = result.error ? 502 : 200;
       return;
     }
 
@@ -322,6 +354,8 @@ async function handleRequest(
       toolNames: converted.toolNames,
       modelFallback: snapshot.config.model
     });
+    state.inputTokens = response.usage.inputTokens;
+    state.outputTokens = response.usage.outputTokens;
     state.status = 200;
     sendJson(res, 200, canonicalResponseToAnthropic(response));
   } catch (error) {
@@ -478,7 +512,7 @@ async function pipeStreamingResponse(
   toolNames: ReturnType<typeof serializeOpenAIChatRequest>["toolNames"],
   model: string,
   signal: AbortSignal
-): Promise<void> {
+): Promise<GatewayStreamResult> {
   if (!upstream.body) {
     throw new GatewayProtocolError({ type: "api_error", message: "Upstream streaming response has no body." }, 502);
   }
@@ -505,13 +539,14 @@ async function pipeStreamingResponse(
       if (bridge.isTerminal) {
         await reader.cancel();
         res.end();
-        return;
+        return { usage: bridge.usage, ...(bridge.error ? { error: bridge.error } : {}) };
       }
     }
     for (const output of bridge.finish()) {
       await writeWithBackpressure(res, output, signal);
     }
     res.end();
+    return { usage: bridge.usage, ...(bridge.error ? { error: bridge.error } : {}) };
   } finally {
     if (signal.aborted) {
       await reader.cancel(signal.reason).catch(() => undefined);
@@ -685,17 +720,27 @@ function emitRequestLog(
   const sessionId = readHeader(req.headers["x-claude-code-session-id"]);
   const agentId = readHeader(req.headers["x-claude-code-agent-id"]);
   const parentAgentId = readHeader(req.headers["x-claude-code-parent-agent-id"]);
+  const completedAt = deps.now();
   try {
     deps.onRequestComplete({
       requestId: state.requestId,
+      completedAt: new Date(completedAt).toISOString(),
       method: req.method ?? "UNKNOWN",
       pathname: state.pathname,
       ...(state.profileName ? { profileName: state.profileName } : {}),
+      ...(state.model ? { model: state.model } : {}),
+      ...(state.clientModel ? { clientModel: state.clientModel } : {}),
+      ...(state.stream === undefined ? {} : { stream: state.stream }),
+      ...(state.effort ? { effort: state.effort } : {}),
+      ...(state.effortMapping ? { effortMapping: state.effortMapping } : {}),
+      ...(state.upstreamFields ? { upstreamFields: [...state.upstreamFields] } : {}),
+      ...(state.inputTokens === undefined ? {} : { inputTokens: state.inputTokens }),
+      ...(state.outputTokens === undefined ? {} : { outputTokens: state.outputTokens }),
       ...(sessionId ? { sessionId } : {}),
       ...(agentId ? { agentId } : {}),
       ...(parentAgentId ? { parentAgentId } : {}),
       status: state.status,
-      durationMs: Math.max(0, deps.now() - state.startedAt)
+      durationMs: Math.max(0, completedAt - state.startedAt)
     });
   } catch {
     // Observability hooks must never change gateway request behavior.

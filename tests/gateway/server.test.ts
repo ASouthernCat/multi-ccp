@@ -58,12 +58,13 @@ async function startGateway(context: { homeDir: string }, options: Parameters<ty
   return { handle, endpoint: listening.endpoint };
 }
 
-function anthropicRequest(stream = false) {
+function anthropicRequest(stream = false, overrides: Record<string, unknown> = {}) {
   return {
     model: "claude-client-alias",
     max_tokens: 256,
     messages: [{ role: "user", content: "hello" }],
-    stream
+    stream,
+    ...overrides
   };
 }
 
@@ -172,6 +173,61 @@ describe("gateway HTTP protocol", () => {
     const crossProfile = await call("provider-b", secretA!.localToken);
     expect(crossProfile.status).toBe(401);
     expect(received).toHaveLength(2);
+  });
+
+  it("maps Claude output_config effort without forwarding the Anthropic field", async () => {
+    const context = await createContext();
+    let upstreamBody: Record<string, unknown> | undefined;
+    const upstream = await listenLoopback(async (req, res) => {
+      upstreamBody = await readRequestJson(req);
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "effort-response",
+        model: "reasoning-model",
+        choices: [{ index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 }
+      }));
+    });
+    const profile = await createGatewayProfile({
+      name: "gpt-5.6",
+      provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "upstream-key",
+      model: "reasoning-model",
+      compatibility: { reasoningEffort: "reasoning_effort" }
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/gpt-5.6/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${secret!.localToken}`
+      },
+      body: JSON.stringify(anthropicRequest(false, { output_config: { effort: "xhigh" } }))
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+    expect(upstreamBody?.reasoning_effort).toBe("xhigh");
+    expect(upstreamBody?.output_config).toBeUndefined();
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      profileName: "gpt-5.6",
+      model: "reasoning-model",
+      clientModel: "claude-client-alias",
+      stream: false,
+      effort: "xhigh",
+      effortMapping: "reasoning_effort",
+      inputTokens: 1,
+      outputTokens: 1,
+      status: 200
+    });
+    expect(logs[0].completedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(logs[0].upstreamFields).toContain("reasoning_effort");
+    expect(logs[0].upstreamFields).not.toContain("output_config");
   });
 
   it("accepts x-api-key and validates content type, JSON, and body limits", async () => {
@@ -380,6 +436,43 @@ describe("gateway HTTP protocol", () => {
     expect(body).toContain('event: error');
     expect(body).toContain('Upstream request timed out.');
     expect(body).not.toContain('event: message_stop');
+  });
+
+  it("records streaming protocol errors as internal 502 instead of success", async () => {
+    const context = await createContext();
+    const upstream = await listenLoopback((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end("data: {bad}\n\n");
+    });
+    const profile = await createGatewayProfile({
+      name: "stream-error-log",
+      provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "key",
+      model: "model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/stream-error-log/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(true))
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("event: error");
+    expect(body).toContain("Upstream SSE data is not valid JSON.");
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      profileName: "stream-error-log",
+      stream: true,
+      status: 502,
+      inputTokens: 0,
+      outputTokens: 0
+    });
   });
 
   it("stops reading upstream immediately after DONE even when the provider keeps the socket open", async () => {

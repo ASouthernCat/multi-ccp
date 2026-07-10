@@ -10,7 +10,7 @@ import {
   stopGateway,
   type GatewayRuntimeState
 } from "../../src/core/gateway-lifecycle.js";
-import { getGatewayRuntimePath, getGatewayStartupLockPath } from "../../src/core/paths.js";
+import { getGatewayDir, getGatewayLogPath, getGatewayRuntimePath, getGatewayStartupLockPath } from "../../src/core/paths.js";
 
 const homes: string[] = [];
 
@@ -94,6 +94,7 @@ describe("gateway lifecycle", () => {
     expect(spawnProcess.mock.calls[0][0]).toBe(process.execPath);
     expect(spawnProcess.mock.calls[0][1]).toEqual(["gateway-entry.js"]);
     expect(spawnProcess.mock.calls[0][2]).toMatchObject({
+      cwd: getGatewayDir(context),
       detached: true,
       windowsHide: true,
       env: expect.objectContaining({
@@ -105,6 +106,31 @@ describe("gateway lifecycle", () => {
     expect(runtime).toMatchObject({ instanceId: "instance-1", pid: 4242 });
     expect(runtime.processStartedAt).toBe("2023-11-14T22:13:20.000Z");
     expect(await exists(getGatewayStartupLockPath(context))).toBe(false);
+  });
+
+  it("rotates an oversized gateway log before starting the process", async () => {
+    const context = await createContext();
+    const logPath = getGatewayLogPath(context);
+    await mkdir(path.dirname(logPath), { recursive: true });
+    await writeFile(logPath, "x".repeat(128), "utf8");
+    const spawnProcess = vi.fn().mockReturnValue(fakeChild());
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockImplementation(async () => health("rotate-instance"));
+
+    await startGateway(context, {
+      spawnProcess,
+      fetch: fetchMock,
+      randomId: () => "rotate-instance",
+      processArgs: () => ({ command: process.execPath, args: ["gateway-entry.js"] }),
+      processExists: () => true,
+      getProcessStartTimeMs: async () => 1_700_000_000_000,
+      sleep: async () => undefined,
+      maxLogBytes: 64
+    });
+
+    expect(await readFile(`${logPath}.1`, "utf8")).toHaveLength(128);
+    expect(await readFile(logPath, "utf8")).toBe("");
   });
 
   it("releases the startup lock and reports a child spawn error", async () => {

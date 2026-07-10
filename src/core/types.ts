@@ -9,6 +9,8 @@ export interface GatewayCompatibility {
   supportsSampling: boolean;
   parallelToolCalls: "supported" | "unsupported";
   streamUsage: "include" | "omit";
+  reasoningEffort: "reasoning_effort" | "output_config" | "omit";
+  structuredOutput: "response_format" | "output_config" | "unsupported";
 }
 
 export interface GatewayProfileConfig {

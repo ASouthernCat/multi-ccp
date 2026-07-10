@@ -7,6 +7,12 @@
 - 多个 gateway profile 复用一个 loopback 共享进程，并按请求隔离 profile 快照、模型、凭据、工具映射、流状态与 AbortController。
 - 新增 `ccp gateway status|start|stop|restart`，包含启动锁、进程身份、PID 创建时间、runtime 原子写入和 Windows detached 启停保护。
 - `ccp start` 现在按 profile type 显式分派 CCR 或内置网关；Web UI 可只读查看 gateway profile，但不会返回 local token 或开放不完整的 secret 编辑入口。
+- 内置网关兼容 Claude Code 2.1.206 的 message-level `system` role 与 `output_config`，可按 profile 将 effort 映射为 `reasoning_effort`，并将 JSON Schema 映射为 OpenAI strict `response_format`。
+- 自定义网关创建流程新增现代、传统与高级三档兼容配置，统一重复的默认值，并在可轮转的 `gateway.log` 写入不含正文与密钥的逐请求诊断元数据。
+- Profile 名称现在允许中间包含点号，例如 `gpt-5.6`，同时继续拒绝路径分隔符、尾随点号和 Windows 保留设备名。
+- OpenAI-compatible 响应解析现在兼容 Mimo 的 nullable 工具字段，包括 `message.tool_calls: null`、`delta.tool_calls: null`，以及工具参数增量中的 `id/name: null`；最终工具调用仍执行完整性和 JSON 校验。
+- 流式协议错误在客户端 SSE 已开始后仍通过 error event 返回，但请求日志改为记录内部 502；profile 解析也统一执行名称校验，阻止路径段绕过。
+- 后台网关使用独立的运行目录，不再继承调用方位于 `dist` 下的当前工作目录；构建前会完整清理 `dist`，npm 发布白名单只包含编译代码、声明、source map 与 Web 静态资源，避免本地 Claude Code 配置进入发布包。
 - 网关方案参考 Claude Code Gateway Protocol、Anthropic Messages API、OpenAI Chat Completions、LiteLLM、claude-code-router 和 `@the-next-ai/ai-gateway` 的成熟协议边界与回归测试。
 
 ## 0.1.9

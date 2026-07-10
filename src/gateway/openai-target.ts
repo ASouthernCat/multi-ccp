@@ -3,12 +3,14 @@ import type { GatewayCompatibility } from "../core/types.js";
 import type {
   CanonicalFinishReason,
   CanonicalMessage,
+  CanonicalOutputFormat,
   CanonicalRequest,
   CanonicalResponse,
   CanonicalResponseContent,
   CanonicalToolChoice,
   ToolNameMapping
 } from "./canonical.js";
+import { MODERN_OPENAI_COMPATIBILITY } from "./config.js";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
 
 type JsonObject = Record<string, unknown>;
@@ -16,12 +18,7 @@ type JsonObject = Record<string, unknown>;
 export type OpenAICompatibility = GatewayCompatibility;
 
 export const DEFAULT_OPENAI_COMPATIBILITY: OpenAICompatibility = {
-  instructionRole: "developer",
-  maxTokensField: "max_completion_tokens",
-  supportsSampling: true,
-  supportsStop: true,
-  parallelToolCalls: "supported",
-  streamUsage: "include"
+  ...MODERN_OPENAI_COMPATIBILITY
 };
 
 export interface OpenAIChatRequestOptions {
@@ -224,6 +221,72 @@ function serializeToolChoice(choice: CanonicalToolChoice, mapping: ToolNameMappi
   };
 }
 
+function normalizeStrictJsonSchema(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeStrictJsonSchema);
+  }
+  if (!isObject(value)) {
+    return value;
+  }
+
+  const result: JsonObject = {};
+  for (const [key, entry] of Object.entries(value)) {
+    result[key] = normalizeStrictJsonSchema(entry);
+  }
+  if (result.type === "object" && isObject(result.properties)) {
+    result.additionalProperties = false;
+    result.required = Object.keys(result.properties);
+  }
+  return result;
+}
+
+function toOpenAIResponseFormat(format: CanonicalOutputFormat): Record<string, unknown> {
+  return {
+    type: "json_schema",
+    json_schema: {
+      name: "structured_output",
+      schema: normalizeStrictJsonSchema(format.schema),
+      strict: true
+    }
+  };
+}
+
+function applyOutputConfig(
+  body: Record<string, unknown>,
+  request: CanonicalRequest,
+  compatibility: OpenAICompatibility
+): void {
+  const outputConfig = request.outputConfig;
+  if (!outputConfig) {
+    return;
+  }
+
+  const targetOutputConfig: Record<string, unknown> = {};
+  if (outputConfig.effort !== undefined) {
+    if (compatibility.reasoningEffort === "reasoning_effort") {
+      body.reasoning_effort = outputConfig.effort;
+    } else if (compatibility.reasoningEffort === "output_config") {
+      targetOutputConfig.effort = outputConfig.effort;
+    }
+  }
+
+  if (outputConfig.format !== undefined) {
+    if (compatibility.structuredOutput === "response_format") {
+      body.response_format = toOpenAIResponseFormat(outputConfig.format);
+    } else if (compatibility.structuredOutput === "output_config") {
+      targetOutputConfig.format = outputConfig.format;
+    } else {
+      throw invalidRequest(
+        "output_config.format: The selected upstream does not support structured outputs."
+      );
+    }
+  }
+
+  if (Object.keys(targetOutputConfig).length > 0) {
+    body.output_config = targetOutputConfig;
+  }
+}
+
 export function serializeOpenAIChatRequest(
   request: CanonicalRequest,
   options: OpenAIChatRequestOptions
@@ -274,6 +337,7 @@ export function serializeOpenAIChatRequest(
   if (request.stream && compatibility.streamUsage === "include") {
     body.stream_options = { include_usage: true };
   }
+  applyOutputConfig(body, request, compatibility);
 
   return { body, toolNames };
 }
@@ -362,14 +426,14 @@ export function parseOpenAIChatResponse(input: unknown, options: OpenAIChatRespo
   }
 
   const mapping = options.toolNames ?? { sourceToTarget: new Map(), targetToSource: new Map() };
-  if (message.tool_calls !== undefined) {
+  if (message.tool_calls !== undefined && message.tool_calls !== null) {
     if (!Array.isArray(message.tool_calls)) {
       throw upstreamProtocolError("response.choices[0].message.tool_calls: Expected an array.");
     }
     message.tool_calls.forEach((call, index) => {
       content.push(parseToolCall(call, `response.choices[0].message.tool_calls[${index}]`, mapping));
     });
-  } else if (message.function_call !== undefined) {
+  } else if (message.function_call !== undefined && message.function_call !== null) {
     content.push(parseToolCall(
       { id: `call_${String(response.id ?? "legacy")}`, type: "function", function: message.function_call },
       "response.choices[0].message.function_call",

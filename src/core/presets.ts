@@ -3,6 +3,7 @@ import { CcpError } from "./errors.js";
 import { createApiProfileFromEnv, createCcrProfile, createGatewayProfile } from "./profiles.js";
 import type { GatewayCompatibility, GatewayProvider, ProfileSummary } from "./types.js";
 import type { PathContext } from "./paths.js";
+import { OPENAI_GATEWAY_COMPATIBILITY } from "../gateway/config.js";
 
 export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr" | "gateway" | "custom-gateway";
 
@@ -77,14 +78,7 @@ export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
     sortOrder: 5,
     provider: "openai",
     chatCompletionsUrl: "https://api.openai.com/v1/chat/completions",
-    compatibility: {
-      instructionRole: "developer",
-      maxTokensField: "max_completion_tokens",
-      supportsStop: false,
-      supportsSampling: false,
-      parallelToolCalls: "supported",
-      streamUsage: "include"
-    }
+    compatibility: { ...OPENAI_GATEWAY_COMPATIBILITY }
   },
   {
     id: "custom-gateway",

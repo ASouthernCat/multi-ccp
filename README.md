@@ -67,6 +67,8 @@ ccp start <profile-name>
 
 `ccp add` lets you choose a built-in preset template or custom configuration, including OpenAI Gateway, Custom OpenAI-Compatible Gateway, DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
 
+Profile names may contain letters, numbers, periods, underscores, and hyphens, so names such as `gpt-5.6` are valid. Names must start with a letter or number, cannot end with a period, and cannot use Windows reserved device names.
+
 If you want to create directly from a built-in preset, pass `--preset`:
 
 ```bash
@@ -201,11 +203,13 @@ ccp add --preset custom-gateway company-model
 ccp start company-model
 ```
 
-The custom flow asks for the full Chat Completions URL, upstream model, API key, instruction role, token-limit field, sampling and stop support, parallel tool-call support, and streaming usage behavior.
+The custom flow first offers modern OpenAI Chat Completions, legacy OpenAI-compatible, and advanced custom compatibility profiles. Only the advanced path asks for individual instruction-role, token-limit, sampling, stop, parallel-tool, streaming-usage, Claude-effort, and structured-output mappings.
 
 All gateway profiles use one loopback-only service at `http://127.0.0.1:3921`. Each Claude Code process receives a profile-specific base path and local token, so concurrent profiles can safely target different providers. Starting a second gateway profile reuses the running service and does not restart active streams.
 
-The first release supports Messages requests, non-streaming and SSE responses, text and tool calls, parallel tool calls, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Optional token counting and model discovery endpoints intentionally return `404`, allowing Claude Code to use its fallback behavior.
+The gateway writes one redacted JSON line per profile request to `~/.claude-profiles/.gateway/gateway.log`. It records the profile, model, Claude effort, upstream field names, status, duration, and available token usage, but never prompt or response content, authorization headers, or API keys. If an SSE response has already started with HTTP 200 and later fails protocol conversion, the internal log status is `502`. Logs rotate to `gateway.log.1` at 10 MiB when the gateway starts.
+
+The first release supports Messages requests, non-streaming and SSE responses, text and tool calls, parallel tool calls, `output_config.effort`, JSON Schema structured output, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Optional token counting and model discovery endpoints intentionally return `404`, allowing Claude Code to use its fallback behavior.
 
 ## Session Sync
 

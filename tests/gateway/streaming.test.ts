@@ -42,6 +42,37 @@ describe("SSE parser", () => {
 });
 
 describe("OpenAI stream conversion", () => {
+  it("treats nullable delta tool_calls as absent", () => {
+    const bridge = new OpenAIAnthropicStreamBridge({ messageId: "request_mimo", model: "mimo-v2.5-pro" });
+    const output = [
+      ...bridge.push(openAIEvent({
+        id: "chatcmpl_mimo",
+        model: "mimo-v2.5-pro",
+        choices: [{
+          index: 0,
+          delta: { content: "你好", tool_calls: null, reasoning_content: "reasoning" },
+          finish_reason: "stop"
+        }]
+      })),
+      ...bridge.push(openAIEvent({
+        id: "chatcmpl_mimo",
+        model: "mimo-v2.5-pro",
+        choices: [],
+        usage: { prompt_tokens: 10, completion_tokens: 4 }
+      })),
+      ...bridge.push("data: [DONE]\n\n"),
+      ...bridge.finish()
+    ];
+    const events = parseOutput(output);
+
+    expect(events.some((event) => event.event === "error")).toBe(false);
+    expect(events.find((event) => event.event === "content_block_delta")?.data.delta).toEqual({
+      type: "text_delta",
+      text: "你好"
+    });
+    expect(events.at(-1)?.event).toBe("message_stop");
+  });
+
   it("emits a complete Anthropic text stream with delta before same-chunk finish and final usage", () => {
     const bridge = new OpenAIAnthropicStreamBridge({ messageId: "request_1", model: "fallback" });
     const first = openAIEvent({
@@ -124,6 +155,51 @@ describe("OpenAI stream conversion", () => {
       delta: { stop_reason: "tool_use" },
       usage: { input_tokens: 12, output_tokens: 6 }
     });
+  });
+
+  it("treats nullable tool-call delta fields as absent", () => {
+    const converter = new OpenAIStreamConverter({ messageId: "req", model: "mimo-v2.5-pro" });
+    const events = [
+      ...converter.processChunk({
+        id: "chatcmpl_mimo_tool",
+        model: "mimo-v2.5-pro",
+        choices: [{ index: 0, delta: { tool_calls: [{
+          index: 0,
+          id: "call_mimo",
+          type: "function",
+          function: { name: "echo", arguments: "" }
+        }] }, finish_reason: null }]
+      }),
+      ...converter.processChunk({
+        choices: [{ index: 0, delta: { tool_calls: [{
+          index: 0,
+          id: null,
+          type: "function",
+          function: { name: null, arguments: "{\"text\":" }
+        }] }, finish_reason: null }]
+      }),
+      ...converter.processChunk({
+        choices: [{ index: 0, delta: { tool_calls: [{
+          index: 0,
+          id: null,
+          type: "function",
+          function: { name: null, arguments: "\"hello\"}" }
+        }] }, finish_reason: "tool_calls" }]
+      }),
+      ...converter.finish("done")
+    ];
+
+    expect(events).toContainEqual({
+      type: "tool_start",
+      blockKey: "tool:0",
+      id: "call_mimo",
+      name: "echo"
+    });
+    expect(events.filter((event) => event.type === "tool_arguments_delta")).toEqual([
+      { type: "tool_arguments_delta", blockKey: "tool:0", partialJson: "{\"text\":" },
+      { type: "tool_arguments_delta", blockKey: "tool:0", partialJson: "\"hello\"}" }
+    ]);
+    expect(events.at(-1)).toEqual({ type: "finish", reason: "tool_use" });
   });
 
   it("finishes successfully on EOF when finish_reason was received without DONE", () => {

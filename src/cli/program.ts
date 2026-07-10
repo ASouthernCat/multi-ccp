@@ -45,6 +45,11 @@ import {
 import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
+import type { GatewayCompatibility } from "../core/types.js";
+import {
+  CUSTOM_GATEWAY_COMPATIBILITY,
+  MODERN_OPENAI_COMPATIBILITY
+} from "../gateway/config.js";
 
 function getPackageVersion(): string {
   try {
@@ -230,36 +235,77 @@ async function createCustomGatewayProfile(
     mask: "*",
     validate: (value) => value.trim() ? true : "API key is required."
   });
-  const instructionRole = await select({
-    message: "Instruction message role",
+  const compatibilityMode = await select({
+    message: "Compatibility profile",
     choices: [
-      { name: "system (widely compatible)", value: "system" as const },
-      { name: "developer (OpenAI reasoning models)", value: "developer" as const }
+      { name: "Modern OpenAI Chat Completions (recommended)", value: "modern" as const },
+      { name: "Legacy OpenAI-compatible", value: "legacy" as const },
+      { name: "Advanced custom mapping", value: "advanced" as const }
     ]
   });
-  const maxTokensField = await select({
-    message: "Output token field",
-    choices: [
-      { name: "max_tokens (widely compatible)", value: "max_tokens" as const },
-      { name: "max_completion_tokens (OpenAI reasoning models)", value: "max_completion_tokens" as const }
-    ]
-  });
-  const supportsStop = await confirm({ message: "Provider supports stop?", default: true });
-  const supportsSampling = await confirm({ message: "Provider supports temperature/top_p?", default: true });
-  const parallelToolCalls = await select({
-    message: "parallel_tool_calls parameter",
-    choices: [
-      { name: "Unsupported / omit", value: "unsupported" as const },
-      { name: "Supported", value: "supported" as const }
-    ]
-  });
-  const streamUsage = await select({
-    message: "Streaming usage option",
-    choices: [
-      { name: "Omit stream_options", value: "omit" as const },
-      { name: "Include usage", value: "include" as const }
-    ]
-  });
+  let compatibility: GatewayCompatibility;
+  if (compatibilityMode === "modern") {
+    compatibility = { ...MODERN_OPENAI_COMPATIBILITY };
+  } else if (compatibilityMode === "legacy") {
+    compatibility = { ...CUSTOM_GATEWAY_COMPATIBILITY };
+  } else {
+    const instructionRole = await select({
+      message: "Instruction message role",
+      choices: [
+        { name: "developer (GPT-5 and reasoning models)", value: "developer" as const },
+        { name: "system (legacy providers)", value: "system" as const }
+      ]
+    });
+    const maxTokensField = await select({
+      message: "Output token field",
+      choices: [
+        { name: "max_completion_tokens (modern OpenAI)", value: "max_completion_tokens" as const },
+        { name: "max_tokens (legacy providers)", value: "max_tokens" as const }
+      ]
+    });
+    const supportsStop = await confirm({ message: "Forward stop sequences to the provider?", default: true });
+    const supportsSampling = await confirm({ message: "Forward temperature and top_p to the provider?", default: true });
+    const parallelToolCalls = await select({
+      message: "parallel_tool_calls parameter",
+      choices: [
+        { name: "Forward", value: "supported" as const },
+        { name: "Omit", value: "unsupported" as const }
+      ]
+    });
+    const streamUsage = await select({
+      message: "Streaming usage option",
+      choices: [
+        { name: "Include stream_options.include_usage", value: "include" as const },
+        { name: "Omit stream_options", value: "omit" as const }
+      ]
+    });
+    const reasoningEffort = await select({
+      message: "Claude effort mapping",
+      choices: [
+        { name: "reasoning_effort (OpenAI reasoning models)", value: "reasoning_effort" as const },
+        { name: "output_config.effort (provider-specific)", value: "output_config" as const },
+        { name: "Unsupported / omit", value: "omit" as const }
+      ]
+    });
+    const structuredOutput = await select({
+      message: "Structured output mapping",
+      choices: [
+        { name: "response_format (OpenAI JSON Schema)", value: "response_format" as const },
+        { name: "output_config.format (provider-specific)", value: "output_config" as const },
+        { name: "Unsupported / reject", value: "unsupported" as const }
+      ]
+    });
+    compatibility = {
+      instructionRole,
+      maxTokensField,
+      supportsStop,
+      supportsSampling,
+      parallelToolCalls,
+      streamUsage,
+      reasoningEffort,
+      structuredOutput
+    };
+  }
   const ok = await confirm({ message: "Create this gateway profile?", default: true });
   if (!ok) {
     console.log("Cancelled.");
@@ -271,14 +317,7 @@ async function createCustomGatewayProfile(
     chatCompletionsUrl,
     apiKey,
     model,
-    compatibility: {
-      instructionRole,
-      maxTokensField,
-      supportsStop,
-      supportsSampling,
-      parallelToolCalls,
-      streamUsage
-    },
+    compatibility,
     preset: preset.id
   }));
 }

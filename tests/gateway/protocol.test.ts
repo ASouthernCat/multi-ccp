@@ -27,6 +27,10 @@ describe("Anthropic Messages source parser", () => {
       ],
       messages: [
         {
+          role: "system",
+          content: [{ type: "text", text: "Embedded" }]
+        },
+        {
           role: "assistant",
           content: [
             { type: "text", text: "Calling " },
@@ -46,6 +50,7 @@ describe("Anthropic Messages source parser", () => {
       stop_sequences: ["STOP"],
       stream: true,
       metadata: { user_id: "diagnostic-only" },
+      output_config: { effort: "xhigh" },
       tools: [{
         name: "mcp.tool",
         description: "A tool",
@@ -57,12 +62,13 @@ describe("Anthropic Messages source parser", () => {
 
     expect(request).toMatchObject({
       clientModel: "claude-sonnet-test",
-      system: ["One", "Two"],
+      system: ["One", "Two", "Embedded"],
       maxOutputTokens: 2048,
       temperature: 0,
       topP: 0.9,
       stop: ["STOP"],
       stream: true,
+      outputConfig: { effort: "xhigh" },
       toolChoice: { mode: "tool", name: "mcp.tool", disableParallelToolUse: true }
     });
     expect(request.messages[1].content).toEqual([
@@ -203,6 +209,77 @@ describe("OpenAI Chat target serializer", () => {
     expect(body.stream_options).toBeUndefined();
   });
 
+  it("maps Anthropic effort and structured output to OpenAI fields", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      output_config: {
+        effort: "xhigh",
+        format: {
+          type: "json_schema",
+          schema: {
+            type: "object",
+            properties: {
+              result: { type: "string" },
+              nested: {
+                type: "object",
+                properties: { count: { type: "number" } }
+              }
+            }
+          }
+        }
+      }
+    }));
+
+    const { body } = serializeOpenAIChatRequest(canonical, {
+      model: "gpt-reasoning",
+      compatibility: {
+        reasoningEffort: "reasoning_effort",
+        structuredOutput: "response_format"
+      }
+    });
+
+    expect(body.reasoning_effort).toBe("xhigh");
+    expect(body.output_config).toBeUndefined();
+    expect(body.response_format).toEqual({
+      type: "json_schema",
+      json_schema: {
+        name: "structured_output",
+        strict: true,
+        schema: {
+          type: "object",
+          additionalProperties: false,
+          required: ["result", "nested"],
+          properties: {
+            result: { type: "string" },
+            nested: {
+              type: "object",
+              additionalProperties: false,
+              required: ["count"],
+              properties: { count: { type: "number" } }
+            }
+          }
+        }
+      }
+    });
+  });
+
+  it("supports provider-specific output_config and rejects unsupported structured output", () => {
+    const effortOnly = parseAnthropicMessagesRequest(baseRequest({ output_config: { effort: "high" } }));
+    const passthrough = serializeOpenAIChatRequest(effortOnly, {
+      model: "provider-model",
+      compatibility: { reasoningEffort: "output_config" }
+    });
+    expect(passthrough.body.output_config).toEqual({ effort: "high" });
+    expect(passthrough.body.reasoning_effort).toBeUndefined();
+
+    const structured = parseAnthropicMessagesRequest(baseRequest({
+      output_config: { format: { type: "json_schema", schema: { type: "object", properties: {} } } }
+    }));
+    expect(() => serializeOpenAIChatRequest(structured, {
+      model: "provider-model",
+      compatibility: { structuredOutput: "unsupported" }
+    })).toThrow("does not support structured outputs");
+  });
+
   it("rejects a disable-parallel request when the provider cannot express it", () => {
     const canonical = parseAnthropicMessagesRequest(baseRequest({
       tools: [{ name: "x", input_schema: {} }],
@@ -227,6 +304,32 @@ describe("OpenAI Chat target serializer", () => {
 });
 
 describe("OpenAI Chat non-streaming response", () => {
+  it("treats nullable optional tool-call fields as absent", () => {
+    const response = parseOpenAIChatResponse({
+      id: "chatcmpl_nullable_tools",
+      model: "mimo-v2.5-pro",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: "你好",
+          tool_calls: null,
+          function_call: null,
+          reasoning_content: "provider-specific reasoning"
+        },
+        finish_reason: "stop"
+      }],
+      usage: { prompt_tokens: 10, completion_tokens: 4 }
+    });
+
+    expect(response).toMatchObject({
+      model: "mimo-v2.5-pro",
+      content: [{ type: "text", text: "你好" }],
+      finishReason: "end_turn",
+      usage: { inputTokens: 10, outputTokens: 4 }
+    });
+  });
+
   it("restores tool names, normalizes ids, parses object arguments, and emits Anthropic format", () => {
     const toolNames = createToolNameMapping(["mcp.tool"]);
     const response = parseOpenAIChatResponse({

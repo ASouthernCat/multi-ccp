@@ -5,6 +5,8 @@ export class CcpError extends Error {
   }
 }
 
+const WINDOWS_RESERVED_PROFILE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
 export function assertProfileName(name: string): void {
   if (!name.trim()) {
     throw new CcpError("Missing profile name.");
@@ -14,9 +16,13 @@ export function assertProfileName(name: string): void {
     throw new CcpError("'main' is reserved and cannot be used as a profile name.");
   }
 
-  if (!/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(name)) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.endsWith(".")) {
     throw new CcpError(
-      `Invalid profile name '${name}'. Use letters, numbers, underscore, or hyphen, and start with a letter or number.`
+      `Invalid profile name '${name}'. Use letters, numbers, periods, underscores, or hyphens; start with a letter or number and do not end with a period.`
     );
+  }
+
+  if (WINDOWS_RESERVED_PROFILE_NAME.test(name)) {
+    throw new CcpError(`Invalid profile name '${name}'. Windows reserved device names cannot be used.`);
   }
 }

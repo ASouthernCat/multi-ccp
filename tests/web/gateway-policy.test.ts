@@ -29,7 +29,9 @@ function gatewayProfile(): ProfileSummary {
           supportsStop: true,
           supportsSampling: true,
           parallelToolCalls: "unsupported",
-          streamUsage: "omit"
+          streamUsage: "omit",
+          reasoningEffort: "omit",
+          structuredOutput: "unsupported"
         }
       }
     }

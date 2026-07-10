@@ -22,7 +22,20 @@ export const OPENAI_GATEWAY_COMPATIBILITY: GatewayCompatibility = {
   supportsStop: false,
   supportsSampling: false,
   parallelToolCalls: "supported",
-  streamUsage: "include"
+  streamUsage: "include",
+  reasoningEffort: "reasoning_effort",
+  structuredOutput: "response_format"
+};
+
+export const MODERN_OPENAI_COMPATIBILITY: GatewayCompatibility = {
+  instructionRole: "developer",
+  maxTokensField: "max_completion_tokens",
+  supportsStop: true,
+  supportsSampling: true,
+  parallelToolCalls: "supported",
+  streamUsage: "include",
+  reasoningEffort: "reasoning_effort",
+  structuredOutput: "response_format"
 };
 
 export const CUSTOM_GATEWAY_COMPATIBILITY: GatewayCompatibility = {
@@ -31,7 +44,9 @@ export const CUSTOM_GATEWAY_COMPATIBILITY: GatewayCompatibility = {
   supportsStop: true,
   supportsSampling: true,
   parallelToolCalls: "unsupported",
-  streamUsage: "omit"
+  streamUsage: "omit",
+  reasoningEffort: "omit",
+  structuredOutput: "unsupported"
 };
 
 export function defaultGatewayCompatibility(provider: GatewayProvider): GatewayCompatibility {

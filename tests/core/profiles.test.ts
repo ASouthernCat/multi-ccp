@@ -425,9 +425,29 @@ describe("profiles", () => {
     expect(await pathExists(projectDir)).toBe(false);
   });
 
-  it("rejects invalid profile names", async () => {
+  it("accepts periods in profile names", async () => {
     const context = await createContext();
-    await expect(createLoginProfile({ name: "_bad" }, context)).rejects.toThrow("Invalid profile name");
+    await createLoginProfile({ name: "gpt-5.6" }, context);
+
+    const resolved = await resolveConfigDir("gpt-5.6", { allowMain: false, context });
+    expect(resolved.dir).toBe(path.join(getProfilesRoot(context), "gpt-5.6"));
+  });
+
+  it.each(["_bad", "bad.", "bad/name", "bad\\name", "CON", "con.txt"])(
+    "rejects invalid profile name %s",
+    async (name) => {
+      const context = await createContext();
+      await expect(createLoginProfile({ name }, context)).rejects.toThrow("Invalid profile name");
+    }
+  );
+
+  it("rejects path traversal when resolving profile directories", async () => {
+    const context = await createContext();
+    const escapedDir = path.join(getProfilesRoot(context), "..", "escaped-profile");
+    await mkdir(escapedDir, { recursive: true });
+
+    await expect(resolveConfigDir("../escaped-profile", { allowMain: false, context }))
+      .rejects.toThrow("Invalid profile name");
   });
 
   it("resolves and removes profile directories", async () => {

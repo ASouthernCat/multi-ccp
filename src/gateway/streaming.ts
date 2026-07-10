@@ -181,6 +181,7 @@ export class OpenAIStreamConverter {
   private finishReason: CanonicalFinishReason | undefined;
   private usage: CanonicalUsage = { inputTokens: 0, outputTokens: 0 };
   private terminal = false;
+  private terminalError: GatewayError | undefined;
 
   constructor(options: OpenAIStreamConverterOptions) {
     this.options = {
@@ -191,6 +192,14 @@ export class OpenAIStreamConverter {
 
   get isTerminal(): boolean {
     return this.terminal;
+  }
+
+  get currentUsage(): CanonicalUsage {
+    return { ...this.usage };
+  }
+
+  get error(): GatewayError | undefined {
+    return this.terminalError ? { ...this.terminalError } : undefined;
   }
 
   processSseEvent(event: SseEvent): CanonicalStreamEvent[] {
@@ -331,7 +340,7 @@ export class OpenAIStreamConverter {
       }
     }
 
-    if (delta.tool_calls === undefined) {
+    if (delta.tool_calls === undefined || delta.tool_calls === null) {
       return;
     }
     if (!Array.isArray(delta.tool_calls)) {
@@ -356,7 +365,7 @@ export class OpenAIStreamConverter {
         this.tools.set(index, state);
       }
       let nameUpdated = false;
-      if (callValue.id !== undefined) {
+      if (callValue.id !== undefined && callValue.id !== null) {
         if (typeof callValue.id !== "string") {
           throw upstreamProtocolError(`stream.tool_calls[${index}].id: Expected a string.`);
         }
@@ -365,11 +374,11 @@ export class OpenAIStreamConverter {
         }
         state.id += callValue.id;
       }
-      if (callValue.function !== undefined) {
+      if (callValue.function !== undefined && callValue.function !== null) {
         if (!isObject(callValue.function)) {
           throw upstreamProtocolError(`stream.tool_calls[${index}].function: Expected an object.`);
         }
-        if (callValue.function.name !== undefined) {
+        if (callValue.function.name !== undefined && callValue.function.name !== null) {
           if (typeof callValue.function.name !== "string") {
             throw upstreamProtocolError(`stream.tool_calls[${index}].function.name: Expected a string.`);
           }
@@ -379,7 +388,7 @@ export class OpenAIStreamConverter {
           state.name += callValue.function.name;
           nameUpdated = callValue.function.name.length > 0;
         }
-        if (callValue.function.arguments !== undefined) {
+        if (callValue.function.arguments !== undefined && callValue.function.arguments !== null) {
           if (typeof callValue.function.arguments !== "string") {
             throw upstreamProtocolError(`stream.tool_calls[${index}].function.arguments: Expected a string.`);
           }
@@ -434,6 +443,7 @@ export class OpenAIStreamConverter {
     if (this.terminal) {
       return [];
     }
+    this.terminalError = error;
     this.terminal = true;
     return [{ type: "error", error }];
   }
@@ -568,6 +578,14 @@ export class OpenAIAnthropicStreamBridge {
 
   get isTerminal(): boolean {
     return this.converter.isTerminal;
+  }
+
+  get usage(): CanonicalUsage {
+    return this.converter.currentUsage;
+  }
+
+  get error(): GatewayError | undefined {
+    return this.converter.error;
   }
 
   push(chunk: string | Uint8Array): string[] {
