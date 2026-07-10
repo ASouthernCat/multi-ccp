@@ -20,6 +20,8 @@ Use it when you want separate Claude Code sessions for work, personal projects, 
 - Create Claude login profiles that use Claude Code's normal account login flow without storing account passwords.
 - Create [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profiles for multiple model providers and routes.
 - Manage [Claude Code Router](https://github.com/musistudio/claude-code-router) from the same CLI.
+- Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Chat Completions providers.
+- Run multiple gateway profiles concurrently through one local process while keeping upstream URLs, models, credentials, tools, streams, and cancellation state isolated per request.
 - Sync historical Claude Code sessions between profiles or between `main` and a profile.
 - Open and inspect profile settings quickly from the terminal.
 
@@ -63,7 +65,7 @@ ccp add
 ccp start <profile-name>
 ```
 
-`ccp add` lets you choose a built-in preset template or custom configuration, including DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
+`ccp add` lets you choose a built-in preset template or custom configuration, including OpenAI Gateway, Custom OpenAI-Compatible Gateway, DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
 
 If you want to create directly from a built-in preset, pass `--preset`:
 
@@ -181,6 +183,30 @@ A CCR profile stores its route in `.ccp.json` and points Claude Code at a preset
 http://127.0.0.1:3456/preset/gpt-route
 ```
 
+### Built-in Gateway Profiles
+
+Gateway profiles translate Claude Code's Anthropic Messages protocol to OpenAI-compatible Chat Completions. They are useful when a provider does not expose an Anthropic-compatible endpoint.
+
+Create an OpenAI profile:
+
+```bash
+ccp add --preset openai-gateway openai-work
+ccp start openai-work
+```
+
+Create a profile for another OpenAI-compatible provider:
+
+```bash
+ccp add --preset custom-gateway company-model
+ccp start company-model
+```
+
+The custom flow asks for the full Chat Completions URL, upstream model, API key, instruction role, token-limit field, sampling and stop support, parallel tool-call support, and streaming usage behavior.
+
+All gateway profiles use one loopback-only service at `http://127.0.0.1:3921`. Each Claude Code process receives a profile-specific base path and local token, so concurrent profiles can safely target different providers. Starting a second gateway profile reuses the running service and does not restart active streams.
+
+The first release supports Messages requests, non-streaming and SSE responses, text and tool calls, parallel tool calls, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Optional token counting and model discovery endpoints intentionally return `404`, allowing Claude Code to use its fallback behavior.
+
 ## Session Sync
 
 `sync-session` copies Claude Code history for the current project between profiles. It can sync selected sessions interactively or all sessions at once.
@@ -224,6 +250,15 @@ ccp path <profile|main>
 ccp edit <profile>
 ```
 
+Built-in gateway commands:
+
+```bash
+ccp gateway status
+ccp gateway start
+ccp gateway stop
+ccp gateway restart
+```
+
 [Claude Code Router](https://github.com/musistudio/claude-code-router) commands:
 
 ```bash
@@ -253,6 +288,8 @@ Profiles are stored under:
 ~/.claude-profiles/<profile>
 ```
 
+Gateway profiles additionally contain `.ccp-gateway.json`, which is the only source of the profile's generated local token and upstream API key. Shared runtime state is stored under `~/.claude-profiles/.gateway/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
+
 Claude Code's default config directory is still available as:
 
 ```text
@@ -273,6 +310,8 @@ ccp sync-session work to main
 - `ccp add`, `ccp add-login`, and `ccp add-ccr` refuse to overwrite existing profiles.
 - `sync-session` detects conflicts with SHA-256 hashes and asks before overwriting target files.
 - Login profiles do not store Claude account passwords.
+- Gateway API keys are kept out of `.ccp.json`, Web UI responses, logs, and upstream error envelopes. The Web UI presents gateway profiles as read-only until it can update routing metadata and secrets atomically.
+- The built-in gateway binds only to `127.0.0.1`, authenticates each profile path with a generated local token, and does not follow upstream redirects with credentials.
 
 ## Development
 

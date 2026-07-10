@@ -1,16 +1,16 @@
 import { ensureCcrProviderTemplate } from "./ccr.js";
 import { CcpError } from "./errors.js";
-import { createApiProfileFromEnv, createCcrProfile } from "./profiles.js";
-import type { ProfileSummary } from "./types.js";
+import { createApiProfileFromEnv, createCcrProfile, createGatewayProfile } from "./profiles.js";
+import type { GatewayCompatibility, GatewayProvider, ProfileSummary } from "./types.js";
 import type { PathContext } from "./paths.js";
 
-export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr";
+export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr" | "gateway" | "custom-gateway";
 
 export interface BaseProfilePreset {
   id: string;
   label: string;
   type: ProfilePresetType;
-  category: "api" | "ccr" | "custom" | "login";
+  category: "api" | "ccr" | "custom" | "login" | "gateway";
   defaultProfileName: string;
   description: string;
   modelSummary?: string;
@@ -51,9 +51,52 @@ export interface LoginProfilePreset extends BaseProfilePreset {
   type: "login";
 }
 
-export type BuiltinProfilePreset = ApiProfilePreset | CcrProfilePreset | CustomApiProfilePreset | ManualCcrProfilePreset | LoginProfilePreset;
+export interface GatewayProfilePreset extends BaseProfilePreset {
+  type: "gateway";
+  provider: GatewayProvider;
+  chatCompletionsUrl: string;
+  compatibility: GatewayCompatibility;
+}
+
+export interface CustomGatewayProfilePreset extends BaseProfilePreset {
+  type: "custom-gateway";
+}
+
+export type BuiltinProfilePreset = ApiProfilePreset | CcrProfilePreset | CustomApiProfilePreset | ManualCcrProfilePreset | LoginProfilePreset | GatewayProfilePreset | CustomGatewayProfilePreset;
 
 export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
+  {
+    id: "openai-gateway",
+    label: "OpenAI via Built-in Gateway",
+    type: "gateway",
+    category: "gateway",
+    defaultProfileName: "openai",
+    description: "使用 multi-ccp 内置网关连接 OpenAI Chat Completions。",
+    modelSummary: "OpenAI Chat Completions",
+    tags: ["Gateway", "OpenAI"],
+    sortOrder: 5,
+    provider: "openai",
+    chatCompletionsUrl: "https://api.openai.com/v1/chat/completions",
+    compatibility: {
+      instructionRole: "developer",
+      maxTokensField: "max_completion_tokens",
+      supportsStop: false,
+      supportsSampling: false,
+      parallelToolCalls: "supported",
+      streamUsage: "include"
+    }
+  },
+  {
+    id: "custom-gateway",
+    label: "Custom OpenAI-Compatible Gateway",
+    type: "custom-gateway",
+    category: "gateway",
+    defaultProfileName: "openai-compatible",
+    description: "输入 OpenAI-compatible Chat Completions URL、模型和兼容性参数。",
+    modelSummary: "Custom Chat Completions",
+    tags: ["Gateway", "Manual"],
+    sortOrder: 6
+  },
   {
     id: "aicodemirror",
     label: "AICodeMirror",
@@ -164,7 +207,8 @@ export function listProfilePresets(): BuiltinProfilePreset[] {
   return PROFILE_PRESETS.map((preset) => ({
     ...preset,
     ...(preset.type === "api" ? { env: { ...(preset as ApiProfilePreset).env } } : {}),
-    ...(preset.type === "ccr" && preset.providerTemplate ? { providerTemplate: { ...preset.providerTemplate, models: [...preset.providerTemplate.models] } } : {})
+    ...(preset.type === "ccr" && preset.providerTemplate ? { providerTemplate: { ...preset.providerTemplate, models: [...preset.providerTemplate.models] } } : {}),
+    ...(preset.type === "gateway" ? { compatibility: { ...preset.compatibility } } : {})
   }));
 }
 
@@ -215,5 +259,24 @@ export async function createCcrProfileFromPreset(
     presetId: preset.id,
     route: preset.ccrRoute,
     token: input.token?.trim() || preset.tokenDefault || "ccr-local-secret"
+  }, context);
+}
+
+export async function createGatewayProfileFromPreset(
+  input: { presetId: string; name?: string; apiKey: string; model: string },
+  context: PathContext = {}
+): Promise<ProfileSummary> {
+  const preset = getProfilePreset(input.presetId);
+  if (preset.type !== "gateway") {
+    throw new CcpError(`Preset '${input.presetId}' is not a gateway preset.`);
+  }
+  return createGatewayProfile({
+    name: input.name?.trim() || preset.defaultProfileName,
+    provider: preset.provider,
+    chatCompletionsUrl: preset.chatCompletionsUrl,
+    apiKey: input.apiKey,
+    model: input.model,
+    compatibility: preset.compatibility,
+    preset: preset.id
   }, context);
 }

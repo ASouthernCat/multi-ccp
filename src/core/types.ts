@@ -1,4 +1,29 @@
-export type ProfileType = "api" | "login" | "ccr" | "unknown";
+export type ProfileType = "api" | "login" | "ccr" | "gateway" | "unknown";
+
+export type GatewayProvider = "openai" | "openai-compatible";
+
+export interface GatewayCompatibility {
+  instructionRole: "system" | "developer";
+  maxTokensField: "max_tokens" | "max_completion_tokens";
+  supportsStop: boolean;
+  supportsSampling: boolean;
+  parallelToolCalls: "supported" | "unsupported";
+  streamUsage: "include" | "omit";
+}
+
+export interface GatewayProfileConfig {
+  provider: GatewayProvider;
+  protocol: "openai_chat_completions";
+  chatCompletionsUrl: string;
+  model: string;
+  compatibility: GatewayCompatibility;
+}
+
+export interface GatewayProfileSecret {
+  version: 1;
+  localToken: string;
+  apiKey: string;
+}
 
 export interface ClaudeSettings {
   theme?: string;
@@ -15,6 +40,7 @@ export interface ProfileMeta {
   autoStart?: boolean;
   ccrPreset?: string;
   ccrRoute?: string;
+  gateway?: GatewayProfileConfig;
 }
 
 export interface ProfileSummary {
@@ -51,4 +77,14 @@ export interface CreateCcrProfileInput {
   token: string;
   presetName?: string;
   presetId?: string;
+}
+
+export interface CreateGatewayProfileInput {
+  name: string;
+  provider: GatewayProvider;
+  chatCompletionsUrl: string;
+  apiKey: string;
+  model: string;
+  compatibility?: Partial<GatewayCompatibility>;
+  preset?: string;
 }

@@ -30,6 +30,26 @@ export function getClaudeCodeRouterConfigPath(context: PathContext = {}): string
   return path.join(getClaudeCodeRouterDir(context), "config.json");
 }
 
+export function getGatewayDir(context: PathContext = {}): string {
+  return path.join(getProfilesRoot(context), ".gateway");
+}
+
+export function getGatewayConfigPath(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "config.json");
+}
+
+export function getGatewayRuntimePath(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "runtime.json");
+}
+
+export function getGatewayLogPath(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "gateway.log");
+}
+
+export function getGatewayStartupLockPath(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "startup.lock");
+}
+
 export function getProjectKey(projectPath = process.cwd()): string {
   const resolved = path.resolve(projectPath).replace(/[\\/]+$/, "");
   return resolved.replace(/:/g, "-").replace(/[\\/]/g, "-");

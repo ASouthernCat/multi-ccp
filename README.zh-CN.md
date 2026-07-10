@@ -20,6 +20,8 @@
 - 创建 Claude 登录 profile，使用 Claude Code 正常账号登录流程，不保存账号密码。
 - 创建 [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profile，支持多个模型 provider 和 route。
 - 通过同一个 CLI 管理 [Claude Code Router](https://github.com/musistudio/claude-code-router)。
+- 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Chat Completions provider。
+- 多个 gateway profile 可以并发复用一个本地进程，同时按请求隔离上游 URL、模型、凭据、工具映射、流状态和取消信号。
 - 在不同 profile 之间，或在 `main` 与 profile 之间同步 Claude Code 历史会话。
 - 快速查看、打开和编辑 profile 配置。
 
@@ -63,7 +65,7 @@ ccp add
 ccp start <profile-name>
 ```
 
-`ccp add` 会让你选择内置预设模板或自定义配置，例如 DeepSeek、AI CodeMirror、Mimo、CCR GPT、Manual CCR、Claude Login 或 Custom API。
+`ccp add` 会让你选择内置预设模板或自定义配置，例如 OpenAI Gateway、Custom OpenAI-Compatible Gateway、DeepSeek、AI CodeMirror、Mimo、CCR GPT、Manual CCR、Claude Login 或 Custom API。
 
 如果你想直接使用某个内置预设，也可以指定 `--preset`：
 
@@ -181,6 +183,30 @@ CCR profile 会把 route 写入 `.ccp.json`，并让 Claude Code 指向类似这
 http://127.0.0.1:3456/preset/gpt-route
 ```
 
+### 内置 Gateway Profiles
+
+Gateway profile 会把 Claude Code 的 Anthropic Messages 协议转换为 OpenAI-compatible Chat Completions。供应商没有提供 Anthropic-compatible endpoint 时，可以使用这种 profile。
+
+创建 OpenAI profile：
+
+```bash
+ccp add --preset openai-gateway openai-work
+ccp start openai-work
+```
+
+创建其他 OpenAI-compatible provider profile：
+
+```bash
+ccp add --preset custom-gateway company-model
+ccp start company-model
+```
+
+自定义流程会询问完整 Chat Completions URL、上游模型、API key、instruction role、token limit 字段、sampling/stop 支持、并行工具调用支持以及流式 usage 行为。
+
+所有 gateway profile 共用一个仅监听 loopback 的服务：`http://127.0.0.1:3921`。每个 Claude Code 进程使用独立的 profile path 和本地 token，因此不同供应商 profile 可以安全并发运行。启动第二个 gateway profile 时会复用现有服务，不会重启或中断正在执行的流。
+
+第一期支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、并行工具调用、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
+
 ## 历史会话同步
 
 `sync-session` 会同步当前项目的 Claude Code 历史会话。你可以交互式选择要同步的会话，也可以一次同步全部会话。
@@ -224,6 +250,15 @@ ccp path <profile|main>
 ccp edit <profile>
 ```
 
+内置网关命令：
+
+```bash
+ccp gateway status
+ccp gateway start
+ccp gateway stop
+ccp gateway restart
+```
+
 [Claude Code Router](https://github.com/musistudio/claude-code-router) 相关命令：
 
 ```bash
@@ -253,6 +288,8 @@ Profiles 默认存放在：
 ~/.claude-profiles/<profile>
 ```
 
+Gateway profile 还包含 `.ccp-gateway.json`，它是生成的本地 token 和上游 API key 的唯一真相来源。共享 runtime 状态保存在 `~/.claude-profiles/.gateway/`。profile 的 `settings.json` 会在启动前自动派生和修复，不应作为 gateway 路由配置的真相来源。
+
 Claude Code 默认配置目录仍然可以通过 `main` 访问：
 
 ```text
@@ -273,6 +310,8 @@ ccp sync-session work to main
 - `ccp add`、`ccp add-login` 和 `ccp add-ccr` 不会覆盖已经存在的 profile。
 - `sync-session` 使用 SHA-256 hash 检测冲突，并在覆盖目标文件前询问确认。
 - Login profile 不保存 Claude 账号密码。
+- Gateway API key 不会写入 `.ccp.json`、Web UI 响应、日志或上游错误 envelope。Web UI 暂时只读展示 gateway profile，直到能够原子更新路由元数据和 secret。
+- 内置网关只监听 `127.0.0.1`，每个 profile path 都使用生成的本地 token 鉴权，并且不会携带凭据跟随上游重定向。
 
 ## 开发
 

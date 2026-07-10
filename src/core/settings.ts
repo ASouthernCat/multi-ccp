@@ -1,4 +1,5 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CcpError } from "./errors.js";
 import type { ClaudeSettings, ProfileMeta } from "./types.js";
@@ -6,7 +7,7 @@ import type { ClaudeSettings, ProfileMeta } from "./types.js";
 export const SETTINGS_FILE = "settings.json";
 export const META_FILE = ".ccp.json";
 
-async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
+export async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
   try {
     const raw = await readFile(filePath, "utf8");
     return JSON.parse(raw.replace(/^﻿/, "")) as T;
@@ -19,9 +20,19 @@ async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
   }
 }
 
-async function writeJsonFile(filePath: string, value: unknown): Promise<void> {
+export async function writeJsonFileAtomic(filePath: string, value: unknown, mode?: number): Promise<void> {
   await mkdir(path.dirname(filePath), { recursive: true });
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const temporaryPath = path.join(path.dirname(filePath), `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      ...(mode === undefined ? {} : { mode })
+    });
+    await rename(temporaryPath, filePath);
+  } catch (error) {
+    await unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
 }
 
 export function getSettingsPath(profileDir: string): string {
@@ -37,7 +48,7 @@ export async function readSettings(profileDir: string): Promise<ClaudeSettings |
 }
 
 export async function writeSettings(profileDir: string, settings: ClaudeSettings): Promise<void> {
-  await writeJsonFile(getSettingsPath(profileDir), settings);
+  await writeJsonFileAtomic(getSettingsPath(profileDir), settings);
 }
 
 export async function readMeta(profileDir: string): Promise<ProfileMeta | undefined> {
@@ -45,7 +56,7 @@ export async function readMeta(profileDir: string): Promise<ProfileMeta | undefi
 }
 
 export async function writeMeta(profileDir: string, meta: ProfileMeta): Promise<void> {
-  await writeJsonFile(getMetaPath(profileDir), meta);
+  await writeJsonFileAtomic(getMetaPath(profileDir), meta);
 }
 
 function isTransientRemoveError(error: unknown): boolean {

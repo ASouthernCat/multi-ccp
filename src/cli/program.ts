@@ -7,13 +7,14 @@ import { resolveConfigDir } from "../core/profiles.js";
 import {
   createApiProfile,
   createCcrProfile,
+  createGatewayProfile,
   createLoginProfile,
   listProfiles,
   profileExists,
   removeProfile,
   summarizeProfile
 } from "../core/profiles.js";
-import { getSettingsPath } from "../core/settings.js";
+import { getMetaPath, getSettingsPath, readMeta } from "../core/settings.js";
 import {
   CCR_INSTALL_COMMAND,
   getCcrRouteChoices,
@@ -26,7 +27,21 @@ import {
   startCcrService,
   stopCcrService
 } from "../core/ccr.js";
-import { createApiProfileFromPreset, createCcrProfileFromPreset, getProfilePreset, listProfilePresets, type BuiltinProfilePreset } from "../core/presets.js";
+import {
+  createApiProfileFromPreset,
+  createCcrProfileFromPreset,
+  createGatewayProfileFromPreset,
+  getProfilePreset,
+  listProfilePresets,
+  type BuiltinProfilePreset
+} from "../core/presets.js";
+import {
+  getGatewayStatus,
+  printGatewayStatus,
+  restartGateway,
+  startGateway,
+  stopGateway
+} from "../core/gateway-lifecycle.js";
 import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
@@ -165,6 +180,109 @@ async function createCcrPresetProfile(profile: string | undefined, preset: Built
   printCreatedProfile(await createCcrProfileFromPreset({ presetId: preset.id, name: profileName, token, providerApiKey }));
 }
 
+async function createGatewayPresetProfile(
+  profile: string | undefined,
+  preset: BuiltinProfilePreset,
+  options: { promptName: boolean }
+): Promise<void> {
+  if (preset.type !== "gateway") {
+    throw new CcpError(`Preset '${preset.id}' is not a gateway preset.`);
+  }
+  const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
+  if (!(await ensureProfileCanBeCreated(profileName))) return;
+  console.log(`Create built-in gateway profile: ${profileName}`);
+  console.log(`Preset:   ${preset.label}`);
+  console.log(`Upstream: ${preset.chatCompletionsUrl}`);
+  const model = await input({ message: "OpenAI model", required: true });
+  const apiKey = await password({
+    message: "OpenAI API key (hidden)",
+    mask: "*",
+    validate: (value) => value.trim() ? true : "API key is required."
+  });
+  const ok = await confirm({ message: "Create this gateway profile?", default: true });
+  if (!ok) {
+    console.log("Cancelled.");
+    return;
+  }
+  printCreatedProfile(await createGatewayProfileFromPreset({
+    presetId: preset.id,
+    name: profileName,
+    apiKey,
+    model
+  }));
+}
+
+async function createCustomGatewayProfile(
+  profile: string | undefined,
+  preset: BuiltinProfilePreset,
+  options: { promptName: boolean }
+): Promise<void> {
+  const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
+  if (!(await ensureProfileCanBeCreated(profileName))) return;
+  console.log(`Create custom OpenAI-compatible gateway profile: ${profileName}`);
+  const chatCompletionsUrl = await input({
+    message: "Chat Completions URL",
+    required: true
+  });
+  const model = await input({ message: "Upstream model", required: true });
+  const apiKey = await password({
+    message: "Provider API key (hidden)",
+    mask: "*",
+    validate: (value) => value.trim() ? true : "API key is required."
+  });
+  const instructionRole = await select({
+    message: "Instruction message role",
+    choices: [
+      { name: "system (widely compatible)", value: "system" as const },
+      { name: "developer (OpenAI reasoning models)", value: "developer" as const }
+    ]
+  });
+  const maxTokensField = await select({
+    message: "Output token field",
+    choices: [
+      { name: "max_tokens (widely compatible)", value: "max_tokens" as const },
+      { name: "max_completion_tokens (OpenAI reasoning models)", value: "max_completion_tokens" as const }
+    ]
+  });
+  const supportsStop = await confirm({ message: "Provider supports stop?", default: true });
+  const supportsSampling = await confirm({ message: "Provider supports temperature/top_p?", default: true });
+  const parallelToolCalls = await select({
+    message: "parallel_tool_calls parameter",
+    choices: [
+      { name: "Unsupported / omit", value: "unsupported" as const },
+      { name: "Supported", value: "supported" as const }
+    ]
+  });
+  const streamUsage = await select({
+    message: "Streaming usage option",
+    choices: [
+      { name: "Omit stream_options", value: "omit" as const },
+      { name: "Include usage", value: "include" as const }
+    ]
+  });
+  const ok = await confirm({ message: "Create this gateway profile?", default: true });
+  if (!ok) {
+    console.log("Cancelled.");
+    return;
+  }
+  printCreatedProfile(await createGatewayProfile({
+    name: profileName,
+    provider: "openai-compatible",
+    chatCompletionsUrl,
+    apiKey,
+    model,
+    compatibility: {
+      instructionRole,
+      maxTokensField,
+      supportsStop,
+      supportsSampling,
+      parallelToolCalls,
+      streamUsage
+    },
+    preset: preset.id
+  }));
+}
+
 async function createCustomApiProfile(profile: string | undefined, preset: BuiltinProfilePreset, options: { promptName: boolean }): Promise<void> {
   const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
   if (!(await ensureProfileCanBeCreated(profileName))) return;
@@ -268,6 +386,12 @@ async function createProfileFromPreset(profile: string | undefined, preset: Buil
     case "login":
       await createLoginPresetProfile(profile, preset, options);
       break;
+    case "gateway":
+      await createGatewayPresetProfile(profile, preset, options);
+      break;
+    case "custom-gateway":
+      await createCustomGatewayProfile(profile, preset, options);
+      break;
   }
 }
 
@@ -326,6 +450,11 @@ async function showStatus(name: string): Promise<void> {
     console.log("Auth:    Claude Code login");
     console.log("Env:     missing");
     return;
+  }
+
+  if (profile.type === "gateway" && profile.meta?.gateway) {
+    console.log(`Provider: ${profile.meta.gateway.provider}`);
+    console.log(`Upstream: ${profile.meta.gateway.chatCompletionsUrl}`);
   }
 
   if (!profile.baseUrl && !profile.model && profile.tokenStatus === "missing") {
@@ -511,10 +640,11 @@ export function createProgram(): Command {
   program
     .command("edit")
     .argument("<profile>")
-    .description("Open a profile settings file in your editor")
+    .description("Open a profile configuration file in your editor")
     .action(async (profile: string) => {
       const config = await resolveConfigDir(profile, { allowMain: false });
-      const code = await openEditor(getSettingsPath(config.dir));
+      const meta = await readMeta(config.dir);
+      const code = await openEditor(meta?.type === "gateway" ? getMetaPath(config.dir) : getSettingsPath(config.dir));
       process.exitCode = code;
     });
 
@@ -542,6 +672,31 @@ export function createProgram(): Command {
         }
       });
       process.exitCode = code;
+    });
+
+  program
+    .command("gateway")
+    .helpOption(false)
+    .argument("[action]")
+    .description("Manage the built-in OpenAI-compatible gateway")
+    .action(async (action: string | undefined) => {
+      switch (action) {
+        case undefined:
+        case "status":
+          printGatewayStatus(await getGatewayStatus());
+          break;
+        case "start":
+          printGatewayStatus(await startGateway());
+          break;
+        case "stop":
+          printGatewayStatus(await stopGateway());
+          break;
+        case "restart":
+          printGatewayStatus(await restartGateway());
+          break;
+        default:
+          throw new CcpError(`Unknown gateway command '${action}'. Use 'ccp gateway status|start|stop|restart'.`);
+      }
     });
 
   program

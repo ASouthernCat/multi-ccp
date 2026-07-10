@@ -17,6 +17,7 @@ import {
   summarizeProfile
 } from "../core/profiles.js";
 import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, installCcr, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
+import { getGatewayStatus } from "../core/gateway-lifecycle.js";
 import { createApiProfileFromPreset, createCcrProfileFromPreset, listProfilePresets } from "../core/presets.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, scanSessionProject, syncSessionProject, type SyncProjectSessionSelection } from "../core/sessions.js";
@@ -101,6 +102,24 @@ function publicSettings(settings?: ClaudeSettings): Record<string, unknown> | un
   return cloned as Record<string, unknown>;
 }
 
+export function publicProfileSettings(profile: ProfileSummary, settings?: ClaudeSettings): Record<string, unknown> | undefined {
+  const publicValue = publicSettings(settings) as ClaudeSettings | undefined;
+  if (profile.type === "gateway" && publicValue?.env?.ANTHROPIC_AUTH_TOKEN) {
+    publicValue.env.ANTHROPIC_AUTH_TOKEN = "[managed by built-in gateway]";
+  }
+  return publicValue as Record<string, unknown> | undefined;
+}
+
+export function listWebProfilePresets() {
+  return listProfilePresets().filter((preset) => preset.type !== "gateway" && preset.type !== "custom-gateway");
+}
+
+export function assertWebProfileWritable(profile: ProfileSummary): void {
+  if (profile.type === "gateway") {
+    throw new CcpError("Gateway profiles are read-only in the Web UI. Use the ccp CLI or edit .ccp.json.");
+  }
+}
+
 function maskToken(token: string): string {
   if (!token || token === "REPLACE_WITH_FULL_TOKEN") return "missing";
   if (token.length <= 8) return "configured";
@@ -115,10 +134,15 @@ function hostnameOf(url: string): string {
   }
 }
 
-function tagsForProfile(profile: ProfileSummary, isMain: boolean, ccrRunning: boolean): { status: WebProfile["status"]; statusText: string; tags: string[] } {
+function tagsForProfile(
+  profile: ProfileSummary,
+  isMain: boolean,
+  ccrRunning: boolean,
+  gatewayRunning: boolean
+): { status: WebProfile["status"]; statusText: string; tags: string[] } {
   const type = isMain ? "main" : profile.type;
   const tags: string[] = [];
-  tags.push(type === "main" ? "Main" : type === "api" ? "API" : type === "login" ? "Login" : type === "ccr" ? "CCR" : "Unknown");
+  tags.push(type === "main" ? "Main" : type === "api" ? "API" : type === "login" ? "Login" : type === "ccr" ? "CCR" : type === "gateway" ? "Gateway" : "Unknown");
 
   let status: WebProfile["status"] = "ready";
   let statusText = "Ready";
@@ -134,6 +158,13 @@ function tagsForProfile(profile: ProfileSummary, isMain: boolean, ccrRunning: bo
     status = "needs_attention";
     statusText = "CCR Offline";
   }
+  if (profile.type === "gateway" && profile.tokenStatus === "missing") {
+    status = "needs_attention";
+    statusText = "Missing Provider Key";
+  } else if (profile.type === "gateway" && !gatewayRunning) {
+    status = "needs_attention";
+    statusText = "Gateway Offline";
+  }
   if (profile.type === "unknown" && !isMain) {
     status = "unknown";
     statusText = "Unknown";
@@ -146,34 +177,42 @@ function tagsForProfile(profile: ProfileSummary, isMain: boolean, ccrRunning: bo
     tags.push("Login Profile");
   } else if (profile.type === "ccr") {
     tags.push(profile.meta?.ccrRoute ? "Preset Bound" : "Endpoint Bound");
+  } else if (profile.type === "gateway") {
+    tags.push(profile.meta?.gateway?.provider === "openai" ? "OpenAI" : "OpenAI Compatible");
   } else if (isMain) {
     tags.push("Main Config");
   }
   return { status, statusText, tags };
 }
 
-async function toWebProfile(profile: ProfileSummary, isMain: boolean, ccrRunning: boolean, includeSettings = false): Promise<WebProfile> {
-  const tagState = tagsForProfile(profile, isMain, ccrRunning);
+async function toWebProfile(
+  profile: ProfileSummary,
+  isMain: boolean,
+  ccrRunning: boolean,
+  includeSettings = false,
+  gatewayRunning = false
+): Promise<WebProfile> {
+  const tagState = tagsForProfile(profile, isMain, ccrRunning, gatewayRunning);
   const settings = includeSettings ? await readSettings(profile.dir) : undefined;
   return {
     ...profile,
     type: isMain ? "main" : profile.type,
     ...tagState,
     startCommand: isMain ? "claude" : `ccp start ${profile.name}`,
-    settings: publicSettings(settings)
+    settings: publicProfileSettings(profile, settings)
   };
 }
 
 async function getAllProfiles(includeSettings = false): Promise<WebProfile[]> {
-  const ccr = await getCcrStatus();
+  const [ccr, gateway] = await Promise.all([getCcrStatus(), getGatewayStatus()]);
   const profiles: WebProfile[] = [];
   const mainDir = getMainClaudeDir();
   if (existsSync(mainDir)) {
     const main = await summarizeProfile("main", mainDir);
-    profiles.push(await toWebProfile(main, true, ccr.running, includeSettings));
+    profiles.push(await toWebProfile(main, true, ccr.running, includeSettings, gateway.running));
   }
   for (const profile of await listProfiles()) {
-    profiles.push(await toWebProfile(profile, false, ccr.running, includeSettings));
+    profiles.push(await toWebProfile(profile, false, ccr.running, includeSettings, gateway.running));
   }
   return profiles;
 }
@@ -201,7 +240,11 @@ function ccrRoutesMessage(reason: Awaited<ReturnType<typeof getCcrStatus>>["rout
   }
 }
 
-function dashboardFromProfiles(profiles: WebProfile[], ccr: Awaited<ReturnType<typeof getCcrStatus>>) {
+function dashboardFromProfiles(
+  profiles: WebProfile[],
+  ccr: Awaited<ReturnType<typeof getCcrStatus>>,
+  gateway: Awaited<ReturnType<typeof getGatewayStatus>>
+) {
   const count = (type: WebProfile["type"]) => profiles.filter((profile) => profile.type === type).length;
   return {
     profiles: {
@@ -210,9 +253,11 @@ function dashboardFromProfiles(profiles: WebProfile[], ccr: Awaited<ReturnType<t
       api: count("api"),
       login: count("login"),
       ccr: count("ccr"),
+      gateway: count("gateway"),
       needsAttention: profiles.filter((profile) => profile.status !== "ready").length
     },
     ccr: ccrWebStatus(ccr),
+    gateway,
     activity: activity.slice(0, 8)
   };
 }
@@ -426,7 +471,9 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
     if (pathname === "/api/presets") {
       if (req.method !== "GET") return methodNotAllowed(res);
-      return json(res, 200, { presets: listProfilePresets() });
+      return json(res, 200, {
+        presets: listWebProfilePresets()
+      });
     }
 
     if (pathname === "/api/profiles/preset") {
@@ -436,8 +483,10 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       let created: ProfileSummary;
       if (body.kind === "ccr") {
         created = await createCcrProfileFromPreset({ presetId, name: body.name, token: body.token, providerApiKey: body.providerApiKey });
-      } else {
+      } else if (body.kind === "api") {
         created = await createApiProfileFromPreset({ presetId, name: body.name, token: body.token ?? "" });
+      } else {
+        throw new CcpError("This preset type is not available in the Web UI. Use the ccp CLI.");
       }
       addActivity("success", `Created profile '${created.name}' from preset '${presetId}'.`);
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
@@ -446,7 +495,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
     if (pathname === "/api/dashboard") {
       if (req.method !== "GET") return methodNotAllowed(res);
       const profiles = await getAllProfiles();
-      return json(res, 200, dashboardFromProfiles(profiles, await getCcrStatus()));
+      const [ccr, gateway] = await Promise.all([getCcrStatus(), getGatewayStatus()]);
+      return json(res, 200, dashboardFromProfiles(profiles, ccr, gateway));
     }
 
     if (pathname === "/api/profiles") {
@@ -599,9 +649,14 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (req.method === "GET") {
         const config = await resolveConfigDir(name, { allowMain: true });
         const profile = await summarizeProfile(config.name, config.dir);
-        return json(res, 200, { profile: await toWebProfile(profile, config.isMain, (await getCcrStatus()).running, true) });
+        const [ccr, gateway] = await Promise.all([getCcrStatus(), getGatewayStatus()]);
+        return json(res, 200, {
+          profile: await toWebProfile(profile, config.isMain, ccr.running, true, gateway.running)
+        });
       }
       if (req.method === "PUT") {
+        const current = await summarizeProfile(name, (await resolveConfigDir(name, { allowMain: false })).dir);
+        assertWebProfileWritable(current);
         const body = await readJsonBody<Record<string, unknown>>(req);
         const kind = String(body.kind ?? "api");
         const profile = kind === "ccr" ? await updateCcrBinding(name, body) : await updateApiSettings(name, body);

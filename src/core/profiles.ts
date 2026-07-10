@@ -1,15 +1,29 @@
-import { access, mkdir, readdir } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { access, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { assertProfileName, CcpError } from "./errors.js";
 import { getMainClaudeDir, getProfilesRoot, type PathContext } from "./paths.js";
 import { ensureCcrPreset, getCcrPresetEndpoint } from "./ccr.js";
 import { getSettingsPath, readMeta, readSettings, removeProfileDir, writeMeta, writeSettings } from "./settings.js";
+import {
+  buildGatewaySettings,
+  readGatewayProfileSecret,
+  writeGatewayProfileSecret
+} from "./gateway-profile.js";
+import {
+  getGatewayEndpoint,
+  mergeGatewayCompatibility,
+  normalizeChatCompletionsUrl,
+  readGatewayRuntimeConfig
+} from "../gateway/config.js";
 import type {
   ClaudeSettings,
   CreateApiProfileFromEnvInput,
   CreateApiProfileInput,
   CreateLoginProfileInput,
   CreateCcrProfileInput,
+  CreateGatewayProfileInput,
+  GatewayProfileSecret,
   ProfileMeta,
   ProfileSummary,
   ProfileType
@@ -84,7 +98,11 @@ export async function summarizeProfile(name: string, dir: string): Promise<Profi
     model = "ccr";
   } else if (type === "login") {
     model = "login";
+  } else if (type === "gateway") {
+    model = meta?.gateway?.model ?? "";
   }
+
+  const gatewaySecret = type === "gateway" ? await readGatewayProfileSecret(dir) : undefined;
 
   return {
     name,
@@ -92,7 +110,9 @@ export async function summarizeProfile(name: string, dir: string): Promise<Profi
     type,
     baseUrl,
     model,
-    tokenStatus: token && token !== "REPLACE_WITH_FULL_TOKEN" ? "set" : "missing",
+    tokenStatus: type === "gateway"
+      ? (gatewaySecret?.apiKey ? "set" : "missing")
+      : (token && token !== "REPLACE_WITH_FULL_TOKEN" ? "set" : "missing"),
     settingsPath: getSettingsPath(dir),
     meta
   };
@@ -210,6 +230,64 @@ export async function createCcrProfile(input: CreateCcrProfileInput, context: Pa
   });
   await ensureCcrPreset(presetName, input.route.trim(), context);
   return summarizeProfile(input.name, profileDir);
+}
+
+export async function createGatewayProfile(
+  input: CreateGatewayProfileInput,
+  context: PathContext = {}
+): Promise<ProfileSummary> {
+  assertProfileName(input.name);
+  const profileDir = getProfileDir(input.name, context);
+  const model = input.model.trim();
+  const apiKey = input.apiKey.trim();
+  if (!model) {
+    throw new CcpError("Gateway model is required.");
+  }
+  if (!apiKey) {
+    throw new CcpError("Gateway API key is required.");
+  }
+
+  await mkdir(getProfilesRoot(context), { recursive: true, mode: 0o700 });
+  try {
+    await mkdir(profileDir, { mode: 0o700 });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new CcpError(`Profile '${input.name}' already exists: ${profileDir}`);
+    }
+    throw error;
+  }
+
+  try {
+    const gateway = {
+      provider: input.provider,
+      protocol: "openai_chat_completions" as const,
+      chatCompletionsUrl: normalizeChatCompletionsUrl(input.chatCompletionsUrl),
+      model,
+      compatibility: mergeGatewayCompatibility(input.provider, input.compatibility)
+    };
+    const secret: GatewayProfileSecret = {
+      version: 1,
+      localToken: randomBytes(32).toString("base64url"),
+      apiKey
+    };
+    const runtimeConfig = await readGatewayRuntimeConfig(context);
+    await writeGatewayProfileSecret(profileDir, secret);
+    await writeMeta(profileDir, {
+      version: 1,
+      type: "gateway",
+      preset: input.preset,
+      gateway,
+      createdAt: new Date().toISOString()
+    });
+    await writeSettings(
+      profileDir,
+      buildGatewaySettings(undefined, input.name, getGatewayEndpoint(runtimeConfig), secret)
+    );
+    return summarizeProfile(input.name, profileDir);
+  } catch (error) {
+    await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function removeProfile(name: string, context: PathContext = {}): Promise<string> {

@@ -1,0 +1,23 @@
+.summary-grid {
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.metric.gateway::before {
+  background: var(--accent);
+}
+
+.profile-icon.gateway {
+  color: var(--accent);
+}
+
+@media (max-width: 1080px) {
+  .summary-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 720px) {
+  .summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

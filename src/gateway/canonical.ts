@@ -1,0 +1,75 @@
+import type { GatewayError } from "./errors.js";
+
+export type CanonicalContent =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
+  | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean };
+
+export interface CanonicalTool {
+  name: string;
+  description?: string;
+  inputSchema: Record<string, unknown>;
+}
+
+export interface CanonicalUsage {
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface CanonicalMessage {
+  role: "user" | "assistant";
+  content: CanonicalContent[];
+}
+
+export interface CanonicalToolChoice {
+  mode: "auto" | "required" | "none" | "tool";
+  name?: string;
+  disableParallelToolUse?: boolean;
+}
+
+export interface CanonicalRequest {
+  clientModel: string;
+  system: string[];
+  messages: CanonicalMessage[];
+  maxOutputTokens: number;
+  temperature?: number;
+  topP?: number;
+  stop?: string[];
+  tools?: CanonicalTool[];
+  toolChoice?: CanonicalToolChoice;
+  stream: boolean;
+}
+
+export type CanonicalResponseContent =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> };
+
+export type CanonicalFinishReason = "end_turn" | "tool_use" | "max_tokens";
+
+export interface CanonicalResponse {
+  id: string;
+  model: string;
+  content: CanonicalResponseContent[];
+  finishReason: CanonicalFinishReason;
+  usage: CanonicalUsage;
+}
+
+export interface ToolNameMapping {
+  sourceToTarget: ReadonlyMap<string, string>;
+  targetToSource: ReadonlyMap<string, string>;
+}
+
+export type CanonicalStreamEvent =
+  | { type: "message_start"; id: string; model: string }
+  | { type: "text_delta"; blockKey: string; text: string }
+  | { type: "tool_start"; blockKey: string; id: string; name: string }
+  | { type: "tool_arguments_delta"; blockKey: string; partialJson: string }
+  | { type: "block_stop"; blockKey: string }
+  | { type: "usage"; usage: CanonicalUsage }
+  | { type: "finish"; reason: CanonicalFinishReason }
+  | { type: "error"; error: GatewayError };
+
+export const EMPTY_TOOL_NAME_MAPPING: ToolNameMapping = {
+  sourceToTarget: new Map(),
+  targetToSource: new Map()
+};

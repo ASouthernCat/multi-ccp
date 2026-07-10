@@ -5,6 +5,8 @@ import { CcpError } from "./errors.js";
 import { getHomeDir, getHomeWorkDir, getMainClaudeDir, type PathContext } from "./paths.js";
 import { resolveConfigDir } from "./profiles.js";
 import { ensureCcrProfileGateway } from "./ccr.js";
+import { ensureBuiltinGatewayProfile } from "./gateway-lifecycle.js";
+import { readMeta } from "./settings.js";
 
 const MODEL_ENV_NAMES = [
   "ANTHROPIC_MODEL",
@@ -22,6 +24,10 @@ export interface LaunchOptions {
   context?: PathContext;
   cwd?: string;
   confirmMainConfigCwd?: (details: { currentDir: string; fallbackDir: string; profileName: string }) => Promise<boolean>;
+  runtimeDeps?: {
+    ensureCcrProfileGateway?: typeof ensureCcrProfileGateway;
+    ensureBuiltinGatewayProfile?: typeof ensureBuiltinGatewayProfile;
+  };
 }
 
 function normalizePath(value: string): string {
@@ -64,7 +70,20 @@ export async function prepareClaudeLaunch(options: LaunchOptions): Promise<{
   env: NodeJS.ProcessEnv;
 }> {
   const config = await resolveConfigDir(options.name, { allowMain: false, context: options.context });
-  await ensureCcrProfileGateway(config.dir, options.name, options.context);
+  const meta = await readMeta(config.dir);
+  if (meta?.type === "ccr") {
+    await (options.runtimeDeps?.ensureCcrProfileGateway ?? ensureCcrProfileGateway)(
+      config.dir,
+      options.name,
+      options.context
+    );
+  } else if (meta?.type === "gateway") {
+    await (options.runtimeDeps?.ensureBuiltinGatewayProfile ?? ensureBuiltinGatewayProfile)(
+      config.dir,
+      options.name,
+      options.context
+    );
+  }
 
   return {
     command: "claude",
