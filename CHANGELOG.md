@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
 - Profile 创建合并为单一 Gateway 模板，可选择任意已创建的 Upstream 和模型；OpenAI official 与 OpenAI-compatible 仅保留为 Upstream 创建预设，无可用上游时 Web UI 会显示管理引导。
 - Web UI 顶部显示可跳转 GitHub 仓库的 multi-ccp 版本号；CCR 状态弹窗新增 2.x 固定版本、3.x 不兼容说明，以及使用内置 Gateway 接入 OpenAI 格式供应商的引导。
