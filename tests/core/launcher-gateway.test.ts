@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareClaudeLaunch } from "../../src/core/launcher.js";
 import { createApiProfile, createGatewayProfile } from "../../src/core/profiles.js";
+import { createGatewayUpstream } from "../../src/core/gateway-upstreams.js";
 
 const homes: string[] = [];
 
@@ -22,11 +23,16 @@ async function createContext() {
 describe("launcher runtime dispatch", () => {
   it("ensures the built-in gateway only for gateway profiles", async () => {
     const context = await createContext();
-    const profile = await createGatewayProfile({
-      name: "gateway-launch",
+    await createGatewayUpstream({
+      id: "launcher-upstream",
       provider: "openai-compatible",
       chatCompletionsUrl: "https://example.test/v1/chat/completions",
       apiKey: "key",
+      models: ["model"]
+    }, context);
+    const profile = await createGatewayProfile({
+      name: "gateway-launch",
+      upstreamId: "launcher-upstream",
       model: "model"
     }, context);
     const ensureGateway = vi.fn().mockResolvedValue({});

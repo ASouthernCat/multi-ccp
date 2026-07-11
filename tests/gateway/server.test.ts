@@ -4,7 +4,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createGatewayProfile } from "../../src/core/profiles.js";
+import { createGatewayProfile as createStoredGatewayProfile } from "../../src/core/profiles.js";
+import { createGatewayUpstream } from "../../src/core/gateway-upstreams.js";
+import type { GatewayCompatibility, GatewayProvider } from "../../src/core/types.js";
 import { readGatewayProfileSecret } from "../../src/core/gateway-profile.js";
 import { createGatewayServer, type GatewayRequestLog } from "../../src/gateway/server.js";
 
@@ -23,6 +25,29 @@ async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-gateway-test-"));
   cleanups.push(() => rm(homeDir, { recursive: true, force: true }));
   return { homeDir };
+}
+
+async function createTestGatewayProfile(
+  input: {
+    name: string;
+    provider: GatewayProvider;
+    chatCompletionsUrl: string;
+    apiKey: string;
+    model: string;
+    compatibility?: Partial<GatewayCompatibility>;
+  },
+  context: { homeDir: string }
+) {
+  const upstreamId = `${input.name}-upstream`;
+  await createGatewayUpstream({
+    id: upstreamId,
+    provider: input.provider,
+    chatCompletionsUrl: input.chatCompletionsUrl,
+    apiKey: input.apiKey,
+    models: [input.model],
+    compatibility: input.compatibility
+  }, context);
+  return createStoredGatewayProfile({ name: input.name, upstreamId, model: input.model }, context);
 }
 
 async function listenLoopback(
@@ -127,14 +152,14 @@ describe("gateway HTTP protocol", () => {
         usage: { prompt_tokens: provider === "a" ? 11 : 22, completion_tokens: 3 }
       }));
     });
-    const profileA = await createGatewayProfile({
+    const profileA = await createTestGatewayProfile({
       name: "provider-a",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/a/v1/chat/completions`,
       apiKey: "upstream-key-a",
       model: "model-a"
     }, context);
-    const profileB = await createGatewayProfile({
+    const profileB = await createTestGatewayProfile({
       name: "provider-b",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/b/v1/chat/completions`,
@@ -188,7 +213,7 @@ describe("gateway HTTP protocol", () => {
         usage: { prompt_tokens: 1, completion_tokens: 1 }
       }));
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "gpt-5.6",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -240,7 +265,7 @@ describe("gateway HTTP protocol", () => {
         choices: [{ message: { content: "ok" }, finish_reason: "stop" }]
       }));
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "limits",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -283,7 +308,7 @@ describe("gateway HTTP protocol", () => {
         }
       }));
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "errors",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -325,7 +350,7 @@ describe("gateway HTTP protocol", () => {
       res.writeHead(302, { location: `${upstream.endpoint}/redirected` });
       res.end();
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "redirect",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -353,7 +378,7 @@ describe("gateway HTTP protocol", () => {
         error: { type: "authentication_error", message: "upstream credential rejected" }
       }));
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "anthropic-error",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -385,7 +410,7 @@ describe("gateway HTTP protocol", () => {
       res.write("data: {\"id\":\"chat-1\",\"model\":\"model\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1}}\n\n");
       res.end("data: [DONE]\n\n");
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "stream",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -415,7 +440,7 @@ describe("gateway HTTP protocol", () => {
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.write('data: {"id":"chat","model":"model","choices":[{"index":0,"delta":{"content":"first"},"finish_reason":null}]}\n\n');
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "timeout",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -444,7 +469,7 @@ describe("gateway HTTP protocol", () => {
       res.writeHead(200, { "content-type": "text/event-stream" });
       res.end("data: {bad}\n\n");
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "stream-error-log",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -487,7 +512,7 @@ describe("gateway HTTP protocol", () => {
       res.write('data: [DONE]\n\n');
       res.once("close", upstreamClosedResolve);
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "done-without-eof",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
@@ -524,7 +549,7 @@ describe("gateway HTTP protocol", () => {
       res.write('data: {"id":"chat","model":"model","choices":[{"index":0,"delta":{"content":"first"},"finish_reason":null}]}\n\n');
       res.once("close", upstreamClosedResolve);
     });
-    const profile = await createGatewayProfile({
+    const profile = await createTestGatewayProfile({
       name: "disconnect",
       provider: "openai-compatible",
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,

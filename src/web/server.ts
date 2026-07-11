@@ -1,27 +1,42 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, open as openFile, readFile, rm, stat, truncate } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { assertProfileName, CcpError } from "../core/errors.js";
-import { getHomeWorkDir, getMainClaudeDir } from "../core/paths.js";
+import { getGatewayLogPath, getHomeWorkDir, getMainClaudeDir, type PathContext } from "../core/paths.js";
 import {
   createApiProfile,
   createCcrProfile,
+  createGatewayProfile,
   createLoginProfile,
   listProfiles,
   removeProfile,
   resolveConfigDir,
   summarizeProfile
 } from "../core/profiles.js";
-import { ensureCcrPreset, getCcrRouteChoices, getCcrStatus, installCcr, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
-import { getGatewayStatus } from "../core/gateway-lifecycle.js";
-import { createApiProfileFromPreset, createCcrProfileFromPreset, listProfilePresets } from "../core/presets.js";
+import { CCR_PINNED_VERSION, ensureCcrPreset, getCcrRouteChoices, getCcrStatus, installCcr, readCcrConfig, restartCcrService, startCcrService, stopCcrService } from "../core/ccr.js";
+import { getGatewayStatus, restartGateway, startGateway, stopGateway } from "../core/gateway-lifecycle.js";
+import { createApiProfileFromPreset, createCcrProfileFromPreset, createGatewayProfileFromPreset, listProfilePresets } from "../core/presets.js";
+import { updateGatewayProfile } from "../core/gateway-profile.js";
+import {
+  createGatewayUpstream,
+  findGatewayUpstreamReferences,
+  listGatewayUpstreams,
+  removeGatewayUpstream,
+  readGatewayUpstreamConfig,
+  readGatewayUpstreamSecret,
+  updateGatewayUpstream,
+  validateGatewayCompatibility
+} from "../core/gateway-upstreams.js";
+import { listGatewayUpstreamTemplates } from "../core/gateway-upstream-templates.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
+import { getPackageVersion } from "../core/version.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, scanSessionProject, syncSessionProject, type SyncProjectSessionSelection } from "../core/sessions.js";
-import type { ClaudeSettings, ProfileMeta, ProfileSummary } from "../core/types.js";
+import type { ClaudeSettings, GatewayCompatibility, GatewayProvider, GatewayUpstreamSummary, ProfileMeta, ProfileSummary } from "../core/types.js";
+import { CUSTOM_GATEWAY_COMPATIBILITY, MODERN_OPENAI_COMPATIBILITY, OPENAI_CHAT_COMPLETIONS_URL, OPENAI_GATEWAY_COMPATIBILITY } from "../gateway/config.js";
 
 export interface UiServerOptions {
   host?: string;
@@ -44,11 +59,15 @@ interface WebProfile extends Omit<ProfileSummary, "type" | "tokenStatus"> {
   tags: string[];
   startCommand: string;
   settings?: Record<string, unknown>;
+  gatewayUpstream?: GatewayUpstreamSummary;
 }
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 7821;
-const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
+const JSON_HEADERS = {
+  "content-type": "application/json; charset=utf-8",
+  "cache-control": "no-store"
+};
 
 let nextActivityId = 1;
 const activity: ActivityEntry[] = [];
@@ -111,13 +130,50 @@ export function publicProfileSettings(profile: ProfileSummary, settings?: Claude
 }
 
 export function listWebProfilePresets() {
-  return listProfilePresets().filter((preset) => preset.type !== "gateway" && preset.type !== "custom-gateway");
+  return listProfilePresets();
+}
+
+export async function readWebProfileApiKey(name: string, context: PathContext = {}): Promise<string> {
+  const config = await resolveConfigDir(name, { allowMain: false, context });
+  const profile = await summarizeProfile(name, config.dir);
+  if (profile.type !== "api") {
+    throw new CcpError(`Profile '${name}' does not use an API Key.`);
+  }
+  const settings = await readSettings(config.dir);
+  return settings?.env?.ANTHROPIC_AUTH_TOKEN ?? "";
+}
+
+export async function readWebGatewayUpstreamApiKey(id: string, context: PathContext = {}): Promise<string> {
+  return (await readGatewayUpstreamSecret(id, context)).apiKey;
 }
 
 export function assertWebProfileWritable(profile: ProfileSummary): void {
-  if (profile.type === "gateway") {
-    throw new CcpError("Gateway profiles are read-only in the Web UI. Use the ccp CLI or edit .ccp.json.");
+  if (!(["api", "ccr", "gateway"] as ProfileSummary["type"][]).includes(profile.type)) {
+    throw new CcpError(`Profile type '${profile.type}' cannot be edited in the Web UI.`);
   }
+}
+
+export type WebGatewayCompatibilityMode = "openai" | "modern" | "legacy" | "advanced";
+
+export function resolveWebGatewayCompatibility(
+  provider: GatewayProvider,
+  mode: WebGatewayCompatibilityMode,
+  advanced?: unknown
+): GatewayCompatibility {
+  let compatibility: Partial<GatewayCompatibility>;
+  if (mode === "openai") {
+    if (provider !== "openai") throw new CcpError("The OpenAI compatibility profile requires the OpenAI provider.");
+    compatibility = OPENAI_GATEWAY_COMPATIBILITY;
+  } else if (mode === "modern") {
+    compatibility = MODERN_OPENAI_COMPATIBILITY;
+  } else if (mode === "legacy") {
+    compatibility = CUSTOM_GATEWAY_COMPATIBILITY;
+  } else if (advanced && typeof advanced === "object" && !Array.isArray(advanced)) {
+    compatibility = advanced as Partial<GatewayCompatibility>;
+  } else {
+    throw new CcpError("Advanced gateway compatibility settings are required.");
+  }
+  return validateGatewayCompatibility(provider, compatibility);
 }
 
 function maskToken(token: string): string {
@@ -148,7 +204,7 @@ function tagsForProfile(
   let statusText = "Ready";
   if (profile.type === "api" && profile.tokenStatus === "missing") {
     status = "needs_attention";
-    statusText = "Missing Token";
+    statusText = "Missing API Key";
   }
   if (profile.type === "api" && !profile.baseUrl) {
     status = "needs_attention";
@@ -178,7 +234,7 @@ function tagsForProfile(
   } else if (profile.type === "ccr") {
     tags.push(profile.meta?.ccrRoute ? "Preset Bound" : "Endpoint Bound");
   } else if (profile.type === "gateway") {
-    tags.push(profile.meta?.gateway?.provider === "openai" ? "OpenAI" : "OpenAI Compatible");
+    tags.push(profile.meta?.gateway?.upstreamId || "Unbound");
   } else if (isMain) {
     tags.push("Main Config");
   }
@@ -194,12 +250,19 @@ async function toWebProfile(
 ): Promise<WebProfile> {
   const tagState = tagsForProfile(profile, isMain, ccrRunning, gatewayRunning);
   const settings = includeSettings ? await readSettings(profile.dir) : undefined;
+  let gatewayUpstream: GatewayUpstreamSummary | undefined;
+  if (profile.type === "gateway" && profile.meta?.gateway?.upstreamId) {
+    gatewayUpstream = (await listGatewayUpstreams()).find(
+      (item) => item.id === profile.meta?.gateway?.upstreamId
+    );
+  }
   return {
     ...profile,
     type: isMain ? "main" : profile.type,
     ...tagState,
     startCommand: isMain ? "claude" : `ccp start ${profile.name}`,
-    settings: publicProfileSettings(profile, settings)
+    settings: publicProfileSettings(profile, settings),
+    gatewayUpstream
   };
 }
 
@@ -221,8 +284,97 @@ function ccrWebStatus(status: Awaited<ReturnType<typeof getCcrStatus>>, profiles
   return {
     ...status,
     uiUrl: `${status.endpoint.replace(/\/$/, "")}/ui/`,
-    profilesUsingCcr
+    profilesUsingCcr,
+    supportedMajor: 2,
+    pinnedVersion: CCR_PINNED_VERSION
   };
+}
+
+function gatewayWebStatus(status: Awaited<ReturnType<typeof getGatewayStatus>>, profilesUsingGateway?: number) {
+  return { ...status, logPath: getGatewayLogPath(), profilesUsingGateway };
+}
+
+async function countGatewayProfiles(): Promise<number> {
+  return (await listProfiles()).filter((profile) => profile.type === "gateway").length;
+}
+
+export interface WebGatewayLogEntry {
+  kind: "request" | "system";
+  completedAt?: string;
+  profileName?: string;
+  model?: string;
+  stream?: boolean;
+  effort?: string;
+  effortMapping?: string;
+  status?: number;
+  durationMs?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  message?: string;
+}
+
+function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
+  const clean = redact(line.trim());
+  if (!clean) return undefined;
+  try {
+    const value = JSON.parse(clean) as Record<string, unknown>;
+    if (value.event === "gateway_request") {
+      return {
+        kind: "request",
+        completedAt: typeof value.completedAt === "string" ? value.completedAt : undefined,
+        profileName: typeof value.profileName === "string" ? value.profileName : undefined,
+        model: typeof value.model === "string" ? value.model : undefined,
+        stream: typeof value.stream === "boolean" ? value.stream : undefined,
+        effort: typeof value.effort === "string" ? value.effort : undefined,
+        effortMapping: typeof value.effortMapping === "string" ? value.effortMapping : undefined,
+        status: typeof value.status === "number" ? value.status : undefined,
+        durationMs: typeof value.durationMs === "number" ? value.durationMs : undefined,
+        inputTokens: typeof value.inputTokens === "number" ? value.inputTokens : undefined,
+        outputTokens: typeof value.outputTokens === "number" ? value.outputTokens : undefined
+      };
+    }
+  } catch {
+    // Startup and fatal process messages are plain text rather than JSON request entries.
+  }
+  return { kind: "system", message: clean };
+}
+
+export async function readGatewayLogTail(
+  context: PathContext = {},
+  limit = 120
+): Promise<{ path: string; entries: WebGatewayLogEntry[]; updatedAt?: string }> {
+  const logPath = getGatewayLogPath(context);
+  try {
+    const fileStat = await stat(logPath);
+    const readLength = Math.min(fileStat.size, 256 * 1024);
+    const offset = Math.max(0, fileStat.size - readLength);
+    const buffer = Buffer.alloc(readLength);
+    const handle = await openFile(logPath, "r");
+    try {
+      await handle.read(buffer, 0, readLength, offset);
+    } finally {
+      await handle.close();
+    }
+    const lines = buffer.toString("utf8").split(/\r?\n/);
+    if (offset > 0) lines.shift();
+    const entries = lines
+      .map(parseGatewayLogLine)
+      .filter((entry): entry is WebGatewayLogEntry => Boolean(entry))
+      .slice(-Math.max(1, Math.min(limit, 300)))
+      .reverse();
+    return { path: logPath, entries, updatedAt: fileStat.mtime.toISOString() };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { path: logPath, entries: [] };
+    throw error;
+  }
+}
+
+async function clearGatewayLogs(): Promise<void> {
+  const logPath = getGatewayLogPath();
+  await truncate(logPath, 0).catch((error) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  });
+  await rm(`${logPath}.1`, { force: true });
 }
 
 function ccrRoutesMessage(reason: Awaited<ReturnType<typeof getCcrStatus>>["routesReason"]): string | undefined {
@@ -257,7 +409,7 @@ function dashboardFromProfiles(
       needsAttention: profiles.filter((profile) => profile.status !== "ready").length
     },
     ccr: ccrWebStatus(ccr),
-    gateway,
+    gateway: gatewayWebStatus(gateway, profiles.filter((profile) => profile.type === "gateway").length),
     activity: activity.slice(0, 8)
   };
 }
@@ -315,6 +467,43 @@ async function updateCcrBinding(name: string, body: Record<string, unknown>): Pr
   return toWebProfile(summarized, false, ccr.running, true);
 }
 
+function gatewayProvider(value: unknown): GatewayProvider {
+  if (value === "openai" || value === "openai-compatible") return value;
+  throw new CcpError("Gateway provider must be openai or openai-compatible.");
+}
+
+function gatewayCompatibilityMode(value: unknown, provider: GatewayProvider): WebGatewayCompatibilityMode {
+  const fallback = provider === "openai" ? "openai" : "modern";
+  const mode = String(value ?? fallback) as WebGatewayCompatibilityMode;
+  if (["openai", "modern", "legacy", "advanced"].includes(mode)) return mode;
+  throw new CcpError("Unknown gateway compatibility profile.");
+}
+
+function gatewayModels(value: unknown): string[] {
+  const source = Array.isArray(value) ? value : String(value ?? "").split(/[\s,]+/);
+  return [...new Set(source.map((model) => String(model).trim()).filter(Boolean))];
+}
+
+async function webGatewayUpstreams(): Promise<Array<GatewayUpstreamSummary & { profileNames: string[] }>> {
+  const upstreams = await listGatewayUpstreams();
+  return Promise.all(upstreams.map(async (upstream) => ({
+    ...upstream,
+    profileNames: await findGatewayUpstreamReferences(upstream.id)
+  })));
+}
+
+async function updateGatewaySettings(name: string, body: Record<string, unknown>): Promise<WebProfile> {
+  const configDir = await resolveConfigDir(name, { allowMain: false });
+  await updateGatewayProfile(configDir.dir, name, {
+    upstreamId: String(body.upstreamId ?? ""),
+    model: String(body.model ?? "")
+  });
+  const summarized = await summarizeProfile(name, configDir.dir);
+  const [ccr, gateway] = await Promise.all([getCcrStatus(), getGatewayStatus()]);
+  addActivity("success", `Updated gateway profile '${name}'.`);
+  return toWebProfile(summarized, false, ccr.running, true, gateway.running);
+}
+
 function assetRoot(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const distAssets = path.join(here, "assets");
@@ -327,6 +516,7 @@ function contentType(filePath: string): string {
   if (filePath.endsWith(".css")) return "text/css; charset=utf-8";
   if (filePath.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filePath.endsWith(".svg")) return "image/svg+xml";
+  if (filePath.endsWith(".ico")) return "image/x-icon";
   return "application/octet-stream";
 }
 
@@ -337,9 +527,11 @@ async function serveStatic(res: ServerResponse, pathname: string, token: string)
   if (!resolved.startsWith(path.resolve(root))) return notFound(res);
 
   try {
-    let data = await readFile(resolved, "utf8");
+    let data: string | Buffer = await readFile(resolved);
     if (resolved.endsWith("index.html")) {
-      data = data.replace("__CCP_UI_TOKEN__", token);
+      data = data.toString("utf8")
+        .replace("__CCP_UI_TOKEN__", token)
+        .replace("__CCP_VERSION__", getPackageVersion());
     }
     res.writeHead(200, { "content-type": contentType(resolved) });
     res.end(data);
@@ -485,6 +677,13 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         created = await createCcrProfileFromPreset({ presetId, name: body.name, token: body.token, providerApiKey: body.providerApiKey });
       } else if (body.kind === "api") {
         created = await createApiProfileFromPreset({ presetId, name: body.name, token: body.token ?? "" });
+      } else if (body.kind === "gateway") {
+        created = await createGatewayProfileFromPreset({
+          presetId,
+          name: body.name,
+          upstreamId: body.upstreamId ?? "",
+          model: body.model ?? ""
+        });
       } else {
         throw new CcpError("This preset type is not available in the Web UI. Use the ccp CLI.");
       }
@@ -606,6 +805,123 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return json(res, 200, { status: await getCcrStatus() });
     }
 
+    if (pathname === "/api/gateway/status") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      const [status, profileCount] = await Promise.all([getGatewayStatus(), countGatewayProfiles()]);
+      return json(res, 200, gatewayWebStatus(status, profileCount));
+    }
+
+    if (pathname === "/api/gateway/start") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const status = await startGateway();
+      addActivity("success", "Built-in gateway started.");
+      return json(res, 200, gatewayWebStatus(status, await countGatewayProfiles()));
+    }
+
+    if (pathname === "/api/gateway/restart") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const status = await restartGateway();
+      addActivity("success", "Built-in gateway restarted.");
+      return json(res, 200, gatewayWebStatus(status, await countGatewayProfiles()));
+    }
+
+    if (pathname === "/api/gateway/stop") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const status = await stopGateway();
+      addActivity("success", "Built-in gateway stopped.");
+      return json(res, 200, gatewayWebStatus(status, await countGatewayProfiles()));
+    }
+
+    if (pathname === "/api/gateway/log") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      return json(res, 200, await readGatewayLogTail());
+    }
+
+    if (pathname === "/api/gateway/log/clear") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      await clearGatewayLogs();
+      addActivity("success", "Gateway logs cleared.");
+      return json(res, 200, await readGatewayLogTail());
+    }
+
+    if (pathname === "/api/gateway/upstreams") {
+      if (req.method === "GET") return json(res, 200, { upstreams: await webGatewayUpstreams() });
+      if (req.method === "POST") {
+        const body = await readJsonBody<Record<string, unknown>>(req);
+        const provider = gatewayProvider(body.provider);
+        const mode = gatewayCompatibilityMode(body.compatibilityMode, provider);
+        const created = await createGatewayUpstream({
+          id: String(body.id ?? ""),
+          provider,
+          chatCompletionsUrl: provider === "openai"
+            ? OPENAI_CHAT_COMPLETIONS_URL
+            : String(body.chatCompletionsUrl ?? ""),
+          apiKey: String(body.apiKey ?? ""),
+          models: gatewayModels(body.models),
+          compatibility: resolveWebGatewayCompatibility(provider, mode, body.compatibility)
+        });
+        addActivity("success", `Created gateway upstream '${created.id}'.`);
+        return json(res, 201, { upstream: { ...created, profileNames: [] } });
+      }
+      return methodNotAllowed(res);
+    }
+
+    if (pathname === "/api/gateway/upstream-templates") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      return json(res, 200, { templates: listGatewayUpstreamTemplates() });
+    }
+
+    const upstreamApiKeyMatch = pathname.match(/^\/api\/gateway\/upstreams\/([^/]+)\/api-key$/);
+    if (upstreamApiKeyMatch) {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const id = decodeURIComponent(upstreamApiKeyMatch[1]);
+      return json(res, 200, { apiKey: await readWebGatewayUpstreamApiKey(id) });
+    }
+
+    const upstreamMatch = pathname.match(/^\/api\/gateway\/upstreams\/([^/]+)$/);
+    if (upstreamMatch) {
+      const id = decodeURIComponent(upstreamMatch[1]);
+      if (req.method === "GET") {
+        const upstream = await readGatewayUpstreamConfig(id);
+        return json(res, 200, {
+          upstream: {
+            ...upstream,
+            apiKeyStatus: "set",
+            profileNames: await findGatewayUpstreamReferences(id)
+          }
+        });
+      }
+      if (req.method === "PUT") {
+        const body = await readJsonBody<Record<string, unknown>>(req);
+        const provider = gatewayProvider(body.provider);
+        const mode = gatewayCompatibilityMode(body.compatibilityMode, provider);
+        const updated = await updateGatewayUpstream(id, {
+          provider,
+          chatCompletionsUrl: provider === "openai"
+            ? OPENAI_CHAT_COMPLETIONS_URL
+            : String(body.chatCompletionsUrl ?? ""),
+          apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
+          models: gatewayModels(body.models),
+          compatibility: resolveWebGatewayCompatibility(provider, mode, body.compatibility)
+        });
+        addActivity("success", `Updated gateway upstream '${id}'.`);
+        return json(res, 200, {
+          upstream: {
+            ...updated,
+            profileNames: await findGatewayUpstreamReferences(id)
+          }
+        });
+      }
+      if (req.method === "DELETE") {
+        const body = await readJsonBody<Record<string, string>>(req);
+        if (body.confirmId !== id) throw new CcpError("Upstream ID confirmation does not match.");
+        await removeGatewayUpstream(id);
+        addActivity("success", `Deleted gateway upstream '${id}'.`);
+        return json(res, 200, { removed: id });
+      }
+      return methodNotAllowed(res);
+    }
+
     if (pathname === "/api/profiles/api" && req.method === "POST") {
       const body = await readJsonBody<Record<string, string>>(req);
       const created = await createApiProfile({ name: body.name ?? "", baseUrl: body.baseUrl ?? "", token: body.token ?? "", model: body.model ?? "" });
@@ -627,12 +943,32 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return json(res, 201, { profile: await toWebProfile(created, false, (await getCcrStatus()).running, true) });
     }
 
+    if (pathname === "/api/profiles/gateway" && req.method === "POST") {
+      const body = await readJsonBody<Record<string, unknown>>(req);
+      const created = await createGatewayProfile({
+        name: String(body.name ?? ""),
+        upstreamId: String(body.upstreamId ?? ""),
+        model: String(body.model ?? ""),
+        preset: typeof body.presetId === "string" ? body.presetId : "gateway"
+      });
+      addActivity("success", `Created gateway profile '${created.name}'.`);
+      const [ccr, gateway] = await Promise.all([getCcrStatus(), getGatewayStatus()]);
+      return json(res, 201, { profile: await toWebProfile(created, false, ccr.running, true, gateway.running) });
+    }
+
     const revealSettingsMatch = pathname.match(/^\/api\/profiles\/([^/]+)\/reveal-settings$/);
     if (revealSettingsMatch) {
       if (req.method !== "POST") return methodNotAllowed(res);
       const name = decodeURIComponent(revealSettingsMatch[1]);
       const settingsPath = await revealProfileSettings(name, host);
       return json(res, 200, { path: settingsPath });
+    }
+
+    const profileApiKeyMatch = pathname.match(/^\/api\/profiles\/([^/]+)\/api-key$/);
+    if (profileApiKeyMatch) {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const name = decodeURIComponent(profileApiKeyMatch[1]);
+      return json(res, 200, { apiKey: await readWebProfileApiKey(name) });
     }
 
     const terminalMatch = pathname.match(/^\/api\/profiles\/([^/]+)\/terminal$/);
@@ -659,7 +995,11 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         assertWebProfileWritable(current);
         const body = await readJsonBody<Record<string, unknown>>(req);
         const kind = String(body.kind ?? "api");
-        const profile = kind === "ccr" ? await updateCcrBinding(name, body) : await updateApiSettings(name, body);
+        const profile = kind === "ccr"
+          ? await updateCcrBinding(name, body)
+          : kind === "gateway"
+            ? await updateGatewaySettings(name, body)
+            : await updateApiSettings(name, body);
         return json(res, 200, { profile });
       }
       if (req.method === "DELETE") {

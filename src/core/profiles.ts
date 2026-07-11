@@ -11,9 +11,11 @@ import {
   writeGatewayProfileSecret
 } from "./gateway-profile.js";
 import {
+  readGatewayUpstreamConfig,
+  readGatewayUpstreamSecret
+} from "./gateway-upstreams.js";
+import {
   getGatewayEndpoint,
-  mergeGatewayCompatibility,
-  normalizeChatCompletionsUrl,
   readGatewayRuntimeConfig
 } from "../gateway/config.js";
 import type {
@@ -84,7 +86,11 @@ export function inferProfileType(settings?: ClaudeSettings, meta?: ProfileMeta):
   return "unknown";
 }
 
-export async function summarizeProfile(name: string, dir: string): Promise<ProfileSummary> {
+export async function summarizeProfile(
+  name: string,
+  dir: string,
+  context: PathContext = {}
+): Promise<ProfileSummary> {
   const settings = await readSettings(dir);
   const meta = await readMeta(dir);
   const type = inferProfileType(settings, meta);
@@ -104,6 +110,15 @@ export async function summarizeProfile(name: string, dir: string): Promise<Profi
   }
 
   const gatewaySecret = type === "gateway" ? await readGatewayProfileSecret(dir) : undefined;
+  let gatewayApiKeySet = false;
+  if (type === "gateway" && meta?.gateway?.upstreamId) {
+    try {
+      await readGatewayUpstreamSecret(meta.gateway.upstreamId, context);
+      gatewayApiKeySet = true;
+    } catch {
+      gatewayApiKeySet = false;
+    }
+  }
 
   return {
     name,
@@ -112,7 +127,7 @@ export async function summarizeProfile(name: string, dir: string): Promise<Profi
     baseUrl,
     model,
     tokenStatus: type === "gateway"
-      ? (gatewaySecret?.apiKey ? "set" : "missing")
+      ? (gatewaySecret?.localToken && gatewayApiKeySet ? "set" : "missing")
       : (token && token !== "REPLACE_WITH_FULL_TOKEN" ? "set" : "missing"),
     settingsPath: getSettingsPath(dir),
     meta
@@ -133,7 +148,7 @@ export async function listProfiles(context: PathContext = {}): Promise<ProfileSu
     }
     const dir = path.join(root, entry.name);
     if (await exists(getSettingsPath(dir))) {
-      profiles.push(await summarizeProfile(entry.name, dir));
+      profiles.push(await summarizeProfile(entry.name, dir, context));
     }
   }
   return profiles.sort((a, b) => a.name.localeCompare(b.name));
@@ -239,13 +254,17 @@ export async function createGatewayProfile(
 ): Promise<ProfileSummary> {
   assertProfileName(input.name);
   const profileDir = getProfileDir(input.name, context);
+  const upstreamId = input.upstreamId.trim();
   const model = input.model.trim();
-  const apiKey = input.apiKey.trim();
+  if (!upstreamId) {
+    throw new CcpError("Gateway upstream is required.");
+  }
   if (!model) {
     throw new CcpError("Gateway model is required.");
   }
-  if (!apiKey) {
-    throw new CcpError("Gateway API key is required.");
+  const upstream = await readGatewayUpstreamConfig(upstreamId, context);
+  if (!upstream.models.includes(model)) {
+    throw new CcpError(`Gateway model '${model}' is not configured for upstream '${upstreamId}'.`);
   }
 
   await mkdir(getProfilesRoot(context), { recursive: true, mode: 0o700 });
@@ -259,17 +278,10 @@ export async function createGatewayProfile(
   }
 
   try {
-    const gateway = {
-      provider: input.provider,
-      protocol: "openai_chat_completions" as const,
-      chatCompletionsUrl: normalizeChatCompletionsUrl(input.chatCompletionsUrl),
-      model,
-      compatibility: mergeGatewayCompatibility(input.provider, input.compatibility)
-    };
+    const gateway = { upstreamId, model };
     const secret: GatewayProfileSecret = {
       version: 1,
-      localToken: randomBytes(32).toString("base64url"),
-      apiKey
+      localToken: randomBytes(32).toString("base64url")
     };
     const runtimeConfig = await readGatewayRuntimeConfig(context);
     await writeGatewayProfileSecret(profileDir, secret);
@@ -284,7 +296,7 @@ export async function createGatewayProfile(
       profileDir,
       buildGatewaySettings(undefined, input.name, getGatewayEndpoint(runtimeConfig), secret)
     );
-    return summarizeProfile(input.name, profileDir);
+    return summarizeProfile(input.name, profileDir, context);
   } catch (error) {
     await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);
     throw error;

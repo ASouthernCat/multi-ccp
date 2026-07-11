@@ -50,6 +50,14 @@ export function getGatewayStartupLockPath(context: PathContext = {}): string {
   return path.join(getGatewayDir(context), "startup.lock");
 }
 
+export function getGatewayUpstreamsDir(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "upstreams");
+}
+
+export function getGatewayUpstreamSecretsDir(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "secrets");
+}
+
 export function getProjectKey(projectPath = process.cwd()): string {
   const resolved = path.resolve(projectPath).replace(/[\\/]+$/, "");
   return resolved.replace(/:/g, "-").replace(/[\\/]/g, "-");

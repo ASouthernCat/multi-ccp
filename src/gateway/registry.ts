@@ -1,17 +1,17 @@
 import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { assertProfileName, CcpError } from "../core/errors.js";
-import { readGatewayProfile } from "../core/gateway-profile.js";
+import { getGatewaySecretPath, readGatewayProfile, validateGatewayProfileBinding } from "../core/gateway-profile.js";
+import { getGatewayUpstreamFingerprint } from "../core/gateway-upstreams.js";
 import { getProfilesRoot, type PathContext } from "../core/paths.js";
-import { getMetaPath } from "../core/settings.js";
-import type { GatewayProfileConfig, GatewayProfileSecret } from "../core/types.js";
-import { getGatewaySecretPath } from "../core/gateway-profile.js";
+import { getMetaPath, readMeta } from "../core/settings.js";
+import type { GatewayProfileConfig, GatewayResolvedSecret } from "../core/types.js";
 
 export interface GatewayRouteSnapshot {
   profileName: string;
   profileDir: string;
   config: Readonly<GatewayProfileConfig>;
-  secret: Readonly<GatewayProfileSecret>;
+  secret: Readonly<GatewayResolvedSecret>;
   fingerprint: string;
 }
 
@@ -65,7 +65,7 @@ export class GatewayRegistry {
         continue;
       }
       try {
-        await readGatewayProfile(path.join(root, entry.name));
+        await readGatewayProfile(path.join(root, entry.name), this.context);
         count += 1;
       } catch {
         // Invalid and non-gateway profiles are not included in the health count.
@@ -76,7 +76,7 @@ export class GatewayRegistry {
 
   private async load(profileName: string, expectedFingerprint: string): Promise<GatewayRouteSnapshot> {
     const profileDir = path.join(getProfilesRoot(this.context), profileName);
-    const loaded = await readGatewayProfile(profileDir);
+    const loaded = await readGatewayProfile(profileDir, this.context);
     const actualFingerprint = await this.readFingerprint(profileName);
     if (actualFingerprint !== expectedFingerprint) {
       return this.load(profileName, actualFingerprint);
@@ -95,11 +95,15 @@ export class GatewayRegistry {
   private async readFingerprint(profileName: string): Promise<string> {
     const profileDir = path.join(getProfilesRoot(this.context), profileName);
     try {
-      const [meta, secret] = await Promise.all([
+      const [metaStat, secretStat, meta] = await Promise.all([
         stat(getMetaPath(profileDir)),
-        stat(getGatewaySecretPath(profileDir))
+        stat(getGatewaySecretPath(profileDir)),
+        readMeta(profileDir)
       ]);
-      return `${meta.mtimeMs}:${meta.size}:${secret.mtimeMs}:${secret.size}`;
+      if (meta?.type !== "gateway") throw new CcpError(`Profile '${profileName}' is not a gateway profile.`);
+      const binding = validateGatewayProfileBinding(meta.gateway);
+      const upstream = await getGatewayUpstreamFingerprint(binding.upstreamId, this.context);
+      return `${metaStat.mtimeMs}:${metaStat.size}:${secretStat.mtimeMs}:${secretStat.size}:${upstream}`;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         throw new CcpError(`Gateway profile '${profileName}' is missing configuration or secret files.`);

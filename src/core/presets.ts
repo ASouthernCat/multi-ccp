@@ -1,11 +1,11 @@
 import { ensureCcrProviderTemplate } from "./ccr.js";
 import { CcpError } from "./errors.js";
 import { createApiProfileFromEnv, createCcrProfile, createGatewayProfile } from "./profiles.js";
-import type { GatewayCompatibility, GatewayProvider, ProfileSummary } from "./types.js";
+import { readGatewayUpstreamConfig } from "./gateway-upstreams.js";
+import type { ProfileSummary } from "./types.js";
 import type { PathContext } from "./paths.js";
-import { OPENAI_GATEWAY_COMPATIBILITY } from "../gateway/config.js";
 
-export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr" | "gateway" | "custom-gateway";
+export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr" | "gateway";
 
 export interface BaseProfilePreset {
   id: string;
@@ -54,42 +54,21 @@ export interface LoginProfilePreset extends BaseProfilePreset {
 
 export interface GatewayProfilePreset extends BaseProfilePreset {
   type: "gateway";
-  provider: GatewayProvider;
-  chatCompletionsUrl: string;
-  compatibility: GatewayCompatibility;
 }
 
-export interface CustomGatewayProfilePreset extends BaseProfilePreset {
-  type: "custom-gateway";
-}
-
-export type BuiltinProfilePreset = ApiProfilePreset | CcrProfilePreset | CustomApiProfilePreset | ManualCcrProfilePreset | LoginProfilePreset | GatewayProfilePreset | CustomGatewayProfilePreset;
+export type BuiltinProfilePreset = ApiProfilePreset | CcrProfilePreset | CustomApiProfilePreset | ManualCcrProfilePreset | LoginProfilePreset | GatewayProfilePreset;
 
 export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
   {
-    id: "openai-gateway",
-    label: "OpenAI via Built-in Gateway",
+    id: "gateway",
+    label: "Built-in Gateway",
     type: "gateway",
     category: "gateway",
-    defaultProfileName: "openai",
-    description: "使用 multi-ccp 内置网关连接 OpenAI Chat Completions。",
-    modelSummary: "OpenAI Chat Completions",
-    tags: ["Gateway", "OpenAI"],
-    sortOrder: 5,
-    provider: "openai",
-    chatCompletionsUrl: "https://api.openai.com/v1/chat/completions",
-    compatibility: { ...OPENAI_GATEWAY_COMPATIBILITY }
-  },
-  {
-    id: "custom-gateway",
-    label: "Custom OpenAI-Compatible Gateway",
-    type: "custom-gateway",
-    category: "gateway",
-    defaultProfileName: "openai-compatible",
-    description: "输入 OpenAI-compatible Chat Completions URL、模型和兼容性参数。",
-    modelSummary: "Custom Chat Completions",
-    tags: ["Gateway", "Manual"],
-    sortOrder: 6
+    defaultProfileName: "gateway",
+    description: "选择已创建的上游供应商和模型，通过 multi-ccp 内置网关运行 Claude Code。",
+    modelSummary: "OpenAI Compatible Model",
+    tags: ["Gateway", "Reusable Upstream"],
+    sortOrder: 5
   },
   {
     id: "aicodemirror",
@@ -201,8 +180,7 @@ export function listProfilePresets(): BuiltinProfilePreset[] {
   return PROFILE_PRESETS.map((preset) => ({
     ...preset,
     ...(preset.type === "api" ? { env: { ...(preset as ApiProfilePreset).env } } : {}),
-    ...(preset.type === "ccr" && preset.providerTemplate ? { providerTemplate: { ...preset.providerTemplate, models: [...preset.providerTemplate.models] } } : {}),
-    ...(preset.type === "gateway" ? { compatibility: { ...preset.compatibility } } : {})
+    ...(preset.type === "ccr" && preset.providerTemplate ? { providerTemplate: { ...preset.providerTemplate, models: [...preset.providerTemplate.models] } } : {})
   }));
 }
 
@@ -257,20 +235,18 @@ export async function createCcrProfileFromPreset(
 }
 
 export async function createGatewayProfileFromPreset(
-  input: { presetId: string; name?: string; apiKey: string; model: string },
+  input: { presetId: string; name?: string; upstreamId: string; model: string },
   context: PathContext = {}
 ): Promise<ProfileSummary> {
   const preset = getProfilePreset(input.presetId);
   if (preset.type !== "gateway") {
     throw new CcpError(`Preset '${input.presetId}' is not a gateway preset.`);
   }
+  await readGatewayUpstreamConfig(input.upstreamId, context);
   return createGatewayProfile({
     name: input.name?.trim() || preset.defaultProfileName,
-    provider: preset.provider,
-    chatCompletionsUrl: preset.chatCompletionsUrl,
-    apiKey: input.apiKey,
+    upstreamId: input.upstreamId,
     model: input.model,
-    compatibility: preset.compatibility,
     preset: preset.id
   }, context);
 }

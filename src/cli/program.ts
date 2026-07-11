@@ -1,5 +1,4 @@
 import { confirm, input, password, select } from "@inquirer/prompts";
-import { readFileSync } from "node:fs";
 import { Command } from "commander";
 import { CcpError } from "../core/errors.js";
 import { launchClaude } from "../core/launcher.js";
@@ -36,6 +35,18 @@ import {
   type BuiltinProfilePreset
 } from "../core/presets.js";
 import {
+  createGatewayUpstream,
+  listGatewayUpstreams,
+  readGatewayUpstreamConfig,
+  removeGatewayUpstream,
+  updateGatewayUpstream
+} from "../core/gateway-upstreams.js";
+import {
+  getGatewayUpstreamTemplate,
+  listGatewayUpstreamTemplates
+} from "../core/gateway-upstream-templates.js";
+import { updateGatewayProfile } from "../core/gateway-profile.js";
+import {
   getGatewayStatus,
   printGatewayStatus,
   restartGateway,
@@ -45,21 +56,14 @@ import {
 import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
-import type { GatewayCompatibility } from "../core/types.js";
+import { getPackageVersion } from "../core/version.js";
+import type { GatewayCompatibility, GatewayProvider, GatewayUpstreamSummary } from "../core/types.js";
 import {
   CUSTOM_GATEWAY_COMPATIBILITY,
-  MODERN_OPENAI_COMPATIBILITY
+  MODERN_OPENAI_COMPATIBILITY,
+  OPENAI_CHAT_COMPLETIONS_URL,
+  OPENAI_GATEWAY_COMPATIBILITY
 } from "../gateway/config.js";
-
-function getPackageVersion(): string {
-  try {
-    const packageJsonUrl = new URL("../../package.json", import.meta.url);
-    const packageJson = JSON.parse(readFileSync(packageJsonUrl, "utf8")) as { version?: string };
-    return packageJson.version ?? "0.0.0";
-  } catch {
-    return "0.0.0";
-  }
-}
 
 async function ensureProfileCanBeCreated(name: string): Promise<boolean> {
   if (!(await profileExists(name))) {
@@ -195,15 +199,12 @@ async function createGatewayPresetProfile(
   }
   const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
   if (!(await ensureProfileCanBeCreated(profileName))) return;
-  console.log(`Create built-in gateway profile: ${profileName}`);
-  console.log(`Preset:   ${preset.label}`);
-  console.log(`Upstream: ${preset.chatCompletionsUrl}`);
-  const model = await input({ message: "OpenAI model", required: true });
-  const apiKey = await password({
-    message: "OpenAI API key (hidden)",
-    mask: "*",
-    validate: (value) => value.trim() ? true : "API key is required."
-  });
+  const upstream = await chooseGatewayUpstream();
+  const model = await chooseGatewayModel(upstream);
+  console.log(`Create gateway profile: ${profileName}`);
+  console.log(`Upstream: ${upstream.id}`);
+  console.log(`Provider: ${upstream.provider}`);
+  console.log(`Model:    ${model}`);
   const ok = await confirm({ message: "Create this gateway profile?", default: true });
   if (!ok) {
     console.log("Cancelled.");
@@ -212,45 +213,87 @@ async function createGatewayPresetProfile(
   printCreatedProfile(await createGatewayProfileFromPreset({
     presetId: preset.id,
     name: profileName,
-    apiKey,
+    upstreamId: upstream.id,
     model
   }));
 }
 
-async function createCustomGatewayProfile(
-  profile: string | undefined,
-  preset: BuiltinProfilePreset,
-  options: { promptName: boolean }
-): Promise<void> {
-  const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
-  if (!(await ensureProfileCanBeCreated(profileName))) return;
-  console.log(`Create custom OpenAI-compatible gateway profile: ${profileName}`);
-  const chatCompletionsUrl = await input({
-    message: "Chat Completions URL",
-    required: true
+async function chooseGatewayUpstream(
+  provider?: GatewayProvider,
+  defaultId?: string
+): Promise<GatewayUpstreamSummary> {
+  const upstreams = (await listGatewayUpstreams()).filter((item) => !provider || item.provider === provider);
+  if (!upstreams.length) {
+    const kind = provider === "openai" ? "OpenAI" : provider === "openai-compatible" ? "OpenAI-compatible" : "gateway";
+    throw new CcpError(`No ${kind} upstream exists. Run 'ccp gateway add' first.`);
+  }
+  if (defaultId) {
+    const existing = upstreams.find((item) => item.id === defaultId);
+    if (existing && upstreams.length === 1) return existing;
+  }
+  const id = await select({
+    message: "Choose gateway upstream",
+    default: defaultId,
+    choices: upstreams.map((item) => ({
+      name: `${item.id} [${item.provider}] ${item.models.join(", ")}`,
+      value: item.id
+    }))
   });
-  const model = await input({ message: "Upstream model", required: true });
-  const apiKey = await password({
-    message: "Provider API key (hidden)",
-    mask: "*",
-    validate: (value) => value.trim() ? true : "API key is required."
+  return upstreams.find((item) => item.id === id) as GatewayUpstreamSummary;
+}
+
+async function chooseGatewayModel(upstream: GatewayUpstreamSummary, defaultModel?: string): Promise<string> {
+  if (upstream.models.length === 1) return upstream.models[0];
+  return select({
+    message: `Choose model from '${upstream.id}'`,
+    default: defaultModel,
+    choices: upstream.models.map((model) => ({ name: model, value: model }))
   });
+}
+
+function parseGatewayModels(value: string): string[] {
+  return [...new Set(value.split(/[\s,]+/).map((model) => model.trim()).filter(Boolean))];
+}
+
+async function promptGatewayProvider(defaultValue: GatewayProvider = "openai-compatible"): Promise<GatewayProvider> {
+  return select({
+    message: "Upstream provider template",
+    default: defaultValue,
+    choices: [
+      {
+        name: "OpenAI official (fixed api.openai.com endpoint)",
+        value: "openai" as const
+      },
+      {
+        name: "OpenAI-compatible provider (custom endpoint)",
+        value: "openai-compatible" as const
+      }
+    ]
+  });
+}
+
+async function promptGatewayCompatibility(
+  provider: GatewayProvider,
+  current?: GatewayCompatibility
+): Promise<GatewayCompatibility> {
+  if (provider === "openai") return { ...OPENAI_GATEWAY_COMPATIBILITY };
   const compatibilityMode = await select({
     message: "Compatibility profile",
+    default: current ? "advanced" : "modern",
     choices: [
       { name: "Modern OpenAI Chat Completions (recommended)", value: "modern" as const },
       { name: "Legacy OpenAI-compatible", value: "legacy" as const },
       { name: "Advanced custom mapping", value: "advanced" as const }
     ]
   });
-  let compatibility: GatewayCompatibility;
   if (compatibilityMode === "modern") {
-    compatibility = { ...MODERN_OPENAI_COMPATIBILITY };
+    return { ...MODERN_OPENAI_COMPATIBILITY };
   } else if (compatibilityMode === "legacy") {
-    compatibility = { ...CUSTOM_GATEWAY_COMPATIBILITY };
+    return { ...CUSTOM_GATEWAY_COMPATIBILITY };
   } else {
     const instructionRole = await select({
       message: "Instruction message role",
+      default: current?.instructionRole ?? "developer",
       choices: [
         { name: "developer (GPT-5 and reasoning models)", value: "developer" as const },
         { name: "system (legacy providers)", value: "system" as const }
@@ -258,15 +301,17 @@ async function createCustomGatewayProfile(
     });
     const maxTokensField = await select({
       message: "Output token field",
+      default: current?.maxTokensField ?? "max_completion_tokens",
       choices: [
         { name: "max_completion_tokens (modern OpenAI)", value: "max_completion_tokens" as const },
         { name: "max_tokens (legacy providers)", value: "max_tokens" as const }
       ]
     });
-    const supportsStop = await confirm({ message: "Forward stop sequences to the provider?", default: true });
-    const supportsSampling = await confirm({ message: "Forward temperature and top_p to the provider?", default: true });
+    const supportsStop = await confirm({ message: "Forward stop sequences to the provider?", default: current?.supportsStop ?? true });
+    const supportsSampling = await confirm({ message: "Forward temperature and top_p to the provider?", default: current?.supportsSampling ?? true });
     const parallelToolCalls = await select({
       message: "parallel_tool_calls parameter",
+      default: current?.parallelToolCalls ?? "supported",
       choices: [
         { name: "Forward", value: "supported" as const },
         { name: "Omit", value: "unsupported" as const }
@@ -274,6 +319,7 @@ async function createCustomGatewayProfile(
     });
     const streamUsage = await select({
       message: "Streaming usage option",
+      default: current?.streamUsage ?? "include",
       choices: [
         { name: "Include stream_options.include_usage", value: "include" as const },
         { name: "Omit stream_options", value: "omit" as const }
@@ -281,6 +327,7 @@ async function createCustomGatewayProfile(
     });
     const reasoningEffort = await select({
       message: "Claude effort mapping",
+      default: current?.reasoningEffort ?? "reasoning_effort",
       choices: [
         { name: "reasoning_effort (OpenAI reasoning models)", value: "reasoning_effort" as const },
         { name: "output_config.effort (provider-specific)", value: "output_config" as const },
@@ -289,13 +336,14 @@ async function createCustomGatewayProfile(
     });
     const structuredOutput = await select({
       message: "Structured output mapping",
+      default: current?.structuredOutput ?? "response_format",
       choices: [
         { name: "response_format (OpenAI JSON Schema)", value: "response_format" as const },
         { name: "output_config.format (provider-specific)", value: "output_config" as const },
         { name: "Unsupported / reject", value: "unsupported" as const }
       ]
     });
-    compatibility = {
+    return {
       instructionRole,
       maxTokensField,
       supportsStop,
@@ -306,20 +354,6 @@ async function createCustomGatewayProfile(
       structuredOutput
     };
   }
-  const ok = await confirm({ message: "Create this gateway profile?", default: true });
-  if (!ok) {
-    console.log("Cancelled.");
-    return;
-  }
-  printCreatedProfile(await createGatewayProfile({
-    name: profileName,
-    provider: "openai-compatible",
-    chatCompletionsUrl,
-    apiKey,
-    model,
-    compatibility,
-    preset: preset.id
-  }));
 }
 
 async function createCustomApiProfile(profile: string | undefined, preset: BuiltinProfilePreset, options: { promptName: boolean }): Promise<void> {
@@ -428,9 +462,6 @@ async function createProfileFromPreset(profile: string | undefined, preset: Buil
     case "gateway":
       await createGatewayPresetProfile(profile, preset, options);
       break;
-    case "custom-gateway":
-      await createCustomGatewayProfile(profile, preset, options);
-      break;
   }
 }
 
@@ -492,8 +523,10 @@ async function showStatus(name: string): Promise<void> {
   }
 
   if (profile.type === "gateway" && profile.meta?.gateway) {
-    console.log(`Provider: ${profile.meta.gateway.provider}`);
-    console.log(`Upstream: ${profile.meta.gateway.chatCompletionsUrl}`);
+    const upstream = await readGatewayUpstreamConfig(profile.meta.gateway.upstreamId);
+    console.log(`Upstream: ${upstream.id}`);
+    console.log(`Provider: ${upstream.provider}`);
+    console.log(`Endpoint: ${upstream.chatCompletionsUrl}`);
   }
 
   if (!profile.baseUrl && !profile.model && profile.tokenStatus === "missing") {
@@ -508,6 +541,128 @@ async function showStatus(name: string): Promise<void> {
     console.log(`Model:   ${profile.model}`);
   }
   console.log(`Token:   ${profile.tokenStatus}`);
+}
+
+function printGatewayUpstream(upstream: GatewayUpstreamSummary): void {
+  console.log(`${upstream.id}\t${upstream.provider}\t${upstream.models.join(",")}\t${upstream.chatCompletionsUrl}`);
+}
+
+async function addGatewayUpstream(id?: string): Promise<void> {
+  const templates = listGatewayUpstreamTemplates();
+  const templateId = await select({
+    message: "Upstream preset template",
+    default: "custom",
+    choices: templates.map((template) => ({
+      name: `${template.label} - ${template.description}`,
+      value: template.id
+    }))
+  });
+  const template = getGatewayUpstreamTemplate(templateId);
+  const upstreamId = (id?.trim() || await input({
+    message: "Upstream ID",
+    default: template.defaultUpstreamId || undefined,
+    required: true
+  })).trim();
+  const provider = template.provider;
+  const chatCompletionsUrl = provider === "openai"
+    ? OPENAI_CHAT_COMPLETIONS_URL
+    : await input({
+        message: "Chat Completions URL",
+        default: template.chatCompletionsUrl || undefined,
+        required: true
+      });
+  const models = parseGatewayModels(await input({
+    message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
+    default: template.models.length ? template.models.join(", ") : undefined,
+    required: true,
+    validate: (value) => parseGatewayModels(value).length ? true : "At least one model is required."
+  }));
+  const apiKey = await password({
+    message: "Provider API key (hidden)",
+    mask: "*",
+    validate: (value) => value.trim() ? true : "API key is required."
+  });
+  const compatibility = template.id === "custom"
+    ? await promptGatewayCompatibility(provider)
+    : { ...template.compatibility };
+  console.log(`Template: ${template.label}`);
+  console.log(`Upstream: ${upstreamId}`);
+  console.log(`Provider: ${provider}`);
+  console.log(`Endpoint: ${chatCompletionsUrl}`);
+  console.log(`Models:   ${models.join(", ")}`);
+  if (!(await confirm({ message: "Create this gateway upstream?", default: true }))) {
+    console.log("Cancelled.");
+    return;
+  }
+  const created = await createGatewayUpstream({
+    id: upstreamId,
+    provider,
+    chatCompletionsUrl,
+    apiKey,
+    models,
+    compatibility
+  });
+  console.log(`Created gateway upstream '${created.id}'.`);
+}
+
+async function editGatewayUpstream(id: string): Promise<void> {
+  const current = await readGatewayUpstreamConfig(id);
+  const provider = await promptGatewayProvider(current.provider);
+  const chatCompletionsUrl = provider === "openai"
+    ? OPENAI_CHAT_COMPLETIONS_URL
+    : await input({
+        message: "Chat Completions URL",
+        default: current.provider === "openai-compatible" ? current.chatCompletionsUrl : "",
+        required: true
+      });
+  const models = parseGatewayModels(await input({
+    message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
+    default: current.models.join(", "),
+    required: true,
+    validate: (value) => parseGatewayModels(value).length ? true : "At least one model is required."
+  }));
+  const apiKey = await password({
+    message: "Replacement API key (hidden, Enter to keep current)",
+    mask: "*"
+  });
+  const compatibility = await promptGatewayCompatibility(provider, current.compatibility);
+  const updated = await updateGatewayUpstream(id, {
+    provider,
+    chatCompletionsUrl,
+    apiKey,
+    models,
+    compatibility
+  });
+  console.log(`Updated gateway upstream '${updated.id}'. Running requests will use it immediately.`);
+}
+
+async function useGatewayBinding(profileName: string, upstreamId?: string, model?: string): Promise<void> {
+  const config = await resolveConfigDir(profileName, { allowMain: false });
+  const meta = await readMeta(config.dir);
+  if (meta?.type !== "gateway" || !meta.gateway) {
+    throw new CcpError(`Profile '${profileName}' is not a gateway profile.`);
+  }
+  let upstream: GatewayUpstreamSummary;
+  if (upstreamId?.trim()) {
+    const found = (await listGatewayUpstreams()).find((item) => item.id === upstreamId.trim());
+    if (!found) throw new CcpError(`Gateway upstream '${upstreamId}' does not exist.`);
+    upstream = found;
+  } else {
+    upstream = await chooseGatewayUpstream(undefined, meta.gateway.upstreamId);
+  }
+  const selectedModel = model?.trim() || await chooseGatewayModel(
+    upstream,
+    upstream.id === meta.gateway.upstreamId ? meta.gateway.model : undefined
+  );
+  if (!upstream.models.includes(selectedModel)) {
+    throw new CcpError(`Gateway model '${selectedModel}' is not configured for upstream '${upstream.id}'.`);
+  }
+  await updateGatewayProfile(config.dir, profileName, {
+    upstreamId: upstream.id,
+    model: selectedModel
+  });
+  console.log(`Profile '${profileName}' now uses ${upstream.id}/${selectedModel}.`);
+  console.log("The running gateway will apply this binding to the next request.");
 }
 
 export function createProgram(): Command {
@@ -713,30 +868,67 @@ export function createProgram(): Command {
       process.exitCode = code;
     });
 
-  program
+  const gateway = program
     .command("gateway")
-    .helpOption(false)
-    .argument("[action]")
-    .description("Manage the built-in OpenAI-compatible gateway")
-    .action(async (action: string | undefined) => {
-      switch (action) {
-        case undefined:
-        case "status":
-          printGatewayStatus(await getGatewayStatus());
-          break;
-        case "start":
-          printGatewayStatus(await startGateway());
-          break;
-        case "stop":
-          printGatewayStatus(await stopGateway());
-          break;
-        case "restart":
-          printGatewayStatus(await restartGateway());
-          break;
-        default:
-          throw new CcpError(`Unknown gateway command '${action}'. Use 'ccp gateway status|start|stop|restart'.`);
+    .description("Manage the gateway service and OpenAI-format upstreams")
+    .action(async () => printGatewayStatus(await getGatewayStatus()));
+
+  gateway.command("status")
+    .description("Show gateway service status")
+    .action(async () => printGatewayStatus(await getGatewayStatus()));
+
+  gateway.command("start")
+    .description("Start the shared gateway service")
+    .action(async () => printGatewayStatus(await startGateway()));
+
+  gateway.command("stop")
+    .description("Stop the shared gateway service")
+    .action(async () => printGatewayStatus(await stopGateway()));
+
+  gateway.command("restart")
+    .description("Restart the shared gateway service")
+    .action(async () => printGatewayStatus(await restartGateway()));
+
+  gateway.command("list")
+    .description("List configured OpenAI-format upstreams")
+    .action(async () => {
+      const upstreams = await listGatewayUpstreams();
+      if (!upstreams.length) {
+        console.log("No gateway upstreams found. Run 'ccp gateway add'.");
+        return;
       }
+      upstreams.forEach(printGatewayUpstream);
     });
+
+  gateway.command("add")
+    .argument("[id]")
+    .description("Create an OpenAI official or OpenAI-compatible upstream")
+    .action(addGatewayUpstream);
+
+  gateway.command("edit")
+    .argument("<id>")
+    .description("Edit an upstream and hot-reload future requests")
+    .action(editGatewayUpstream);
+
+  gateway.command("remove")
+    .argument("<id>")
+    .description("Delete an unused gateway upstream")
+    .action(async (id: string) => {
+      const typed = await input({ message: `Type '${id}' to delete this upstream` });
+      if (typed !== id) {
+        console.log("Cancelled.");
+        return;
+      }
+      await removeGatewayUpstream(id);
+      console.log(`Deleted gateway upstream '${id}'.`);
+    });
+
+  gateway.command("use")
+    .argument("<profile>")
+    .argument("[upstreamId]")
+    .argument("[model]")
+    .description("Switch a gateway profile to an upstream and model")
+    .action(useGatewayBinding);
 
   program
     .command("ccr")

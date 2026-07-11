@@ -38,6 +38,12 @@ ccp --version
 ccp help
 ```
 
+Update `multi-ccp`:
+
+```bash
+npm update -g multi-ccp
+```
+
 ## Quick Start
 
 Want the shortest path? Ask your AI assistant how to use `multi-ccp`. Copy this prompt:
@@ -54,7 +60,7 @@ Open the local Web UI to browse profiles and create configurations visually:
 ccp ui
 ```
 
-The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, and open CCR management shortcuts.
+The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, inspect redacted request logs, and open CCR management shortcuts.
 
 ![multi-ccp](docs/images/cli-ui.png)
 
@@ -65,7 +71,7 @@ ccp add
 ccp start <profile-name>
 ```
 
-`ccp add` lets you choose a built-in preset template or custom configuration, including OpenAI Gateway, Custom OpenAI-Compatible Gateway, DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
+`ccp add` lets you choose a built-in preset template or custom configuration, including Built-in Gateway, DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
 
 Profile names may contain letters, numbers, periods, underscores, and hyphens, so names such as `gpt-5.6` are valid. Names must start with a letter or number, cannot end with a period, and cannot use Windows reserved device names.
 
@@ -185,27 +191,46 @@ A CCR profile stores its route in `.ccp.json` and points Claude Code at a preset
 http://127.0.0.1:3456/preset/gpt-route
 ```
 
-### Built-in Gateway Profiles
+### Built-in Gateway
 
-Gateway profiles translate Claude Code's Anthropic Messages protocol to OpenAI-compatible Chat Completions. They are useful when a provider does not expose an Anthropic-compatible endpoint.
+The gateway translates Claude Code's Anthropic Messages protocol to OpenAI Chat Completions. It uses three independent layers: one shared local service, reusable upstream provider records, and lightweight profiles that only select an upstream and model.
 
-Create an OpenAI profile:
+Create an official OpenAI upstream. The official template always uses `https://api.openai.com/v1/chat/completions`:
+
+Upstream creation provides shared preset templates:
+
+- `OpenAI official`: pre-fills `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`.
+- `xAI Grok 4.5`: pre-fills `https://api.x.ai/v1/chat/completions` and `grok-4.5`.
+- `AICodeMirror`: pre-fills the Codex endpoint and `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.5`.
+- `Custom OpenAI-compatible`: accepts a manually configured endpoint, models, and compatibility settings.
 
 ```bash
-ccp add --preset openai-gateway openai-work
+ccp gateway add openai
+ccp add --preset gateway openai-work
 ccp start openai-work
 ```
 
-Create a profile for another OpenAI-compatible provider:
+Create an OpenAI-compatible upstream such as AICodeMirror, Mimo, or OpenRouter. This template accepts a custom Chat Completions endpoint and a list of models:
+
+Separate multiple model IDs with commas, for example `gpt-5.6-sol, gpt-5.5`.
 
 ```bash
-ccp add --preset custom-gateway company-model
-ccp start company-model
+ccp gateway add aicodemirror
+ccp add --preset gateway gpt-5.6
+ccp start gpt-5.6
 ```
 
-The custom flow first offers modern OpenAI Chat Completions, legacy OpenAI-compatible, and advanced custom compatibility profiles. Only the advanced path asks for individual instruction-role, token-limit, sampling, stop, parallel-tool, streaming-usage, Claude-effort, and structured-output mappings.
+The single Gateway profile template can bind any existing upstream; OpenAI official and OpenAI-compatible are upstream creation templates rather than separate profile types. One upstream can expose multiple selectable models and can be reused by many profiles. Switch a profile without restarting the running gateway:
+
+```bash
+ccp gateway use gpt-5.6 aicodemirror gpt-5.5
+```
+
+OpenAI-compatible upstreams offer modern, legacy, and advanced compatibility modes. Only the advanced mode asks for individual instruction-role, token-limit, sampling, stop, parallel-tool, streaming-usage, Claude-effort, and structured-output mappings. Native Gemini or Anthropic provider formats are not supported by this gateway.
 
 All gateway profiles use one loopback-only service at `http://127.0.0.1:3921`. Each Claude Code process receives a profile-specific base path and local token, so concurrent profiles can safely target different providers. Starting a second gateway profile reuses the running service and does not restart active streams.
+
+The local Web UI masks API keys by default. Opening an API profile or upstream editor retrieves the stored key through a UI-token-protected, non-cacheable POST endpoint; normal profile and upstream GET responses never expose the plaintext key.
 
 The gateway writes one redacted JSON line per profile request to `~/.claude-profiles/.gateway/gateway.log`. It records the profile, model, Claude effort, upstream field names, status, duration, and available token usage, but never prompt or response content, authorization headers, or API keys. If an SSE response has already started with HTTP 200 and later fails protocol conversion, the internal log status is `502`. Logs rotate to `gateway.log.1` at 10 MiB when the gateway starts.
 
@@ -261,6 +286,11 @@ ccp gateway status
 ccp gateway start
 ccp gateway stop
 ccp gateway restart
+ccp gateway list
+ccp gateway add [upstream-id]
+ccp gateway edit <upstream-id>
+ccp gateway remove <upstream-id>
+ccp gateway use <profile> [upstream-id] [model]
 ```
 
 [Claude Code Router](https://github.com/musistudio/claude-code-router) commands:
@@ -277,6 +307,8 @@ ccp ccr model
 
 `ccp ccr install` pins CCR to `@musistudio/claude-code-router@2.0.0`. CCR 3.x is a rewrite and is not compatible with multi-ccp.
 
+If a provider exposes an OpenAI Chat Completions-compatible API, prefer the built-in Gateway instead of CCR. It requires no separate router installation and provides reusable upstreams, model selection, compatibility mappings, and request logs.
+
 Session sync commands:
 
 ```bash
@@ -292,7 +324,7 @@ Profiles are stored under:
 ~/.claude-profiles/<profile>
 ```
 
-Gateway profiles additionally contain `.ccp-gateway.json`, which is the only source of the profile's generated local token and upstream API key. Shared runtime state is stored under `~/.claude-profiles/.gateway/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
+Gateway profile metadata stores only `upstreamId` and the selected model. Its `.ccp-gateway.json` stores only the generated local token. Reusable upstream configs are stored under `~/.claude-profiles/.gateway/upstreams/`, while provider API keys are stored separately under `~/.claude-profiles/.gateway/secrets/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
 
 Claude Code's default config directory is still available as:
 
@@ -314,7 +346,7 @@ ccp sync-session work to main
 - `ccp add`, `ccp add-login`, and `ccp add-ccr` refuse to overwrite existing profiles.
 - `sync-session` detects conflicts with SHA-256 hashes and asks before overwriting target files.
 - Login profiles do not store Claude account passwords.
-- Gateway API keys are kept out of `.ccp.json`, Web UI responses, logs, and upstream error envelopes. The Web UI presents gateway profiles as read-only until it can update routing metadata and secrets atomically.
+- Gateway API keys are kept in upstream secret files and out of profile directories, `.ccp.json`, ordinary Web UI GET/list responses, logs, and upstream error envelopes. The local editor retrieves a key only through a UI-token-protected, non-cacheable POST endpoint, keeps it masked by default, and reveals it only when the user presses the eye control.
 - The built-in gateway binds only to `127.0.0.1`, authenticates each profile path with a generated local token, and does not follow upstream redirects with credentials.
 
 ## Development

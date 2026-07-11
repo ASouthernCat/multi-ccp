@@ -67,6 +67,23 @@ export interface GatewayLifecycleDeps {
   maxLogBytes?: number;
 }
 
+interface TextCommandOptions {
+  encoding: "utf8";
+  env?: NodeJS.ProcessEnv;
+}
+
+interface TextCommandResult {
+  status: number | null;
+  stdout: string;
+}
+
+export interface ProcessStartTimeDeps {
+  platform?: NodeJS.Platform;
+  env?: NodeJS.ProcessEnv;
+  runSync?: (command: string, args: string[], options: TextCommandOptions) => TextCommandResult;
+  readTextFile?: (filePath: string) => Promise<string>;
+}
+
 export async function ensureBuiltinGatewayProfile(
   profileDir: string,
   profileName: string,
@@ -390,7 +407,9 @@ async function acquireStartupLock(
         }
       };
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const code = (error as NodeJS.ErrnoException).code;
+      const lockIsContended = code === "EEXIST" || (code === "EPERM" && existsSync(lockPath));
+      if (!lockIsContended) throw error;
       if (await startupLockIsStale(lockPath, now(), deps.processExists ?? processExists)) {
         await unlink(lockPath).catch(() => undefined);
         continue;
@@ -438,19 +457,77 @@ function processExists(pid: number): boolean {
   }
 }
 
-export async function getProcessStartTimeMs(pid: number): Promise<number | undefined> {
+export async function getProcessStartTimeMs(
+  pid: number,
+  deps: ProcessStartTimeDeps = {}
+): Promise<number | undefined> {
   if (!Number.isInteger(pid) || pid <= 0) return undefined;
-  if (process.platform === "win32") {
+  const currentPlatform = deps.platform ?? process.platform;
+  const inheritedEnv = deps.env ?? process.env;
+  const runSync = deps.runSync ?? ((command, args, options) => spawnSync(command, args, options));
+  if (currentPlatform === "win32") {
     const command = [
       `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${pid}" -ErrorAction SilentlyContinue`,
       "if ($p) { [DateTimeOffset]$p.CreationDate | ForEach-Object { $_.ToUnixTimeMilliseconds() } }"
     ].join("; ");
-    const result = spawnSync("powershell.exe", ["-NoProfile", "-Command", command], { encoding: "utf8" });
+    const result = runSync("powershell.exe", ["-NoProfile", "-Command", command], { encoding: "utf8" });
     return result.status === 0 ? parsePositiveNumber(result.stdout) : undefined;
   }
-  const result = spawnSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8" });
+
+  const localeIndependentEnv = { ...inheritedEnv, LANG: "C", LC_ALL: "C" };
+  if (currentPlatform === "linux") {
+    const linuxStart = await getLinuxProcessStartTimeMs(
+      pid,
+      deps.readTextFile ?? ((filePath) => readFile(filePath, "utf8")),
+      runSync,
+      localeIndependentEnv
+    );
+    if (linuxStart !== undefined) return linuxStart;
+  }
+
+  const result = runSync("ps", ["-o", "lstart=", "-p", String(pid)], {
+    encoding: "utf8",
+    env: localeIndependentEnv
+  });
+  if (result.status !== 0) return undefined;
   const parsed = Date.parse(result.stdout.trim());
-  return result.status === 0 && Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function getLinuxProcessStartTimeMs(
+  pid: number,
+  readTextFile: (filePath: string) => Promise<string>,
+  runSync: (command: string, args: string[], options: TextCommandOptions) => TextCommandResult,
+  env: NodeJS.ProcessEnv
+): Promise<number | undefined> {
+  try {
+    const [processStat, systemStat] = await Promise.all([
+      readTextFile(`/proc/${pid}/stat`),
+      readTextFile("/proc/stat")
+    ]);
+    const commandEnd = processStat.lastIndexOf(")");
+    if (commandEnd < 0) return undefined;
+    const fields = processStat.slice(commandEnd + 1).trim().split(/\s+/);
+    const startTicks = Number(fields[19]);
+    const bootTimeMatch = systemStat.match(/^btime\s+(\d+)$/m);
+    const bootTimeSeconds = Number(bootTimeMatch?.[1]);
+    const clockTickResult = runSync("getconf", ["CLK_TCK"], { encoding: "utf8", env });
+    const clockTicksPerSecond = clockTickResult.status === 0
+      ? parsePositiveNumber(clockTickResult.stdout)
+      : undefined;
+    if (
+      !Number.isFinite(startTicks) ||
+      startTicks < 0 ||
+      !Number.isFinite(bootTimeSeconds) ||
+      bootTimeSeconds <= 0 ||
+      clockTicksPerSecond === undefined
+    ) {
+      return undefined;
+    }
+    return bootTimeSeconds * 1000 + (startTicks * 1000) / clockTicksPerSecond;
+  } catch {
+    return undefined;
+  }
 }
 
 function parsePositiveNumber(value: string): number | undefined {

@@ -24,7 +24,35 @@ export interface GatewayProfileConfig {
 export interface GatewayProfileSecret {
   version: 1;
   localToken: string;
+}
+
+export interface GatewayResolvedSecret {
+  localToken: string;
   apiKey: string;
+}
+
+export interface GatewayProfileBinding {
+  upstreamId: string;
+  model: string;
+}
+
+export interface GatewayUpstreamConfig {
+  version: 1;
+  id: string;
+  provider: GatewayProvider;
+  protocol: "openai_chat_completions";
+  chatCompletionsUrl: string;
+  models: string[];
+  compatibility: GatewayCompatibility;
+}
+
+export interface GatewayUpstreamSecret {
+  version: 1;
+  apiKey: string;
+}
+
+export interface GatewayUpstreamSummary extends GatewayUpstreamConfig {
+  apiKeyStatus: "set" | "missing";
 }
 
 export interface ClaudeSettings {
@@ -42,7 +70,7 @@ export interface ProfileMeta {
   autoStart?: boolean;
   ccrPreset?: string;
   ccrRoute?: string;
-  gateway?: GatewayProfileConfig;
+  gateway?: GatewayProfileBinding;
 }
 
 export interface ProfileSummary {
@@ -83,10 +111,29 @@ export interface CreateCcrProfileInput {
 
 export interface CreateGatewayProfileInput {
   name: string;
+  upstreamId: string;
+  model: string;
+  preset?: string;
+}
+
+export interface UpdateGatewayProfileInput {
+  upstreamId: string;
+  model: string;
+}
+
+export interface CreateGatewayUpstreamInput {
+  id: string;
   provider: GatewayProvider;
   chatCompletionsUrl: string;
   apiKey: string;
-  model: string;
+  models: string[];
   compatibility?: Partial<GatewayCompatibility>;
-  preset?: string;
+}
+
+export interface UpdateGatewayUpstreamInput {
+  provider: GatewayProvider;
+  chatCompletionsUrl: string;
+  apiKey?: string;
+  models: string[];
+  compatibility: Partial<GatewayCompatibility>;
 }

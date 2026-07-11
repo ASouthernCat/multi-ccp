@@ -27,6 +27,8 @@ export const OPENAI_GATEWAY_COMPATIBILITY: GatewayCompatibility = {
   structuredOutput: "response_format"
 };
 
+export const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
+
 export const MODERN_OPENAI_COMPATIBILITY: GatewayCompatibility = {
   instructionRole: "developer",
   maxTokensField: "max_completion_tokens",
@@ -59,7 +61,8 @@ export function mergeGatewayCompatibility(
   provider: GatewayProvider,
   value: Partial<GatewayCompatibility> | undefined
 ): GatewayCompatibility {
-  return { ...defaultGatewayCompatibility(provider), ...value };
+  const defaults = defaultGatewayCompatibility(provider);
+  return provider === "openai" ? defaults : { ...defaults, ...value };
 }
 
 export function normalizeChatCompletionsUrl(value: string): string {
@@ -89,6 +92,16 @@ export function normalizeChatCompletionsUrl(value: string): string {
   }
   parsed.hash = "";
   return parsed.toString();
+}
+
+export function resolveGatewayChatCompletionsUrl(provider: GatewayProvider, value: string): string {
+  if (provider === "openai") {
+    if (value.trim() && normalizeChatCompletionsUrl(value) !== OPENAI_CHAT_COMPLETIONS_URL) {
+      throw new CcpError(`OpenAI upstreams use the fixed official endpoint: ${OPENAI_CHAT_COMPLETIONS_URL}`);
+    }
+    return OPENAI_CHAT_COMPLETIONS_URL;
+  }
+  return normalizeChatCompletionsUrl(value);
 }
 
 export function validateGatewayRuntimeConfig(value: unknown): GatewayRuntimeConfig {

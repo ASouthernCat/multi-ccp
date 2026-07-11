@@ -12,6 +12,8 @@
     "dist/**/*.d.ts",
     "dist/**/*.css",
     "dist/**/*.html",
+    "dist/**/*.svg",
+    "dist/**/*.ico",
     "README.md",
     "README.zh-CN.md",
     "LICENSE",

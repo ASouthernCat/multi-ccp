@@ -7,18 +7,26 @@ import {
   readMeta,
   readSettings,
   writeJsonFileAtomic,
+  writeMeta,
   writeSettings
 } from "./settings.js";
+import {
+  readGatewayUpstream,
+  readGatewayUpstreamConfig,
+  validateGatewayCompatibility
+} from "./gateway-upstreams.js";
 import type {
   ClaudeSettings,
+  GatewayProfileBinding,
   GatewayProfileConfig,
   GatewayProfileSecret,
-  ProfileMeta
+  GatewayResolvedSecret,
+  ProfileMeta,
+  UpdateGatewayProfileInput
 } from "./types.js";
 import {
   getGatewayEndpoint,
-  mergeGatewayCompatibility,
-  normalizeChatCompletionsUrl,
+  resolveGatewayChatCompletionsUrl,
   readGatewayRuntimeConfig
 } from "../gateway/config.js";
 
@@ -39,51 +47,47 @@ export function getGatewaySecretPath(profileDir: string): string {
   return path.join(profileDir, GATEWAY_SECRET_FILE);
 }
 
-export function validateGatewayProfileConfig(value: unknown): GatewayProfileConfig {
-  if (!value || typeof value !== "object") {
-    throw new CcpError("Gateway profile config is missing.");
+export function validateGatewayProfileBinding(value: unknown): GatewayProfileBinding {
+  if (!value || typeof value !== "object") throw new CcpError("Gateway profile binding is missing.");
+  const binding = value as Partial<GatewayProfileBinding>;
+  const upstreamId = String(binding.upstreamId ?? "").trim();
+  const model = String(binding.model ?? "").trim();
+  if (!upstreamId || !model) {
+    throw new CcpError("Gateway profile binding requires upstreamId and model.");
   }
-  const config = value as GatewayProfileConfig;
+  return { upstreamId, model };
+}
+
+export function validateGatewayProfileConfig(value: unknown): GatewayProfileConfig {
+  if (!value || typeof value !== "object") throw new CcpError("Gateway route config is missing.");
+  const config = value as Partial<GatewayProfileConfig>;
   if (config.provider !== "openai" && config.provider !== "openai-compatible") {
     throw new CcpError("Gateway provider must be openai or openai-compatible.");
   }
   if (config.protocol !== "openai_chat_completions") {
     throw new CcpError("Gateway protocol must be openai_chat_completions.");
   }
-  if (!config.chatCompletionsUrl?.trim() || !config.model?.trim()) {
-    throw new CcpError("Gateway Chat Completions URL and model are required.");
-  }
-  const compatibility = mergeGatewayCompatibility(config.provider, config.compatibility);
-  if (
-    !["system", "developer"].includes(compatibility.instructionRole) ||
-    !["max_tokens", "max_completion_tokens"].includes(compatibility.maxTokensField) ||
-    typeof compatibility.supportsStop !== "boolean" ||
-    typeof compatibility.supportsSampling !== "boolean" ||
-    !["supported", "unsupported"].includes(compatibility.parallelToolCalls) ||
-    !["include", "omit"].includes(compatibility.streamUsage) ||
-    !["reasoning_effort", "output_config", "omit"].includes(compatibility.reasoningEffort) ||
-    !["response_format", "output_config", "unsupported"].includes(compatibility.structuredOutput)
-  ) {
-    throw new CcpError("Gateway compatibility config is invalid.");
-  }
+  const model = String(config.model ?? "").trim();
+  if (!model) throw new CcpError("Gateway route model is required.");
   return {
     provider: config.provider,
     protocol: "openai_chat_completions",
-    chatCompletionsUrl: normalizeChatCompletionsUrl(config.chatCompletionsUrl),
-    model: config.model.trim(),
-    compatibility: { ...compatibility }
+    chatCompletionsUrl: resolveGatewayChatCompletionsUrl(
+      config.provider,
+      String(config.chatCompletionsUrl ?? "")
+    ),
+    model,
+    compatibility: validateGatewayCompatibility(config.provider, config.compatibility)
   };
 }
 
 export function validateGatewayProfileSecret(value: unknown): GatewayProfileSecret {
-  if (!value || typeof value !== "object") {
-    throw new CcpError("Gateway secret is missing.");
-  }
+  if (!value || typeof value !== "object") throw new CcpError("Gateway profile secret is missing.");
   const secret = value as Partial<GatewayProfileSecret>;
-  if (secret.version !== 1 || !secret.localToken?.trim() || !secret.apiKey?.trim()) {
-    throw new CcpError("Gateway secret must contain version, localToken, and apiKey.");
+  if (secret.version !== 1 || !secret.localToken?.trim()) {
+    throw new CcpError("Gateway profile secret must contain version and localToken.");
   }
-  return { version: 1, localToken: secret.localToken.trim(), apiKey: secret.apiKey.trim() };
+  return { version: 1, localToken: secret.localToken.trim() };
 }
 
 export async function readGatewayProfileSecret(profileDir: string): Promise<GatewayProfileSecret | undefined> {
@@ -102,12 +106,10 @@ export function buildGatewaySettings(
   current: ClaudeSettings | undefined,
   profileName: string,
   endpoint: string,
-  secret: GatewayProfileSecret
+  secret: Pick<GatewayProfileSecret, "localToken">
 ): ClaudeSettings {
   const env = { ...(current?.env ?? {}) };
-  for (const name of MODEL_ENV_NAMES) {
-    delete env[name];
-  }
+  for (const name of MODEL_ENV_NAMES) delete env[name];
   Object.assign(env, {
     ANTHROPIC_BASE_URL: `${endpoint}/p/${encodeURIComponent(profileName)}`,
     ANTHROPIC_AUTH_TOKEN: secret.localToken,
@@ -126,33 +128,91 @@ export function buildGatewaySettings(
 }
 
 export async function readGatewayProfile(
-  profileDir: string
-): Promise<{ meta: ProfileMeta; config: GatewayProfileConfig; secret: GatewayProfileSecret }> {
-  const [meta, secret] = await Promise.all([readMeta(profileDir), readGatewayProfileSecret(profileDir)]);
-  if (meta?.type !== "gateway") {
-    throw new CcpError(`Profile is not a gateway profile: ${profileDir}`);
+  profileDir: string,
+  context: PathContext = {}
+): Promise<{
+  meta: ProfileMeta;
+  binding: GatewayProfileBinding;
+  config: GatewayProfileConfig;
+  profileSecret: GatewayProfileSecret;
+  secret: GatewayResolvedSecret;
+}> {
+  const [meta, profileSecret] = await Promise.all([
+    readMeta(profileDir),
+    readGatewayProfileSecret(profileDir)
+  ]);
+  if (meta?.type !== "gateway") throw new CcpError(`Profile is not a gateway profile: ${profileDir}`);
+  if (!profileSecret) throw new CcpError(`Gateway profile secret is missing: ${getGatewaySecretPath(profileDir)}`);
+  const binding = validateGatewayProfileBinding(meta.gateway);
+  const upstream = await readGatewayUpstream(binding.upstreamId, context);
+  if (!upstream.config.models.includes(binding.model)) {
+    throw new CcpError(
+      `Gateway model '${binding.model}' is not configured for upstream '${binding.upstreamId}'.`
+    );
   }
-  if (!secret) {
-    throw new CcpError(`Gateway secret is missing: ${getGatewaySecretPath(profileDir)}`);
-  }
-  return { meta, config: validateGatewayProfileConfig(meta.gateway), secret };
+  const config = validateGatewayProfileConfig({ ...upstream.config, model: binding.model });
+  return {
+    meta,
+    binding,
+    config,
+    profileSecret,
+    secret: { localToken: profileSecret.localToken, apiKey: upstream.secret.apiKey }
+  };
 }
 
 export async function repairGatewayProfileSettings(
   profileDir: string,
   profileName: string,
   context: PathContext = {}
-): Promise<{ config: GatewayProfileConfig; secret: GatewayProfileSecret }> {
-  const [{ config, secret }, runtimeConfig, current] = await Promise.all([
-    readGatewayProfile(profileDir),
+): Promise<{ config: GatewayProfileConfig; secret: GatewayResolvedSecret }> {
+  const [{ config, secret, profileSecret }, runtimeConfig, current] = await Promise.all([
+    readGatewayProfile(profileDir, context),
     readGatewayRuntimeConfig(context),
     readSettings(profileDir)
   ]);
-  const expected = buildGatewaySettings(current, profileName, getGatewayEndpoint(runtimeConfig), secret);
-  if (!jsonEqual(current, expected)) {
-    await writeSettings(profileDir, expected);
-  }
+  const expected = buildGatewaySettings(current, profileName, getGatewayEndpoint(runtimeConfig), profileSecret);
+  if (!jsonEqual(current, expected)) await writeSettings(profileDir, expected);
   return { config, secret };
+}
+
+export async function updateGatewayProfile(
+  profileDir: string,
+  profileName: string,
+  input: UpdateGatewayProfileInput,
+  context: PathContext = {}
+): Promise<{ binding: GatewayProfileBinding; config: GatewayProfileConfig; secret: GatewayResolvedSecret }> {
+  const [meta, profileSecret, upstream, runtimeConfig, currentSettings] = await Promise.all([
+    readMeta(profileDir),
+    readGatewayProfileSecret(profileDir),
+    readGatewayUpstreamConfig(input.upstreamId, context),
+    readGatewayRuntimeConfig(context),
+    readSettings(profileDir)
+  ]);
+  if (meta?.type !== "gateway") throw new CcpError(`Profile is not a gateway profile: ${profileDir}`);
+  if (!profileSecret) throw new CcpError(`Gateway profile secret is missing: ${getGatewaySecretPath(profileDir)}`);
+  const binding = validateGatewayProfileBinding(input);
+  if (!upstream.models.includes(binding.model)) {
+    throw new CcpError(`Gateway model '${binding.model}' is not configured for upstream '${binding.upstreamId}'.`);
+  }
+  const nextMeta: ProfileMeta = { ...meta, gateway: binding };
+  const nextSettings = buildGatewaySettings(
+    currentSettings,
+    profileName,
+    getGatewayEndpoint(runtimeConfig),
+    profileSecret
+  );
+  try {
+    await writeMeta(profileDir, nextMeta);
+    await writeSettings(profileDir, nextSettings);
+  } catch (error) {
+    await Promise.allSettled([
+      writeMeta(profileDir, meta),
+      currentSettings ? writeSettings(profileDir, currentSettings) : Promise.resolve()
+    ]);
+    throw error;
+  }
+  const resolved = await readGatewayProfile(profileDir, context);
+  return { binding, config: resolved.config, secret: resolved.secret };
 }
 
 export function tokensEqual(expected: string, actual: string): boolean {

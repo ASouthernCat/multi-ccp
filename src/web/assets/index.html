@@ -14,8 +14,9 @@
       <header class="topbar">
         <section class="brand-block">
           <div class="brand-mark">ccp</div>
-          <div>
+          <div class="brand-title">
             <h1>multi-ccp</h1>
+            <a class="app-version" href="https://github.com/ASouthernCat/multi-ccp" target="_blank" rel="noreferrer" >v__CCP_VERSION__</a>
           </div>
         </section>
         <section class="top-actions">
@@ -61,6 +62,7 @@
             <div class="preset-filters" id="presetFilters">
               <button class="chip active" type="button" data-preset-filter="all">All</button>
               <button class="chip" type="button" data-preset-filter="api">API</button>
+              <button class="chip" type="button" data-preset-filter="gateway">Gateway</button>
               <button class="chip" type="button" data-preset-filter="ccr">CCR</button>
               <button class="chip" type="button" data-preset-filter="custom">Custom</button>
               <button class="chip" type="button" data-preset-filter="login">Login</button>
@@ -77,8 +79,16 @@
             </div>
             <div data-kind-fields="custom-api" hidden>
               <label>Base URL <input name="baseUrl" required placeholder="https://api.example.com/anthropic" /></label>
-              <label>Auth Token <input name="customToken" type="password" placeholder="留空则写入占位符" /></label>
+              <label>API Key <input name="customToken" type="password" placeholder="留空则写入占位符" /></label>
               <label>Model <input name="model" placeholder="留空使用 Claude Code 默认模型" /></label>
+            </div>
+            <div data-kind-fields="gateway" hidden>
+              <label>Upstream <select name="gatewayUpstream" id="newGatewayUpstream" required></select></label>
+              <label>Model <select name="gatewayModel" id="newGatewayModel" required></select></label>
+              <p class="gateway-profile-upstream-empty" id="newGatewayEmpty" role="status" hidden>暂无可用的上游供应商，请点击下方 Manage Upstreams 创建供应商并配置模型。</p>
+              <button class="ghost icon-action gateway-manage-upstreams" type="button" data-open-gateway-manager>
+                <span class="ui-icon" data-icon="route"></span><span>Manage Upstreams</span>
+              </button>
             </div>
             <div data-kind-fields="ccr" hidden>
               <label>Provider API Key <input name="ccrProviderApiKey" type="password" placeholder="填写该 CCR 模板的 provider key" /></label>
@@ -106,6 +116,10 @@
 
     <dialog id="ccrDialog" class="modal">
       <div class="modal-card ccr-card" id="ccrPanel"></div>
+    </dialog>
+
+    <dialog id="gatewayDialog" class="modal">
+      <div class="modal-card gateway-card" id="gatewayPanel"></div>
     </dialog>
 
     <dialog id="syncDialog" class="modal">

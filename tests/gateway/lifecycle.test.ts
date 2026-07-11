@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getGatewayStatus,
+  getProcessStartTimeMs,
   startGateway,
   stopGateway,
   type GatewayRuntimeState
@@ -51,6 +52,46 @@ function fakeChild(pid = 4242): ChildProcess {
 }
 
 describe("gateway lifecycle", () => {
+  it("reads Linux process start time from proc without locale-dependent dates", async () => {
+    const runSync = vi.fn().mockReturnValue({ status: 0, stdout: "100\n" });
+    const processFields = ["S", ...Array(18).fill("0"), "250", ...Array(8).fill("0")];
+    const readTextFile = vi.fn().mockImplementation(async (filePath: string) => {
+      if (filePath === "/proc/4321/stat") return `4321 (gateway worker) ${processFields.join(" ")}`;
+      if (filePath === "/proc/stat") return "cpu  1 2 3 4\nbtime 1700000000\n";
+      throw new Error(`Unexpected path: ${filePath}`);
+    });
+
+    await expect(getProcessStartTimeMs(4321, {
+      platform: "linux",
+      env: { LANG: "zh_CN.UTF-8" },
+      runSync,
+      readTextFile
+    })).resolves.toBe(1_700_000_002_500);
+    expect(runSync).toHaveBeenCalledWith("getconf", ["CLK_TCK"], {
+      encoding: "utf8",
+      env: expect.objectContaining({ LANG: "C", LC_ALL: "C" })
+    });
+  });
+
+  it("forces a stable locale when Unix process lookup falls back to ps", async () => {
+    const runSync = vi.fn().mockReturnValue({
+      status: 0,
+      stdout: "Sat Jul 11 12:00:00 2026\n"
+    });
+
+    const result = await getProcessStartTimeMs(4321, {
+      platform: "darwin",
+      env: { LANG: "zh_CN.UTF-8" },
+      runSync
+    });
+
+    expect(result).toBe(Date.parse("Sat Jul 11 12:00:00 2026"));
+    expect(runSync).toHaveBeenCalledWith("ps", ["-o", "lstart=", "-p", "4321"], {
+      encoding: "utf8",
+      env: expect.objectContaining({ LANG: "C", LC_ALL: "C" })
+    });
+  });
+
   it("distinguishes an unrelated listener from an offline endpoint", async () => {
     const context = await createContext();
     const occupied = await getGatewayStatus(context, {
