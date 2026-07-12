@@ -125,7 +125,7 @@ function profileBrand(p) {
         const upstream = p.gatewayUpstream || {};
         if (upstream.provider === 'openai')
             return 'openai';
-        return inferProviderBrand(upstream.id, upstream.chatCompletionsUrl, upstream.models, p.model);
+        return inferProviderBrand(upstream.id, upstream.endpointUrl, upstream.models, p.model);
     }
     if (p.type === 'api' || p.type === 'ccr')
         return inferProviderBrand(p.name, p.baseUrl, p.model, p.meta?.ccrRoute, p.tags);
@@ -168,31 +168,50 @@ function closeDrawer() { state.selected = null; $('workspace').classList.remove(
 function ccrRouteOptions(selected = '') { const routes = state.ccrRoutes || []; if (!routes.length)
     return `<option value="">${escapeHtml(state.ccrRoutesMessage || '没有可用 CCR 路由')}</option>`; const missing = selected && !routes.includes(selected) ? `<option value="" selected>当前路由不可用：${escapeHtml(selected)}</option>` : ''; const placeholder = selected && routes.includes(selected) ? '<option value="">选择模型路由</option>' : '<option value="" selected>选择模型路由</option>'; return [missing || placeholder, ...routes.map(route => `<option value="${escapeHtml(route)}" ${route === selected ? 'selected' : ''}>${escapeHtml(route)}</option>`)].join(''); }
 function fullConfigBlock(p) { const config = { settings: p.settings || {}, ...(p.meta ? { ccp: p.meta } : {}) }; return `<details class="preset-config drawer-config"><summary>完整配置</summary><pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre></details>`; }
-const gatewayCompatibilityKeys = ['instructionRole', 'maxTokensField', 'supportsStop', 'supportsSampling', 'parallelToolCalls', 'streamUsage', 'reasoningEffort', 'structuredOutput'];
+const gatewayChatCompatibilityKeys = ['instructionRole', 'maxTokensField', 'supportsStop', 'supportsSampling', 'parallelToolCalls', 'streamUsage', 'reasoningEffort', 'structuredOutput'];
+const gatewayResponsesCompatibilityKeys = ['instructions', 'maxOutputTokens', 'supportsStop', 'supportsSampling', 'parallelToolCalls', 'toolStrict', 'reasoningEffort', 'structuredOutput', 'store'];
 const gatewayCompatibilityPresets = {
-    openai: { instructionRole: 'developer', maxTokensField: 'max_completion_tokens', supportsStop: false, supportsSampling: false, parallelToolCalls: 'supported', streamUsage: 'include', reasoningEffort: 'reasoning_effort', structuredOutput: 'response_format' },
-    modern: { instructionRole: 'developer', maxTokensField: 'max_completion_tokens', supportsStop: true, supportsSampling: true, parallelToolCalls: 'supported', streamUsage: 'include', reasoningEffort: 'reasoning_effort', structuredOutput: 'response_format' },
-    legacy: { instructionRole: 'system', maxTokensField: 'max_tokens', supportsStop: true, supportsSampling: true, parallelToolCalls: 'unsupported', streamUsage: 'omit', reasoningEffort: 'omit', structuredOutput: 'unsupported' }
+    openaiChat: { protocol: 'openai_chat_completions', instructionRole: 'developer', maxTokensField: 'max_completion_tokens', supportsStop: false, supportsSampling: false, parallelToolCalls: 'supported', streamUsage: 'include', reasoningEffort: 'reasoning_effort', structuredOutput: 'response_format' },
+    modern: { protocol: 'openai_chat_completions', instructionRole: 'developer', maxTokensField: 'max_completion_tokens', supportsStop: true, supportsSampling: true, parallelToolCalls: 'supported', streamUsage: 'include', reasoningEffort: 'reasoning_effort', structuredOutput: 'response_format' },
+    legacy: { protocol: 'openai_chat_completions', instructionRole: 'system', maxTokensField: 'max_tokens', supportsStop: true, supportsSampling: true, parallelToolCalls: 'unsupported', streamUsage: 'omit', reasoningEffort: 'omit', structuredOutput: 'unsupported' },
+    openaiResponses: { protocol: 'openai_responses', instructions: 'instructions', maxOutputTokens: 'max_output_tokens', supportsStop: false, supportsSampling: false, parallelToolCalls: 'supported', toolStrict: 'non_strict', reasoningEffort: 'reasoning.effort', structuredOutput: 'text.format', store: false },
+    responses: { protocol: 'openai_responses', instructions: 'instructions', maxOutputTokens: 'max_output_tokens', supportsStop: false, supportsSampling: true, parallelToolCalls: 'supported', toolStrict: 'non_strict', reasoningEffort: 'reasoning.effort', structuredOutput: 'text.format', store: false }
 };
-function sameGatewayCompatibility(left, right) { return gatewayCompatibilityKeys.every(key => left?.[key] === right?.[key]); }
-function gatewayCompatibilityMode(provider, compatibility) { if (provider === 'openai' && sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.openai))
-    return 'openai'; if (sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.modern))
-    return 'modern'; if (sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.legacy))
-    return 'legacy'; return 'advanced'; }
-function gatewayModeButtons(prefix, mode, provider) { return `<div class="segmented gateway-mode" data-gateway-mode-control="${prefix}"><button type="button" data-gateway-mode="openai" ${provider === 'openai' ? '' : 'hidden'}>OpenAI</button><button type="button" data-gateway-mode="modern">Modern</button><button type="button" data-gateway-mode="legacy">Legacy</button><button type="button" data-gateway-mode="advanced">Advanced</button></div><input type="hidden" id="${prefix}Mode" value="${escapeHtml(mode)}" />`; }
-function gatewayAdvancedFields(prefix, compatibility) { const c = compatibility || gatewayCompatibilityPresets.modern; return `<div class="gateway-advanced" id="${prefix}Advanced"><label>Instruction Role<select id="${prefix}InstructionRole"><option value="developer" ${c.instructionRole === 'developer' ? 'selected' : ''}>developer</option><option value="system" ${c.instructionRole === 'system' ? 'selected' : ''}>system</option></select></label><label>Token Field<select id="${prefix}MaxTokensField"><option value="max_completion_tokens" ${c.maxTokensField === 'max_completion_tokens' ? 'selected' : ''}>max_completion_tokens</option><option value="max_tokens" ${c.maxTokensField === 'max_tokens' ? 'selected' : ''}>max_tokens</option></select></label><label>Effort Mapping<select id="${prefix}ReasoningEffort"><option value="reasoning_effort" ${c.reasoningEffort === 'reasoning_effort' ? 'selected' : ''}>reasoning_effort</option><option value="output_config" ${c.reasoningEffort === 'output_config' ? 'selected' : ''}>output_config.effort</option><option value="omit" ${c.reasoningEffort === 'omit' ? 'selected' : ''}>omit</option></select></label><label>Structured Output<select id="${prefix}StructuredOutput"><option value="response_format" ${c.structuredOutput === 'response_format' ? 'selected' : ''}>response_format</option><option value="output_config" ${c.structuredOutput === 'output_config' ? 'selected' : ''}>output_config.format</option><option value="unsupported" ${c.structuredOutput === 'unsupported' ? 'selected' : ''}>unsupported</option></select></label><label class="gateway-toggle"><input id="${prefix}SupportsStop" type="checkbox" ${c.supportsStop ? 'checked' : ''}/><span>Stop sequences</span></label><label class="gateway-toggle"><input id="${prefix}SupportsSampling" type="checkbox" ${c.supportsSampling ? 'checked' : ''}/><span>Sampling</span></label><label class="gateway-toggle"><input id="${prefix}ParallelToolCalls" type="checkbox" ${c.parallelToolCalls === 'supported' ? 'checked' : ''}/><span>Parallel tools</span></label><label class="gateway-toggle"><input id="${prefix}StreamUsage" type="checkbox" ${c.streamUsage === 'include' ? 'checked' : ''}/><span>Stream usage</span></label></div>`; }
-function writeGatewayCompatibility(prefix, compatibility) { const c = compatibility || gatewayCompatibilityPresets.modern; const values = { InstructionRole: c.instructionRole, MaxTokensField: c.maxTokensField, ReasoningEffort: c.reasoningEffort, StructuredOutput: c.structuredOutput }; Object.entries(values).forEach(([key, value]) => { const el = $(`${prefix}${key}`); if (el)
-    el.value = value; }); const checks = { SupportsStop: c.supportsStop, SupportsSampling: c.supportsSampling, ParallelToolCalls: c.parallelToolCalls === 'supported', StreamUsage: c.streamUsage === 'include' }; Object.entries(checks).forEach(([key, value]) => { const el = $(`${prefix}${key}`); if (el)
-    el.checked = value; }); }
-function readGatewayCompatibility(prefix) { return { instructionRole: $(`${prefix}InstructionRole`).value, maxTokensField: $(`${prefix}MaxTokensField`).value, supportsStop: $(`${prefix}SupportsStop`).checked, supportsSampling: $(`${prefix}SupportsSampling`).checked, parallelToolCalls: $(`${prefix}ParallelToolCalls`).checked ? 'supported' : 'unsupported', streamUsage: $(`${prefix}StreamUsage`).checked ? 'include' : 'omit', reasoningEffort: $(`${prefix}ReasoningEffort`).value, structuredOutput: $(`${prefix}StructuredOutput`).value }; }
-function bindGatewayMode(prefix, providerSource, initial = true) { const control = document.querySelector(`[data-gateway-mode-control="${prefix}"]`); if (!control)
-    return; const fixedProvider = providerSource === 'openai' || providerSource === 'openai-compatible'; const provider = () => fixedProvider ? providerSource : ($(providerSource)?.value || 'openai-compatible'); const apply = (requested, seed = false) => { let mode = provider() === 'openai' ? 'openai' : requested === 'openai' ? 'modern' : requested; const input = $(`${prefix}Mode`); input.value = mode; control.querySelectorAll('[data-gateway-mode]').forEach(button => { button.hidden = provider() === 'openai' ? button.dataset.gatewayMode !== 'openai' : button.dataset.gatewayMode === 'openai'; button.classList.toggle('active', button.dataset.gatewayMode === mode); }); const advanced = $(`${prefix}Advanced`); advanced.hidden = mode !== 'advanced'; advanced.querySelectorAll('input,select').forEach(field => field.disabled = mode !== 'advanced'); if (seed && gatewayCompatibilityPresets[mode])
-    writeGatewayCompatibility(prefix, gatewayCompatibilityPresets[mode]); }; control.onclick = event => { const mode = event.target.dataset.gatewayMode; if (mode)
-    apply(mode, true); }; if (!fixedProvider) {
-    const select = $(providerSource);
-    if (select)
-        select.onchange = () => { const current = $(`${prefix}Mode`).value; apply(provider() === 'openai' ? 'openai' : current === 'openai' ? 'modern' : current, true); };
-} apply($(`${prefix}Mode`).value, !initial); }
+function gatewayProtocolLabel(protocol) { return protocol === 'openai_responses' ? 'Responses' : 'Chat Completions'; }
+function sameGatewayCompatibility(left, right, keys) { return keys.every(key => left?.[key] === right?.[key]); }
+function gatewayCompatibilityMode(protocol, provider, compatibility) {
+    if (protocol === 'openai_responses') {
+        if (provider === 'openai' && sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.openaiResponses, gatewayResponsesCompatibilityKeys))
+            return 'openai';
+        if (sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.responses, gatewayResponsesCompatibilityKeys))
+            return 'responses';
+        return 'advanced';
+    }
+    if (provider === 'openai' && sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.openaiChat, gatewayChatCompatibilityKeys))
+        return 'openai';
+    if (sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.modern, gatewayChatCompatibilityKeys))
+        return 'modern';
+    if (sameGatewayCompatibility(compatibility, gatewayCompatibilityPresets.legacy, gatewayChatCompatibilityKeys))
+        return 'legacy';
+    return 'advanced';
+}
+function gatewayModeButtons(prefix, mode, protocol, provider) {
+    return `<div class="segmented gateway-mode" data-gateway-mode-control="${prefix}"><button type="button" data-gateway-mode="openai" ${provider === 'openai' ? '' : 'hidden'}>OpenAI</button><button type="button" data-gateway-mode="responses" ${protocol === 'openai_responses' && provider !== 'openai' ? '' : 'hidden'}>Responses</button><button type="button" data-gateway-mode="modern" ${protocol === 'openai_chat_completions' && provider !== 'openai' ? '' : 'hidden'}>Modern</button><button type="button" data-gateway-mode="legacy" ${protocol === 'openai_chat_completions' && provider !== 'openai' ? '' : 'hidden'}>Legacy</button><button type="button" data-gateway-mode="advanced" ${provider === 'openai' ? 'hidden' : ''}>Advanced</button></div><input type="hidden" id="${prefix}Mode" value="${escapeHtml(mode)}" />`;
+}
+function gatewayAdvancedFields(prefix, protocol, compatibility) {
+    if (protocol === 'openai_responses') {
+        const c = compatibility?.protocol === 'openai_responses' ? compatibility : gatewayCompatibilityPresets.responses;
+        return `<div class="gateway-advanced" id="${prefix}Advanced"><label>Instructions<select id="${prefix}Instructions"><option value="instructions" ${c.instructions === 'instructions' ? 'selected' : ''}>instructions</option><option value="system_input" ${c.instructions === 'system_input' ? 'selected' : ''}>system input item</option></select></label><label>Effort Mapping<select id="${prefix}ReasoningEffort"><option value="reasoning.effort" ${c.reasoningEffort === 'reasoning.effort' ? 'selected' : ''}>reasoning.effort</option><option value="omit" ${c.reasoningEffort === 'omit' ? 'selected' : ''}>omit</option></select></label><label>Structured Output<select id="${prefix}StructuredOutput"><option value="text.format" ${c.structuredOutput === 'text.format' ? 'selected' : ''}>text.format</option><option value="unsupported" ${c.structuredOutput === 'unsupported' ? 'selected' : ''}>unsupported</option></select></label><label>Tool Strict Mode<select id="${prefix}ToolStrict"><option value="non_strict" ${c.toolStrict !== 'strict' ? 'selected' : ''}>non_strict (recommended for Claude Code)</option><option value="strict" ${c.toolStrict === 'strict' ? 'selected' : ''}>strict (all props required)</option></select></label><div class="gateway-toggles"><label class="gateway-toggle"><input id="${prefix}SupportsSampling" type="checkbox" ${c.supportsSampling ? 'checked' : ''}/><span>Sampling</span></label><label class="gateway-toggle"><input id="${prefix}ParallelToolCalls" type="checkbox" ${c.parallelToolCalls === 'supported' ? 'checked' : ''}/><span>Parallel tools</span></label></div></div>`;
+    }
+    const c = compatibility?.protocol === 'openai_chat_completions' ? compatibility : gatewayCompatibilityPresets.modern;
+    return `<div class="gateway-advanced" id="${prefix}Advanced"><label>Instruction Role<select id="${prefix}InstructionRole"><option value="developer" ${c.instructionRole === 'developer' ? 'selected' : ''}>developer</option><option value="system" ${c.instructionRole === 'system' ? 'selected' : ''}>system</option></select></label><label>Token Field<select id="${prefix}MaxTokensField"><option value="max_completion_tokens" ${c.maxTokensField === 'max_completion_tokens' ? 'selected' : ''}>max_completion_tokens</option><option value="max_tokens" ${c.maxTokensField === 'max_tokens' ? 'selected' : ''}>max_tokens</option></select></label><label>Effort Mapping<select id="${prefix}ReasoningEffort"><option value="reasoning_effort" ${c.reasoningEffort === 'reasoning_effort' ? 'selected' : ''}>reasoning_effort</option><option value="output_config" ${c.reasoningEffort === 'output_config' ? 'selected' : ''}>output_config.effort</option><option value="omit" ${c.reasoningEffort === 'omit' ? 'selected' : ''}>omit</option></select></label><label>Structured Output<select id="${prefix}StructuredOutput"><option value="response_format" ${c.structuredOutput === 'response_format' ? 'selected' : ''}>response_format</option><option value="output_config" ${c.structuredOutput === 'output_config' ? 'selected' : ''}>output_config.format</option><option value="unsupported" ${c.structuredOutput === 'unsupported' ? 'selected' : ''}>unsupported</option></select></label><div class="gateway-toggles"><label class="gateway-toggle"><input id="${prefix}SupportsStop" type="checkbox" ${c.supportsStop ? 'checked' : ''}/><span>Stop sequences</span></label><label class="gateway-toggle"><input id="${prefix}SupportsSampling" type="checkbox" ${c.supportsSampling ? 'checked' : ''}/><span>Sampling</span></label><label class="gateway-toggle"><input id="${prefix}ParallelToolCalls" type="checkbox" ${c.parallelToolCalls === 'supported' ? 'checked' : ''}/><span>Parallel tools</span></label><label class="gateway-toggle"><input id="${prefix}StreamUsage" type="checkbox" ${c.streamUsage === 'include' ? 'checked' : ''}/><span>Stream usage</span></label></div></div>`;
+}
+function readGatewayCompatibility(prefix, protocol) {
+    if (protocol === 'openai_responses') {
+        return { protocol, instructions: $(`${prefix}Instructions`).value, maxOutputTokens: 'max_output_tokens', supportsStop: false, supportsSampling: $(`${prefix}SupportsSampling`).checked, parallelToolCalls: $(`${prefix}ParallelToolCalls`).checked ? 'supported' : 'unsupported', toolStrict: $(`${prefix}ToolStrict`)?.value || 'non_strict', reasoningEffort: $(`${prefix}ReasoningEffort`).value, structuredOutput: $(`${prefix}StructuredOutput`).value, store: false };
+    }
+    return { protocol, instructionRole: $(`${prefix}InstructionRole`).value, maxTokensField: $(`${prefix}MaxTokensField`).value, supportsStop: $(`${prefix}SupportsStop`).checked, supportsSampling: $(`${prefix}SupportsSampling`).checked, parallelToolCalls: $(`${prefix}ParallelToolCalls`).checked ? 'supported' : 'unsupported', streamUsage: $(`${prefix}StreamUsage`).checked ? 'include' : 'omit', reasoningEffort: $(`${prefix}ReasoningEffort`).value, structuredOutput: $(`${prefix}StructuredOutput`).value };
+}
 function availableGatewayUpstreams(provider) {
     return state.upstreams.filter(upstream => !provider || upstream.provider === provider);
 }
@@ -249,7 +268,7 @@ function setCreateProfileAvailability(available, message = '') {
 function gatewaySettingsForm(p) {
     const binding = p.meta?.gateway || {};
     const upstream = p.gatewayUpstream;
-    return `<div class="drawer-section gateway-editor"><div class="section-heading"><div><p class="eyebrow">gateway routing</p><h3>Profile Binding</h3></div><button class="ghost icon-action" id="openGatewayFromDrawer" type="button">${iconSvg('route')}<span>Manage</span></button></div><div class="gateway-form-grid"><label>Upstream<select id="editGatewayUpstream" required>${gatewayUpstreamOptions(binding.upstreamId)}</select></label><label>Model<select id="editGatewayModel" required>${gatewayModelOptions(binding.upstreamId, binding.model)}</select></label></div><div class="gateway-binding-summary"><span>Provider<strong>${escapeHtml(upstream?.provider || 'Unavailable')}</strong></span><span>Endpoint<strong title="${escapeHtml(upstream?.chatCompletionsUrl || '')}">${escapeHtml(hostname(upstream?.chatCompletionsUrl || '') || 'Unavailable')}</strong></span></div><p class="hint">Changes apply to the next request. The gateway service does not need to restart.</p><button class="primary" id="saveSettings">Save Binding</button></div>`;
+    return `<div class="drawer-section gateway-editor"><div class="section-heading"><div><p class="eyebrow">gateway routing</p><h3>Profile Binding</h3></div><button class="ghost icon-action" id="openGatewayFromDrawer" type="button">${iconSvg('route')}<span>Manage</span></button></div><div class="gateway-form-grid"><label>Upstream<select id="editGatewayUpstream" required>${gatewayUpstreamOptions(binding.upstreamId)}</select></label><label>Model<select id="editGatewayModel" required>${gatewayModelOptions(binding.upstreamId, binding.model)}</select></label></div><div class="gateway-binding-summary"><span>Provider<strong>${escapeHtml(upstream?.provider || 'Unavailable')}</strong></span><span>Protocol<strong>${escapeHtml(upstream ? gatewayProtocolLabel(upstream.protocol) : 'Unavailable')}</strong></span><span>Endpoint<strong title="${escapeHtml(upstream?.endpointUrl || '')}">${escapeHtml(hostname(upstream?.endpointUrl || '') || 'Unavailable')}</strong></span></div><p class="hint">Changes apply to the next request. The gateway service does not need to restart.</p><button class="primary" id="saveSettings">Save Binding</button></div>`;
 }
 function settingsForm(p, env) {
     if (p.type === 'api')
@@ -389,7 +408,7 @@ function gatewayModelChips(models = []) {
 function gatewayUpstreamRows(upstreams) {
     if (!upstreams.length)
         return '<div class="gateway-upstream-empty"><strong>No upstreams configured</strong><span>Create one before adding a gateway profile.</span></div>';
-    return `<div class="gateway-upstream-list">${upstreams.map(upstream => { const references = upstream.profileNames || []; const protectedTitle = references.length ? `Rebind profiles before deleting: ${references.join(', ')}` : 'Delete upstream'; const brand = upstream.provider === 'openai' ? 'openai' : inferProviderBrand(upstream.id, upstream.chatCompletionsUrl, upstream.models); return `<article class="gateway-upstream-row"><div class="gateway-upstream-main">${brandIconMarkup(brand, iconSvg('route'), 'upstream-brand-logo')}<div><span class="gateway-upstream-title"><strong>${escapeHtml(upstream.id)}</strong><span class="gateway-provider-kind">${upstream.provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}</span></span><small title="${escapeHtml(upstream.chatCompletionsUrl)}">${escapeHtml(hostname(upstream.chatCompletionsUrl))}</small></div></div><div class="gateway-model-chips">${gatewayModelChips(upstream.models)}</div><div class="gateway-upstream-usage"><span>${references.length} profile${references.length === 1 ? '' : 's'}</span><span class="${upstream.apiKeyStatus === 'set' ? 'key-ready' : 'key-missing'}">${upstream.apiKeyStatus === 'set' ? 'Key set' : 'Key missing'}</span></div><div class="gateway-upstream-actions"><button class="ghost icon-action icon-only" type="button" data-edit-upstream="${escapeHtml(upstream.id)}" title="Edit upstream" aria-label="Edit upstream">${iconSvg('pencil')}</button><button class="ghost icon-action icon-only" type="button" data-delete-upstream="${escapeHtml(upstream.id)}" title="${escapeHtml(protectedTitle)}" aria-label="${escapeHtml(protectedTitle)}" aria-disabled="${references.length ? 'true' : 'false'}">${iconSvg('trash')}</button></div></article>`; }).join('')}</div>`;
+    return `<div class="gateway-upstream-list">${upstreams.map(upstream => { const references = upstream.profileNames || []; const protectedTitle = references.length ? `Rebind profiles before deleting: ${references.join(', ')}` : 'Delete upstream'; const brand = upstream.provider === 'openai' ? 'openai' : inferProviderBrand(upstream.id, upstream.endpointUrl, upstream.models); return `<article class="gateway-upstream-row"><div class="gateway-upstream-main">${brandIconMarkup(brand, iconSvg('route'), 'upstream-brand-logo')}<div><span class="gateway-upstream-title"><strong>${escapeHtml(upstream.id)}</strong><span class="gateway-provider-kind">${upstream.provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}</span><span class="gateway-provider-kind">${escapeHtml(gatewayProtocolLabel(upstream.protocol))}</span></span><small title="${escapeHtml(upstream.endpointUrl)}">${escapeHtml(hostname(upstream.endpointUrl))}</small></div></div><div class="gateway-model-chips">${gatewayModelChips(upstream.models)}</div><div class="gateway-upstream-usage"><span>${references.length} profile${references.length === 1 ? '' : 's'}</span><span class="${upstream.apiKeyStatus === 'set' ? 'key-ready' : 'key-missing'}">${upstream.apiKeyStatus === 'set' ? 'Key set' : 'Key missing'}</span></div><div class="gateway-upstream-actions"><button class="ghost icon-action icon-only" type="button" data-edit-upstream="${escapeHtml(upstream.id)}" title="Edit upstream" aria-label="Edit upstream">${iconSvg('pencil')}</button><button class="ghost icon-action icon-only" type="button" data-delete-upstream="${escapeHtml(upstream.id)}" title="${escapeHtml(protectedTitle)}" aria-label="${escapeHtml(protectedTitle)}" aria-disabled="${references.length ? 'true' : 'false'}">${iconSvg('trash')}</button></div></article>`; }).join('')}</div>`;
 }
 function gatewayTabButton(id, label, count) {
     const active = state.gatewayTab === id;
@@ -483,7 +502,7 @@ function gatewayUpstreamTemplateOptions(selectedId) {
 function gatewayUpstreamTemplateId(upstream) {
     if (!upstream)
         return 'custom';
-    const matched = state.gatewayUpstreamTemplates.find(template => template.id !== 'custom' && template.provider === upstream.provider && template.chatCompletionsUrl === upstream.chatCompletionsUrl);
+    const matched = state.gatewayUpstreamTemplates.find(template => template.id !== 'custom' && template.provider === upstream.provider && template.protocol === upstream.protocol && template.endpointUrl === upstream.endpointUrl);
     return matched?.id || 'custom';
 }
 function gatewayTemplateBrand(templateId, upstream) {
@@ -493,7 +512,7 @@ function gatewayTemplateBrand(templateId, upstream) {
         return 'xai';
     if (templateId === 'aicodemirror')
         return 'aicodemirror';
-    return inferProviderBrand(upstream?.id, upstream?.chatCompletionsUrl, upstream?.models);
+    return inferProviderBrand(upstream?.id, upstream?.endpointUrl, upstream?.models);
 }
 function updateUpstreamBrandPreview(brand) {
     const preview = $('upstreamBrandPreview');
@@ -506,61 +525,49 @@ function applyGatewayUpstreamTemplate(templateId, seedId = false) {
         return;
     const provider = $('upstreamProvider');
     const providerLabel = $('upstreamProviderLabel');
+    const protocol = $('upstreamProtocol');
     const upstreamId = $('upstreamId');
+    const changedProtocol = protocol.value !== template.protocol;
     provider.value = template.provider;
     providerLabel.value = template.provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible';
-    $('upstreamUrl').value = template.chatCompletionsUrl || '';
+    protocol.value = template.protocol;
+    $('upstreamUrl').value = template.endpointUrl || '';
     $('upstreamModels').value = (template.models || []).join(', ');
     $('upstreamTemplateHint').textContent = template.description || '';
     updateUpstreamBrandPreview(gatewayTemplateBrand(templateId));
     const templateDefaultIds = state.gatewayUpstreamTemplates.map(item => item.defaultUpstreamId).filter(Boolean);
     if (seedId && (!upstreamId.value.trim() || templateDefaultIds.includes(upstreamId.value.trim())))
         upstreamId.value = template.defaultUpstreamId || '';
-    provider.dispatchEvent(new Event('change'));
-    const mode = template.compatibilityMode || gatewayCompatibilityMode(template.provider, template.compatibility);
+    syncUpstreamProtocolEditor(changedProtocol && template.id === 'custom');
+    const mode = template.compatibilityMode || gatewayCompatibilityMode(template.protocol, template.provider, template.compatibility);
     const modeButton = document.querySelector(`[data-gateway-mode-control="upstreamEditor"] [data-gateway-mode="${mode}"]`);
     modeButton?.click();
-    writeGatewayCompatibility('upstreamEditor', template.compatibility);
 }
 function renderUpstreamEditor(upstream) {
     const editing = Boolean(upstream);
     const provider = upstream?.provider || 'openai-compatible';
-    const compatibility = upstream?.compatibility || gatewayCompatibilityPresets.modern;
-    const mode = gatewayCompatibilityMode(provider, compatibility);
+    const protocol = upstream?.protocol || 'openai_responses';
+    const compatibility = upstream?.compatibility || gatewayCompatibilityPresets.responses;
+    const mode = gatewayCompatibilityMode(protocol, provider, compatibility);
     const templateId = gatewayUpstreamTemplateId(upstream);
     const form = $('upstreamForm');
     const scrim = $('upstreamDrawerScrim');
     const animationId = ++state.gatewayDrawerAnimationId;
     form.dataset.animationId = String(animationId);
     form.dataset.upstreamId = upstream?.id || '';
+    form.dataset.originalProtocol = upstream?.protocol || '';
     form.classList.remove('is-closing');
     scrim.classList.remove('is-closing');
     const template = state.gatewayUpstreamTemplates.find(item => item.id === templateId);
-    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">×</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint" id="upstreamTemplateHint">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required ${editing ? 'readonly' : ''} placeholder="my-provider" autocomplete="off" /></label><label>Provider Format<input id="upstreamProviderLabel" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Chat Completions URL<input id="upstreamUrl" value="${escapeHtml(upstream?.chatCompletionsUrl || '')}" required placeholder="https://api.example.com/v1/chat/completions" autocomplete="url" /></label><label class="gateway-wide">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><span class="gateway-field-hint">Separate multiple model IDs with commas, for example: gpt-5.6-sol, gpt-5.5</span></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... 或供应商 API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, provider)}</div>${gatewayAdvancedFields('upstreamEditor', compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
+    const endpointLabel = protocol === 'openai_responses' ? 'Responses Endpoint URL' : 'Chat Completions Endpoint URL';
+    const endpointPlaceholder = protocol === 'openai_responses' ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions';
+    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">×</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint" id="upstreamTemplateHint">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required ${editing ? 'readonly' : ''} placeholder="my-provider" autocomplete="off" /></label><label>Provider Format<input id="upstreamProviderLabel" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Protocol<select id="upstreamProtocol"><option value="openai_responses" ${protocol === 'openai_responses' ? 'selected' : ''}>OpenAI Responses (recommended)</option><option value="openai_chat_completions" ${protocol === 'openai_chat_completions' ? 'selected' : ''}>OpenAI Chat Completions (legacy compatibility)</option></select></label><label class="gateway-wide"><span id="upstreamUrlLabel">${endpointLabel}</span><input id="upstreamUrl" value="${escapeHtml(upstream?.endpointUrl || '')}" required placeholder="${endpointPlaceholder}" autocomplete="url" /></label><label class="gateway-wide">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><span class="gateway-field-hint">Separate multiple model IDs with commas, for example: gpt-5.6-sol, gpt-5.5</span></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... 或供应商 API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}</div>${gatewayAdvancedFields('upstreamEditor', protocol, compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
     bindSecretToggles(form);
-    const url = $('upstreamUrl');
-    if (provider === 'openai-compatible')
-        url.dataset.compatibleValue = url.value;
-    const syncProvider = () => {
-        const official = $('upstreamProvider').value === 'openai';
-        if (official) {
-            if (url.value !== 'https://api.openai.com/v1/chat/completions')
-                url.dataset.compatibleValue = url.value;
-            url.value = 'https://api.openai.com/v1/chat/completions';
-            url.readOnly = true;
-        }
-        else {
-            url.readOnly = false;
-            if (url.value === 'https://api.openai.com/v1/chat/completions')
-                url.value = url.dataset.compatibleValue || '';
-        }
-    };
-    bindGatewayMode('upstreamEditor', 'upstreamProvider');
-    const providerSelect = $('upstreamProvider');
-    const modeChange = providerSelect.onchange;
-    providerSelect.onchange = () => { modeChange?.(); syncProvider(); };
-    syncProvider();
     $('upstreamTemplate').onchange = event => applyGatewayUpstreamTemplate(event.target.value, !editing);
+    $('upstreamProtocol').onchange = () => {
+        $('upstreamTemplate').value = 'custom';
+        syncUpstreamProtocolEditor(true);
+    };
     const refreshCustomBrand = () => {
         if ($('upstreamTemplate').value === 'custom')
             updateUpstreamBrandPreview(inferProviderBrand($('upstreamId').value, $('upstreamUrl').value, $('upstreamModels').value));
@@ -573,6 +580,41 @@ function renderUpstreamEditor(upstream) {
     $('upstreamSave').onclick = () => saveGatewayUpstream(editing ? upstream.id : '');
     form.hidden = false;
     scrim.hidden = false;
+    syncUpstreamProtocolEditor(false, compatibility, mode);
+}
+function syncUpstreamProtocolEditor(clearCustomEndpoint = false, compatibility, requestedMode) {
+    const protocol = $('upstreamProtocol').value;
+    const provider = $('upstreamProvider').value;
+    const responses = protocol === 'openai_responses';
+    const url = $('upstreamUrl');
+    $('upstreamUrlLabel').textContent = responses ? 'Responses Endpoint URL' : 'Chat Completions Endpoint URL';
+    url.placeholder = responses ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions';
+    if (provider === 'openai') {
+        url.value = responses ? 'https://api.openai.com/v1/responses' : 'https://api.openai.com/v1/chat/completions';
+        url.readOnly = true;
+    }
+    else {
+        url.readOnly = false;
+        if (clearCustomEndpoint)
+            url.value = '';
+    }
+    const mode = provider === 'openai' ? 'openai' : requestedMode || (responses ? 'responses' : 'modern');
+    const modeField = document.querySelector('.gateway-mode-field');
+    modeField.innerHTML = `<span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}`;
+    $('upstreamEditorAdvanced').outerHTML = gatewayAdvancedFields('upstreamEditor', protocol, compatibility || gatewayCompatibilityPresets[provider === 'openai' ? (responses ? 'openaiResponses' : 'openaiChat') : mode]);
+    const control = document.querySelector('[data-gateway-mode-control="upstreamEditor"]');
+    const applyMode = nextMode => {
+        $('upstreamEditorMode').value = nextMode;
+        control.querySelectorAll('[data-gateway-mode]').forEach(button => button.classList.toggle('active', button.dataset.gatewayMode === nextMode));
+        const advanced = $('upstreamEditorAdvanced');
+        advanced.hidden = nextMode !== 'advanced';
+        advanced.querySelectorAll('input,select').forEach(field => field.disabled = nextMode !== 'advanced');
+    };
+    control.onclick = event => {
+        if (event.target.dataset.gatewayMode)
+            applyMode(event.target.dataset.gatewayMode);
+    };
+    applyMode(mode);
 }
 function closeUpstreamEditor() {
     const form = $('upstreamForm');
@@ -646,15 +688,23 @@ async function saveGatewayUpstream(existingId = '') {
     if (!form.reportValidity())
         return;
     const provider = $('upstreamProvider').value;
+    const protocol = $('upstreamProtocol').value;
     const mode = $('upstreamEditorMode').value;
+    if (existingId && form.dataset.originalProtocol && form.dataset.originalProtocol !== protocol) {
+        const profiles = state.upstreams.find(item => item.id === existingId)?.profileNames || [];
+        const profileImpact = profiles.length ? ` Bound profiles (${profiles.join(', ')})` : ' Any bound profiles';
+        if (!confirm(`Change protocol from ${gatewayProtocolLabel(form.dataset.originalProtocol)} to ${gatewayProtocolLabel(protocol)}?${profileImpact} will use the new protocol on the next request.`))
+            return;
+    }
     const body = {
         id: $('upstreamId').value,
         provider,
-        chatCompletionsUrl: $('upstreamUrl').value,
+        protocol,
+        endpointUrl: $('upstreamUrl').value,
         apiKey: $('upstreamApiKey').value,
         models: $('upstreamModels').value,
         compatibilityMode: mode,
-        ...(mode === 'advanced' ? { compatibility: readGatewayCompatibility('upstreamEditor') } : {})
+        ...(mode === 'advanced' ? { compatibility: readGatewayCompatibility('upstreamEditor', protocol) } : {})
     };
     try {
         await withBusyButton('upstreamSave', existingId ? 'Saving...' : 'Creating...', () => api(existingId ? `/api/gateway/upstreams/${encodeURIComponent(existingId)}` : '/api/gateway/upstreams', { method: existingId ? 'PUT' : 'POST', body: JSON.stringify(body) }));

@@ -2,6 +2,9 @@ export type ProfileType = "api" | "login" | "ccr" | "gateway" | "unknown";
 
 export type GatewayProvider = "openai" | "openai-compatible";
 
+export type GatewayUpstreamProtocol = "openai_chat_completions" | "openai_responses";
+
+// Temporary Chat compatibility alias for existing management and converter callers.
 export interface GatewayCompatibility {
   instructionRole: "system" | "developer";
   maxTokensField: "max_tokens" | "max_completion_tokens";
@@ -13,13 +16,48 @@ export interface GatewayCompatibility {
   structuredOutput: "response_format" | "output_config" | "unsupported";
 }
 
-export interface GatewayProfileConfig {
-  provider: GatewayProvider;
+export interface GatewayChatCompatibility extends GatewayCompatibility {
   protocol: "openai_chat_completions";
-  chatCompletionsUrl: string;
-  model: string;
-  compatibility: GatewayCompatibility;
 }
+
+export interface GatewayResponsesCompatibility {
+  protocol: "openai_responses";
+  instructions: "instructions" | "system_input";
+  maxOutputTokens: "max_output_tokens";
+  supportsStop: false;
+  supportsSampling: boolean;
+  parallelToolCalls: "supported" | "unsupported";
+  /**
+   * OpenAI Responses tools accept `strict: true` only when every object sets
+   * `additionalProperties: false` and lists all properties in `required`.
+   * Claude Code tools commonly leave optional fields out of `required`, so the
+   * gateway defaults to non-strict translation (`strict: false` + original schema).
+   */
+  toolStrict: "strict" | "non_strict";
+  reasoningEffort: "reasoning.effort" | "omit";
+  structuredOutput: "text.format" | "unsupported";
+  store: false;
+}
+
+export type GatewayProtocolCompatibility =
+  | GatewayChatCompatibility
+  | GatewayResponsesCompatibility;
+
+interface GatewayProfileConfigBase {
+  provider: GatewayProvider;
+  endpointUrl: string;
+  model: string;
+}
+
+export type GatewayProfileConfig =
+  | (GatewayProfileConfigBase & {
+      protocol: "openai_chat_completions";
+      compatibility: GatewayChatCompatibility;
+    })
+  | (GatewayProfileConfigBase & {
+      protocol: "openai_responses";
+      compatibility: GatewayResponsesCompatibility;
+    });
 
 export interface GatewayProfileSecret {
   version: 1;
@@ -36,24 +74,33 @@ export interface GatewayProfileBinding {
   model: string;
 }
 
-export interface GatewayUpstreamConfig {
-  version: 1;
+interface GatewayUpstreamConfigBase {
+  version: 2;
   id: string;
   provider: GatewayProvider;
-  protocol: "openai_chat_completions";
-  chatCompletionsUrl: string;
+  endpointUrl: string;
   models: string[];
-  compatibility: GatewayCompatibility;
 }
+
+export type GatewayUpstreamConfig =
+  | (GatewayUpstreamConfigBase & {
+      protocol: "openai_chat_completions";
+      compatibility: GatewayChatCompatibility;
+    })
+  | (GatewayUpstreamConfigBase & {
+      protocol: "openai_responses";
+      compatibility: GatewayResponsesCompatibility;
+    });
 
 export interface GatewayUpstreamSecret {
   version: 1;
   apiKey: string;
 }
 
-export interface GatewayUpstreamSummary extends GatewayUpstreamConfig {
+export type GatewayUpstreamSummary = GatewayUpstreamConfig & {
   apiKeyStatus: "set" | "missing";
-}
+  chatCompletionsUrl?: string;
+};
 
 export interface ClaudeSettings {
   theme?: string;
@@ -124,16 +171,20 @@ export interface UpdateGatewayProfileInput {
 export interface CreateGatewayUpstreamInput {
   id: string;
   provider: GatewayProvider;
-  chatCompletionsUrl: string;
+  protocol?: GatewayUpstreamProtocol;
+  endpointUrl?: string;
+  chatCompletionsUrl?: string;
   apiKey: string;
   models: string[];
-  compatibility?: Partial<GatewayCompatibility>;
+  compatibility?: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
 }
 
 export interface UpdateGatewayUpstreamInput {
   provider: GatewayProvider;
-  chatCompletionsUrl: string;
+  protocol?: GatewayUpstreamProtocol;
+  endpointUrl?: string;
+  chatCompletionsUrl?: string;
   apiKey?: string;
   models: string[];
-  compatibility: Partial<GatewayCompatibility>;
+  compatibility: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
 }

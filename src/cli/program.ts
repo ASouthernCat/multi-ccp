@@ -57,12 +57,22 @@ import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
 import { getPackageVersion } from "../core/version.js";
-import type { GatewayCompatibility, GatewayProvider, GatewayUpstreamSummary } from "../core/types.js";
+import type {
+  GatewayCompatibility,
+  GatewayProtocolCompatibility,
+  GatewayProvider,
+  GatewayResponsesCompatibility,
+  GatewayUpstreamProtocol,
+  GatewayUpstreamSummary
+} from "../core/types.js";
 import {
   CUSTOM_GATEWAY_COMPATIBILITY,
+  CUSTOM_RESPONSES_COMPATIBILITY,
   MODERN_OPENAI_COMPATIBILITY,
   OPENAI_CHAT_COMPLETIONS_URL,
-  OPENAI_GATEWAY_COMPATIBILITY
+  OPENAI_GATEWAY_COMPATIBILITY,
+  OPENAI_RESPONSES_COMPATIBILITY,
+  OPENAI_RESPONSES_URL
 } from "../gateway/config.js";
 
 async function ensureProfileCanBeCreated(name: string): Promise<boolean> {
@@ -272,28 +282,152 @@ async function promptGatewayProvider(defaultValue: GatewayProvider = "openai-com
   });
 }
 
-async function promptGatewayCompatibility(
-  provider: GatewayProvider,
-  current?: GatewayCompatibility
-): Promise<GatewayCompatibility> {
-  if (provider === "openai") return { ...OPENAI_GATEWAY_COMPATIBILITY };
-  const compatibilityMode = await select({
-    message: "Compatibility profile",
-    default: current ? "advanced" : "modern",
+async function promptGatewayProtocol(
+  defaultValue: GatewayUpstreamProtocol = "openai_responses"
+): Promise<GatewayUpstreamProtocol> {
+  return select({
+    message: "Upstream protocol",
+    default: defaultValue,
     choices: [
-      { name: "Modern OpenAI Chat Completions (recommended)", value: "modern" as const },
+      { name: "OpenAI Responses (recommended)", value: "openai_responses" as const },
+      { name: "OpenAI Chat Completions (legacy compatibility)", value: "openai_chat_completions" as const }
+    ]
+  });
+}
+
+function gatewayProtocolLabel(protocol: GatewayUpstreamProtocol): string {
+  return protocol === "openai_responses" ? "OpenAI Responses" : "OpenAI Chat Completions";
+}
+
+function officialGatewayEndpoint(protocol: GatewayUpstreamProtocol): string {
+  return protocol === "openai_responses" ? OPENAI_RESPONSES_URL : OPENAI_CHAT_COMPLETIONS_URL;
+}
+
+async function promptGatewayEndpoint(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  current = ""
+): Promise<string> {
+  if (provider === "openai") return officialGatewayEndpoint(protocol);
+  const responses = protocol === "openai_responses";
+  return input({
+    message: responses ? "Responses endpoint URL" : "Chat Completions endpoint URL",
+    default: current || undefined,
+    required: true
+  });
+}
+
+async function promptGatewayCompatibility(
+  protocol: "openai_chat_completions",
+  provider: GatewayProvider,
+  current?: GatewayProtocolCompatibility
+): Promise<GatewayProtocolCompatibility>;
+async function promptGatewayCompatibility(
+  protocol: "openai_responses",
+  provider: GatewayProvider,
+  current?: GatewayProtocolCompatibility
+): Promise<GatewayProtocolCompatibility>;
+async function promptGatewayCompatibility(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  current?: GatewayProtocolCompatibility
+): Promise<GatewayProtocolCompatibility>;
+async function promptGatewayCompatibility(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  current?: GatewayProtocolCompatibility
+): Promise<GatewayProtocolCompatibility> {
+  if (protocol === "openai_responses") {
+    if (provider === "openai") return { ...OPENAI_RESPONSES_COMPATIBILITY };
+    const mode = await select({
+      message: "Responses compatibility profile",
+      default: current?.protocol === "openai_responses" ? "advanced" : "responses",
+      choices: [
+        { name: "OpenAI Responses compatible (recommended)", value: "responses" as const },
+        { name: "Advanced Responses mapping", value: "advanced" as const }
+      ]
+    });
+    if (mode === "responses") return { ...CUSTOM_RESPONSES_COMPATIBILITY };
+    const responsesCurrent = current?.protocol === "openai_responses" ? current : undefined;
+    return {
+      protocol: "openai_responses",
+      instructions: await select({
+        message: "Instructions mapping",
+        default: responsesCurrent?.instructions ?? "instructions",
+        choices: [
+          { name: "instructions field", value: "instructions" as const },
+          { name: "system input item", value: "system_input" as const }
+        ]
+      }),
+      maxOutputTokens: "max_output_tokens",
+      supportsStop: false,
+      supportsSampling: await confirm({
+        message: "Forward temperature and top_p to the provider?",
+        default: responsesCurrent?.supportsSampling ?? true
+      }),
+      parallelToolCalls: await select({
+        message: "parallel_tool_calls parameter",
+        default: responsesCurrent?.parallelToolCalls ?? "supported",
+        choices: [
+          { name: "Forward", value: "supported" as const },
+          { name: "Omit", value: "unsupported" as const }
+        ]
+      }),
+      reasoningEffort: await select({
+        message: "Claude effort mapping",
+        default: responsesCurrent?.reasoningEffort ?? "reasoning.effort",
+        choices: [
+          { name: "reasoning.effort", value: "reasoning.effort" as const },
+          { name: "Unsupported / omit", value: "omit" as const }
+        ]
+      }),
+      structuredOutput: await select({
+        message: "Structured output mapping",
+        default: responsesCurrent?.structuredOutput ?? "text.format",
+        choices: [
+          { name: "text.format", value: "text.format" as const },
+          { name: "Unsupported / reject", value: "unsupported" as const }
+        ]
+      }),
+      toolStrict: await select({
+        message: "Function tool strict mode",
+        default: responsesCurrent?.toolStrict ?? "non_strict",
+        choices: [
+          {
+            name: "Non-strict (recommended for Claude Code tools)",
+            value: "non_strict" as const
+          },
+          {
+            name: "Strict (requires all properties required + additionalProperties:false)",
+            value: "strict" as const
+          }
+        ]
+      }),
+      store: false
+    };
+  }
+
+  const chatCurrent = current?.protocol === "openai_chat_completions" ? current : undefined;
+  if (provider === "openai") {
+    return { protocol: "openai_chat_completions", ...OPENAI_GATEWAY_COMPATIBILITY };
+  }
+  const compatibilityMode = await select({
+    message: "Chat Completions compatibility profile",
+    default: chatCurrent ? "advanced" : "modern",
+    choices: [
+      { name: "Modern OpenAI Chat Completions", value: "modern" as const },
       { name: "Legacy OpenAI-compatible", value: "legacy" as const },
       { name: "Advanced custom mapping", value: "advanced" as const }
     ]
   });
   if (compatibilityMode === "modern") {
-    return { ...MODERN_OPENAI_COMPATIBILITY };
+    return { protocol: "openai_chat_completions", ...MODERN_OPENAI_COMPATIBILITY };
   } else if (compatibilityMode === "legacy") {
-    return { ...CUSTOM_GATEWAY_COMPATIBILITY };
+    return { protocol: "openai_chat_completions", ...CUSTOM_GATEWAY_COMPATIBILITY };
   } else {
     const instructionRole = await select({
       message: "Instruction message role",
-      default: current?.instructionRole ?? "developer",
+      default: chatCurrent?.instructionRole ?? "developer",
       choices: [
         { name: "developer (GPT-5 and reasoning models)", value: "developer" as const },
         { name: "system (legacy providers)", value: "system" as const }
@@ -301,17 +435,17 @@ async function promptGatewayCompatibility(
     });
     const maxTokensField = await select({
       message: "Output token field",
-      default: current?.maxTokensField ?? "max_completion_tokens",
+      default: chatCurrent?.maxTokensField ?? "max_completion_tokens",
       choices: [
         { name: "max_completion_tokens (modern OpenAI)", value: "max_completion_tokens" as const },
         { name: "max_tokens (legacy providers)", value: "max_tokens" as const }
       ]
     });
-    const supportsStop = await confirm({ message: "Forward stop sequences to the provider?", default: current?.supportsStop ?? true });
-    const supportsSampling = await confirm({ message: "Forward temperature and top_p to the provider?", default: current?.supportsSampling ?? true });
+    const supportsStop = await confirm({ message: "Forward stop sequences to the provider?", default: chatCurrent?.supportsStop ?? true });
+    const supportsSampling = await confirm({ message: "Forward temperature and top_p to the provider?", default: chatCurrent?.supportsSampling ?? true });
     const parallelToolCalls = await select({
       message: "parallel_tool_calls parameter",
-      default: current?.parallelToolCalls ?? "supported",
+      default: chatCurrent?.parallelToolCalls ?? "supported",
       choices: [
         { name: "Forward", value: "supported" as const },
         { name: "Omit", value: "unsupported" as const }
@@ -319,7 +453,7 @@ async function promptGatewayCompatibility(
     });
     const streamUsage = await select({
       message: "Streaming usage option",
-      default: current?.streamUsage ?? "include",
+      default: chatCurrent?.streamUsage ?? "include",
       choices: [
         { name: "Include stream_options.include_usage", value: "include" as const },
         { name: "Omit stream_options", value: "omit" as const }
@@ -327,7 +461,7 @@ async function promptGatewayCompatibility(
     });
     const reasoningEffort = await select({
       message: "Claude effort mapping",
-      default: current?.reasoningEffort ?? "reasoning_effort",
+      default: chatCurrent?.reasoningEffort ?? "reasoning_effort",
       choices: [
         { name: "reasoning_effort (OpenAI reasoning models)", value: "reasoning_effort" as const },
         { name: "output_config.effort (provider-specific)", value: "output_config" as const },
@@ -336,7 +470,7 @@ async function promptGatewayCompatibility(
     });
     const structuredOutput = await select({
       message: "Structured output mapping",
-      default: current?.structuredOutput ?? "response_format",
+      default: chatCurrent?.structuredOutput ?? "response_format",
       choices: [
         { name: "response_format (OpenAI JSON Schema)", value: "response_format" as const },
         { name: "output_config.format (provider-specific)", value: "output_config" as const },
@@ -344,6 +478,7 @@ async function promptGatewayCompatibility(
       ]
     });
     return {
+      protocol: "openai_chat_completions",
       instructionRole,
       maxTokensField,
       supportsStop,
@@ -526,7 +661,8 @@ async function showStatus(name: string): Promise<void> {
     const upstream = await readGatewayUpstreamConfig(profile.meta.gateway.upstreamId);
     console.log(`Upstream: ${upstream.id}`);
     console.log(`Provider: ${upstream.provider}`);
-    console.log(`Endpoint: ${upstream.chatCompletionsUrl}`);
+    console.log(`Protocol: ${gatewayProtocolLabel(upstream.protocol)}`);
+    console.log(`Endpoint: ${upstream.endpointUrl}`);
   }
 
   if (!profile.baseUrl && !profile.model && profile.tokenStatus === "missing") {
@@ -544,7 +680,7 @@ async function showStatus(name: string): Promise<void> {
 }
 
 function printGatewayUpstream(upstream: GatewayUpstreamSummary): void {
-  console.log(`${upstream.id}\t${upstream.provider}\t${upstream.models.join(",")}\t${upstream.chatCompletionsUrl}`);
+  console.log(`${upstream.id}\t${upstream.provider}\t${upstream.protocol}\t${upstream.models.join(",")}\t${upstream.endpointUrl}`);
 }
 
 async function addGatewayUpstream(id?: string): Promise<void> {
@@ -564,13 +700,14 @@ async function addGatewayUpstream(id?: string): Promise<void> {
     required: true
   })).trim();
   const provider = template.provider;
-  const chatCompletionsUrl = provider === "openai"
-    ? OPENAI_CHAT_COMPLETIONS_URL
-    : await input({
-        message: "Chat Completions URL",
-        default: template.chatCompletionsUrl || undefined,
-        required: true
-      });
+  const protocol = template.id === "custom"
+    ? await promptGatewayProtocol(template.protocol)
+    : template.protocol;
+  const endpointUrl = await promptGatewayEndpoint(
+    protocol,
+    provider,
+    protocol === template.protocol ? template.endpointUrl : ""
+  );
   const models = parseGatewayModels(await input({
     message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
     default: template.models.length ? template.models.join(", ") : undefined,
@@ -583,12 +720,13 @@ async function addGatewayUpstream(id?: string): Promise<void> {
     validate: (value) => value.trim() ? true : "API key is required."
   });
   const compatibility = template.id === "custom"
-    ? await promptGatewayCompatibility(provider)
+    ? await promptGatewayCompatibility(protocol, provider)
     : { ...template.compatibility };
   console.log(`Template: ${template.label}`);
   console.log(`Upstream: ${upstreamId}`);
   console.log(`Provider: ${provider}`);
-  console.log(`Endpoint: ${chatCompletionsUrl}`);
+  console.log(`Protocol: ${gatewayProtocolLabel(protocol)}`);
+  console.log(`Endpoint: ${endpointUrl}`);
   console.log(`Models:   ${models.join(", ")}`);
   if (!(await confirm({ message: "Create this gateway upstream?", default: true }))) {
     console.log("Cancelled.");
@@ -597,7 +735,8 @@ async function addGatewayUpstream(id?: string): Promise<void> {
   const created = await createGatewayUpstream({
     id: upstreamId,
     provider,
-    chatCompletionsUrl,
+    protocol,
+    endpointUrl,
     apiKey,
     models,
     compatibility
@@ -608,13 +747,12 @@ async function addGatewayUpstream(id?: string): Promise<void> {
 async function editGatewayUpstream(id: string): Promise<void> {
   const current = await readGatewayUpstreamConfig(id);
   const provider = await promptGatewayProvider(current.provider);
-  const chatCompletionsUrl = provider === "openai"
-    ? OPENAI_CHAT_COMPLETIONS_URL
-    : await input({
-        message: "Chat Completions URL",
-        default: current.provider === "openai-compatible" ? current.chatCompletionsUrl : "",
-        required: true
-      });
+  const protocol = await promptGatewayProtocol(current.protocol);
+  const endpointUrl = await promptGatewayEndpoint(
+    protocol,
+    provider,
+    protocol === current.protocol && provider === current.provider ? current.endpointUrl : ""
+  );
   const models = parseGatewayModels(await input({
     message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
     default: current.models.join(", "),
@@ -625,10 +763,25 @@ async function editGatewayUpstream(id: string): Promise<void> {
     message: "Replacement API key (hidden, Enter to keep current)",
     mask: "*"
   });
-  const compatibility = await promptGatewayCompatibility(provider, current.compatibility);
+  const compatibility = await promptGatewayCompatibility(
+    protocol,
+    provider,
+    current.protocol === protocol ? current.compatibility : undefined
+  );
+  if (protocol !== current.protocol) {
+    const affected = await confirm({
+      message: `Change protocol from ${gatewayProtocolLabel(current.protocol)} to ${gatewayProtocolLabel(protocol)}? All profiles bound to '${id}' will use the new protocol on their next request.`,
+      default: false
+    });
+    if (!affected) {
+      console.log("Cancelled.");
+      return;
+    }
+  }
   const updated = await updateGatewayUpstream(id, {
     provider,
-    chatCompletionsUrl,
+    protocol,
+    endpointUrl,
     apiKey,
     models,
     compatibility

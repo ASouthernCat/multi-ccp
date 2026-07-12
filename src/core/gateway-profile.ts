@@ -13,21 +13,24 @@ import {
 import {
   readGatewayUpstream,
   readGatewayUpstreamConfig,
-  validateGatewayCompatibility
+  validateGatewayProtocolCompatibility
 } from "./gateway-upstreams.js";
 import type {
   ClaudeSettings,
+  GatewayCompatibility,
   GatewayProfileBinding,
   GatewayProfileConfig,
   GatewayProfileSecret,
   GatewayResolvedSecret,
+  GatewayResponsesCompatibility,
   ProfileMeta,
   UpdateGatewayProfileInput
 } from "./types.js";
 import {
   getGatewayEndpoint,
-  resolveGatewayChatCompletionsUrl,
-  readGatewayRuntimeConfig
+  normalizeGatewayEndpoint,
+  readGatewayRuntimeConfig,
+  resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
 
 export const GATEWAY_SECRET_FILE = ".ccp-gateway.json";
@@ -60,24 +63,44 @@ export function validateGatewayProfileBinding(value: unknown): GatewayProfileBin
 
 export function validateGatewayProfileConfig(value: unknown): GatewayProfileConfig {
   if (!value || typeof value !== "object") throw new CcpError("Gateway route config is missing.");
-  const config = value as Partial<GatewayProfileConfig>;
+  const config = value as Record<string, unknown>;
   if (config.provider !== "openai" && config.provider !== "openai-compatible") {
     throw new CcpError("Gateway provider must be openai or openai-compatible.");
   }
-  if (config.protocol !== "openai_chat_completions") {
-    throw new CcpError("Gateway protocol must be openai_chat_completions.");
+  if (config.protocol !== "openai_chat_completions" && config.protocol !== "openai_responses") {
+    throw new CcpError("Gateway protocol is invalid.");
   }
   const model = String(config.model ?? "").trim();
   if (!model) throw new CcpError("Gateway route model is required.");
+  const protocol = config.protocol;
+  const endpointUrl = config.endpointUrl !== undefined
+    ? normalizeGatewayEndpoint(protocol, config.provider, String(config.endpointUrl))
+    : protocol === "openai_chat_completions"
+      ? resolveGatewayChatCompletionsUrl(config.provider, String(config.chatCompletionsUrl ?? ""))
+      : normalizeGatewayEndpoint(protocol, config.provider, "");
+  if (protocol === "openai_responses") {
+    return {
+      provider: config.provider,
+      protocol,
+      endpointUrl,
+      model,
+      compatibility: validateGatewayProtocolCompatibility(
+        protocol,
+        config.provider,
+        config.compatibility as Partial<GatewayResponsesCompatibility> | undefined
+      )
+    };
+  }
   return {
     provider: config.provider,
-    protocol: "openai_chat_completions",
-    chatCompletionsUrl: resolveGatewayChatCompletionsUrl(
-      config.provider,
-      String(config.chatCompletionsUrl ?? "")
-    ),
+    protocol,
+    endpointUrl,
     model,
-    compatibility: validateGatewayCompatibility(config.provider, config.compatibility)
+    compatibility: validateGatewayProtocolCompatibility(
+      protocol,
+      config.provider,
+      config.compatibility as Partial<GatewayCompatibility> | undefined
+    )
   };
 }
 

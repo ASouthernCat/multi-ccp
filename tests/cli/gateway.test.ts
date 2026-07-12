@@ -32,22 +32,35 @@ describe("gateway CLI surface", () => {
     ]);
     expect(templates.find((template) => template.id === "openai-official")).toMatchObject({
       provider: "openai",
+      protocol: "openai_responses",
+      endpointUrl: "https://api.openai.com/v1/responses",
+      compatibility: { protocol: "openai_responses", supportsSampling: false },
       models: ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
     });
     expect(templates.find((template) => template.id === "xai-grok-4.5")).toMatchObject({
-      chatCompletionsUrl: "https://api.x.ai/v1/chat/completions",
+      protocol: "openai_responses",
+      endpointUrl: "https://api.x.ai/v1/responses",
       models: ["grok-4.5"],
       compatibility: {
-        instructionRole: "system",
-        maxTokensField: "max_completion_tokens",
+        protocol: "openai_responses",
+        instructions: "instructions",
+        maxOutputTokens: "max_output_tokens",
         supportsStop: false,
         supportsSampling: true,
-        reasoningEffort: "reasoning_effort"
+        reasoningEffort: "reasoning.effort",
+        structuredOutput: "text.format",
+        store: false
       }
     });
     expect(templates.find((template) => template.id === "aicodemirror")).toMatchObject({
-      chatCompletionsUrl: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/chat/completions",
+      protocol: "openai_responses",
+      endpointUrl: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/responses",
       models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"]
+    });
+    expect(templates.find((template) => template.id === "custom")).toMatchObject({
+      protocol: "openai_responses",
+      endpointUrl: "",
+      compatibilityMode: "responses"
     });
   });
 });

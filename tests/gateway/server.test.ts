@@ -6,7 +6,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createGatewayProfile as createStoredGatewayProfile } from "../../src/core/profiles.js";
 import { createGatewayUpstream } from "../../src/core/gateway-upstreams.js";
-import type { GatewayCompatibility, GatewayProvider } from "../../src/core/types.js";
+import type {
+  GatewayCompatibility,
+  GatewayProvider,
+  GatewayResponsesCompatibility,
+  GatewayUpstreamProtocol
+} from "../../src/core/types.js";
 import { readGatewayProfileSecret } from "../../src/core/gateway-profile.js";
 import { createGatewayServer, type GatewayRequestLog } from "../../src/gateway/server.js";
 
@@ -34,7 +39,9 @@ async function createTestGatewayProfile(
     chatCompletionsUrl: string;
     apiKey: string;
     model: string;
-    compatibility?: Partial<GatewayCompatibility>;
+    protocol?: GatewayUpstreamProtocol;
+    endpointUrl?: string;
+    compatibility?: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
   },
   context: { homeDir: string }
 ) {
@@ -42,6 +49,8 @@ async function createTestGatewayProfile(
   await createGatewayUpstream({
     id: upstreamId,
     provider: input.provider,
+    ...(input.protocol ? { protocol: input.protocol } : {}),
+    ...(input.endpointUrl ? { endpointUrl: input.endpointUrl } : {}),
     chatCompletionsUrl: input.chatCompletionsUrl,
     apiKey: input.apiKey,
     models: [input.model],
@@ -113,7 +122,7 @@ describe("gateway HTTP protocol", () => {
     expect(health).toMatchObject({
       ok: true,
       service: "multi-ccp-gateway",
-      protocolVersion: 1,
+      protocolVersion: 2,
       instanceId: "instance-test",
       endpoint,
       profileCount: 2
@@ -198,6 +207,186 @@ describe("gateway HTTP protocol", () => {
     const crossProfile = await call("provider-b", secretA!.localToken);
     expect(crossProfile.status).toBe(401);
     expect(received).toHaveLength(2);
+  });
+
+  it("dispatches Responses requests to their endpoint with their key and parses non-stream output", async () => {
+    const context = await createContext();
+    let received: { url: string; authorization?: string; body: Record<string, unknown> } | undefined;
+    const upstream = await listenLoopback(async (req, res) => {
+      received = { url: req.url ?? "", authorization: req.headers.authorization, body: await readRequestJson(req) };
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "resp_server",
+        model: "responses-model",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "output_text", text: "responses-ok" }] }],
+        usage: { input_tokens: 7, output_tokens: 2 }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/responses/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${secret!.localToken}` },
+      body: JSON.stringify(anthropicRequest())
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.content[0].text).toBe("responses-ok");
+    expect(received).toMatchObject({
+      url: "/v1/responses",
+      authorization: "Bearer responses-key",
+      body: { model: "responses-model", store: false, stream: false }
+    });
+    expect(received?.body.messages).toBeUndefined();
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      protocol: "openai_responses",
+      endpointHost: new URL(upstream.endpoint).host,
+      upstreamItemTypes: ["message"],
+      inputTokens: 7,
+      outputTokens: 2,
+      status: 200
+    });
+  });
+
+  it("isolates concurrent Chat and Responses protocol requests", async () => {
+    const context = await createContext();
+    const received: Array<{ path: string; authorization?: string; body: Record<string, unknown> }> = [];
+    const upstream = await listenLoopback(async (req, res) => {
+      const body = await readRequestJson(req);
+      received.push({ path: req.url ?? "", authorization: req.headers.authorization, body });
+      res.writeHead(200, { "content-type": "application/json" });
+      if (req.url === "/responses") {
+        res.end(JSON.stringify({
+          id: "resp_mixed", model: "responses-model", status: "completed",
+          output: [{ type: "message", content: [{ type: "output_text", text: "responses" }] }]
+        }));
+      } else {
+        res.end(JSON.stringify({
+          id: "chat_mixed", model: "chat-model",
+          choices: [{ message: { content: "chat" }, finish_reason: "stop" }]
+        }));
+      }
+    });
+    const chat = await createTestGatewayProfile({
+      name: "mixed-chat", provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/chat/completions`, apiKey: "chat-key", model: "chat-model"
+    }, context);
+    const responses = await createTestGatewayProfile({
+      name: "mixed-responses", provider: "openai-compatible", protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/responses`, chatCompletionsUrl: `${upstream.endpoint}/chat/completions`,
+      apiKey: "responses-key", model: "responses-model"
+    }, context);
+    const [chatSecret, responsesSecret] = await Promise.all([
+      readGatewayProfileSecret(chat.dir), readGatewayProfileSecret(responses.dir)
+    ]);
+    const { endpoint } = await startGateway(context);
+    const call = (name: string, token: string) => fetch(`${endpoint}/p/${name}/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": token },
+      body: JSON.stringify(anthropicRequest())
+    });
+    const [chatResponse, responsesResponse] = await Promise.all([
+      call("mixed-chat", chatSecret!.localToken),
+      call("mixed-responses", responsesSecret!.localToken)
+    ]);
+
+    expect((await chatResponse.json()).content[0].text).toBe("chat");
+    expect((await responsesResponse.json()).content[0].text).toBe("responses");
+    expect(received.find((item) => item.path === "/chat/completions")).toMatchObject({
+      authorization: "Bearer chat-key", body: { model: "chat-model", messages: expect.any(Array) }
+    });
+    expect(received.find((item) => item.path === "/responses")).toMatchObject({
+      authorization: "Bearer responses-key", body: { model: "responses-model", input: expect.any(Array), store: false }
+    });
+  });
+
+  it("streams Responses SSE end to end with endpoint, key, usage, and metadata dispatch", async () => {
+    const context = await createContext();
+    let received: { url: string; authorization?: string; body: Record<string, unknown> } | undefined;
+    const sse = (type: string, payload: Record<string, unknown>) =>
+      `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
+    const upstream = await listenLoopback(async (req, res) => {
+      received = { url: req.url ?? "", authorization: req.headers.authorization, body: await readRequestJson(req) };
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      const created = sse("response.created", {
+        response: { id: "resp_stream", model: "responses-model", status: "in_progress" }
+      });
+      res.write(created.slice(0, 37));
+      res.write(created.slice(37));
+      res.write(sse("response.output_item.added", {
+        output_index: 0, item: { id: "msg_1", type: "message", content: [] }
+      }));
+      res.write(sse("response.content_part.added", {
+        item_id: "msg_1", output_index: 0, content_index: 0,
+        part: { type: "output_text", text: "" }
+      }));
+      res.write(sse("response.output_text.delta", {
+        item_id: "msg_1", output_index: 0, content_index: 0, delta: "responses-stream"
+      }));
+      res.end(sse("response.completed", {
+        response: {
+          id: "resp_stream", model: "responses-model", status: "completed",
+          usage: { input_tokens: 9, output_tokens: 3 }
+        }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses-stream",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-stream-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+    const response = await fetch(`${endpoint}/p/responses-stream/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(true))
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("text/event-stream");
+    expect(body).toContain('"text":"responses-stream"');
+    expect(body).toContain('"input_tokens":9');
+    expect(body).toContain("event: message_stop");
+    expect(received).toMatchObject({
+      url: "/v1/responses",
+      authorization: "Bearer responses-stream-key",
+      body: { model: "responses-model", stream: true, store: false }
+    });
+    expect(received?.body.input).toEqual(expect.any(Array));
+    expect(received?.body.messages).toBeUndefined();
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      protocol: "openai_responses",
+      upstreamItemTypes: ["message"],
+      inputTokens: 9,
+      outputTokens: 3,
+      status: 200
+    });
+    expect(logs[0].upstreamEventTypes).toEqual(expect.arrayContaining([
+      "response.created", "response.output_item.added", "response.content_part.added",
+      "response.output_text.delta", "response.completed"
+    ]));
   });
 
   it("maps Claude output_config effort without forwarding the Anthropic field", async () => {

@@ -77,7 +77,7 @@ describe("gateway Web UI policy", () => {
       chatCompletionsUrl: "https://example.com/v1/chat/completions",
       apiKey: "upstream-secret-key",
       models: ["model-a"],
-      compatibility: resolveWebGatewayCompatibility("openai-compatible", "modern")
+      compatibility: resolveWebGatewayCompatibility("openai_chat_completions", "openai-compatible", "modern")
     }, context);
 
     expect(await readWebProfileApiKey("private-api", context)).toBe("profile-secret-key");
@@ -129,7 +129,16 @@ describe("gateway Web UI policy", () => {
     expect(app).not.toContain("$('gatewayDialog').close();\n    await openNewProfileDialog({ presetId: 'gateway'");
     expect(app).toContain("document.body.append(dialog)");
     expect(app).toContain('placeholder="my-provider"');
-    expect(app).toContain('placeholder="https://api.example.com/v1/chat/completions"');
+    expect(app).toContain('OpenAI Responses (recommended)');
+    expect(app).toContain('OpenAI Chat Completions (legacy compatibility)');
+    expect(app).toContain("protocol,");
+    expect(app).toContain("endpointUrl: $('upstreamUrl').value");
+    expect(app).toContain("gatewayProtocolLabel(upstream.protocol)");
+    expect(app).toContain("template.protocol === upstream.protocol && template.endpointUrl === upstream.endpointUrl");
+    expect(app).toContain("Change protocol from ${gatewayProtocolLabel(form.dataset.originalProtocol)}");
+    expect(app).toContain("url.value = ''");
+    expect(app).toContain('https://api.example.com/v1/responses');
+    expect(app).toContain('https://api.example.com/v1/chat/completions');
     expect(app).toContain("await selectProfile(createdName)");
     expect(app).toContain('placeholder="claude-opus-4-8"');
     expect(app).toContain('placeholder="claude-sonnet-5"');
@@ -166,6 +175,9 @@ describe("gateway Web UI policy", () => {
     expect(app).not.toContain("Replacement API Key");
     expect(css).toContain('.secret-toggle');
     expect(server).toContain('"cache-control": "no-store"');
+    expect(server).toContain('protocol = gatewayRequestProtocol(body)');
+    expect(server).toContain('endpointUrl: gatewayRequestEndpoint(body, protocol, provider)');
+    expect(server).toContain('chatCompletionsUrl cannot be used with the Responses protocol');
     expect(html).toContain('href="https://github.com/ASouthernCat/multi-ccp"');
     expect(html).toContain('v__CCP_VERSION__');
     expect(server).toContain('.replace("__CCP_VERSION__", getPackageVersion())');
@@ -194,20 +206,33 @@ describe("gateway Web UI policy", () => {
     expect(html).not.toContain('id="upstreamDialog"');
   });
 
-  it("maps Web compatibility modes to validated gateway settings", () => {
-    expect(resolveWebGatewayCompatibility("openai-compatible", "modern")).toMatchObject({
+  it("maps protocol-specific Web compatibility modes to validated gateway settings", () => {
+    expect(resolveWebGatewayCompatibility("openai_chat_completions", "openai-compatible", "modern")).toMatchObject({
+      protocol: "openai_chat_completions",
       instructionRole: "developer",
       maxTokensField: "max_completion_tokens",
       reasoningEffort: "reasoning_effort",
       structuredOutput: "response_format"
     });
-    expect(resolveWebGatewayCompatibility("openai-compatible", "legacy")).toMatchObject({
+    expect(resolveWebGatewayCompatibility("openai_chat_completions", "openai-compatible", "legacy")).toMatchObject({
+      protocol: "openai_chat_completions",
       instructionRole: "system",
       maxTokensField: "max_tokens",
       reasoningEffort: "omit",
       structuredOutput: "unsupported"
     });
-    expect(() => resolveWebGatewayCompatibility("openai-compatible", "openai")).toThrow("requires the OpenAI provider");
+    expect(resolveWebGatewayCompatibility("openai_responses", "openai-compatible", "responses")).toMatchObject({
+      protocol: "openai_responses",
+      instructions: "instructions",
+      maxOutputTokens: "max_output_tokens",
+      reasoningEffort: "reasoning.effort",
+      structuredOutput: "text.format",
+      store: false
+    });
+    expect(() => resolveWebGatewayCompatibility("openai_responses", "openai-compatible", "modern"))
+      .toThrow("cannot be used with the Responses protocol");
+    expect(() => resolveWebGatewayCompatibility("openai_responses", "openai-compatible", "openai"))
+      .toThrow("requires the OpenAI provider");
   });
 
   it("returns a bounded, redacted gateway log view", async () => {

@@ -10,14 +10,23 @@ import {
 import { readJsonFile, readMeta, writeJsonFileAtomic } from "./settings.js";
 import type {
   CreateGatewayUpstreamInput,
+  GatewayChatCompatibility,
   GatewayCompatibility,
+  GatewayProtocolCompatibility,
   GatewayProvider,
+  GatewayResponsesCompatibility,
   GatewayUpstreamConfig,
+  GatewayUpstreamProtocol,
   GatewayUpstreamSecret,
   GatewayUpstreamSummary,
   UpdateGatewayUpstreamInput
 } from "./types.js";
-import { mergeGatewayCompatibility, resolveGatewayChatCompletionsUrl } from "../gateway/config.js";
+import {
+  mergeGatewayCompatibility,
+  mergeGatewayProtocolCompatibility,
+  normalizeGatewayEndpoint,
+  resolveGatewayChatCompletionsUrl
+} from "../gateway/config.js";
 
 export function assertGatewayUpstreamId(id: string): void {
   assertProfileName(id);
@@ -62,6 +71,72 @@ export function validateGatewayCompatibility(
   value: Partial<GatewayCompatibility> | undefined
 ): GatewayCompatibility {
   const compatibility = mergeGatewayCompatibility(provider, value);
+  validateChatCompatibilityFields(compatibility);
+  return { ...compatibility };
+}
+
+export function validateGatewayProtocolCompatibility(
+  protocol: "openai_chat_completions",
+  provider: GatewayProvider,
+  value: Partial<GatewayCompatibility> | Partial<GatewayChatCompatibility> | undefined
+): GatewayChatCompatibility;
+export function validateGatewayProtocolCompatibility(
+  protocol: "openai_responses",
+  provider: GatewayProvider,
+  value: Partial<GatewayResponsesCompatibility> | undefined
+): GatewayResponsesCompatibility;
+export function validateGatewayProtocolCompatibility(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  value: Partial<GatewayProtocolCompatibility> | undefined
+): GatewayProtocolCompatibility {
+  if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) {
+    throw new CcpError("Gateway compatibility config must be an object.");
+  }
+  if (value?.protocol !== undefined && value.protocol !== protocol) {
+    throw new CcpError("Gateway compatibility protocol must match the upstream protocol.");
+  }
+  if (protocol === "openai_responses") {
+    if (hasAnyGatewayCompatibilityField(value, ["instructionRole", "maxTokensField", "streamUsage"])) {
+      throw new CcpError("Gateway Responses compatibility config contains Chat-only fields.");
+    }
+    const compatibility = mergeGatewayProtocolCompatibility(protocol, provider, value as Partial<GatewayResponsesCompatibility>);
+    if (
+      !["instructions", "system_input"].includes(compatibility.instructions) ||
+      compatibility.maxOutputTokens !== "max_output_tokens" ||
+      compatibility.supportsStop !== false ||
+      typeof compatibility.supportsSampling !== "boolean" ||
+      !["supported", "unsupported"].includes(compatibility.parallelToolCalls) ||
+      !["strict", "non_strict"].includes(compatibility.toolStrict) ||
+      !["reasoning.effort", "omit"].includes(compatibility.reasoningEffort) ||
+      !["text.format", "unsupported"].includes(compatibility.structuredOutput) ||
+      compatibility.store !== false
+    ) {
+      throw new CcpError("Gateway Responses compatibility config is invalid.");
+    }
+    return { ...compatibility };
+  }
+
+  if (hasAnyGatewayCompatibilityField(value, ["instructions", "maxOutputTokens", "store"])) {
+    throw new CcpError("Gateway Chat compatibility config contains Responses-only fields.");
+  }
+  const compatibility = mergeGatewayProtocolCompatibility(
+    protocol,
+    provider,
+    value as Partial<GatewayCompatibility> | Partial<GatewayChatCompatibility>
+  );
+  validateChatCompatibilityFields(compatibility);
+  return { ...compatibility };
+}
+
+function hasAnyGatewayCompatibilityField(
+  value: Partial<GatewayProtocolCompatibility> | undefined,
+  fields: string[]
+): boolean {
+  return value !== undefined && fields.some((field) => Object.prototype.hasOwnProperty.call(value, field));
+}
+
+function validateChatCompatibilityFields(compatibility: GatewayCompatibility): void {
   if (
     !["system", "developer"].includes(compatibility.instructionRole) ||
     !["max_tokens", "max_completion_tokens"].includes(compatibility.maxTokensField) ||
@@ -74,7 +149,6 @@ export function validateGatewayCompatibility(
   ) {
     throw new CcpError("Gateway compatibility config is invalid.");
   }
-  return { ...compatibility };
 }
 
 export function normalizeGatewayModels(value: unknown): string[] {
@@ -86,27 +160,61 @@ export function normalizeGatewayModels(value: unknown): string[] {
 
 export function validateGatewayUpstreamConfig(value: unknown): GatewayUpstreamConfig {
   if (!value || typeof value !== "object") throw new CcpError("Gateway upstream config is missing.");
-  const config = value as Partial<GatewayUpstreamConfig>;
+  const config = value as Record<string, unknown>;
   const id = String(config.id ?? "").trim();
   assertGatewayUpstreamId(id);
-  if (config.version !== 1) throw new CcpError("Gateway upstream config version must be 1.");
   if (config.provider !== "openai" && config.provider !== "openai-compatible") {
-    throw new CcpError("Gateway upstream provider must use the OpenAI Chat Completions format.");
+    throw new CcpError("Gateway upstream provider must be openai or openai-compatible.");
   }
-  if (config.protocol !== "openai_chat_completions") {
-    throw new CcpError("Gateway upstream protocol must be openai_chat_completions.");
+  const provider: GatewayProvider = config.provider;
+  if (config.version === 1) {
+    if (config.protocol !== "openai_chat_completions") {
+      throw new CcpError("Gateway upstream version 1 protocol must be openai_chat_completions.");
+    }
+    return {
+      version: 2,
+      id,
+      provider,
+      protocol: "openai_chat_completions",
+      endpointUrl: resolveGatewayChatCompletionsUrl(provider, String(config.chatCompletionsUrl ?? "")),
+      models: normalizeGatewayModels(config.models),
+      compatibility: {
+        protocol: "openai_chat_completions",
+        ...validateGatewayCompatibility(provider, config.compatibility as Partial<GatewayCompatibility> | undefined)
+      }
+    };
+  }
+  if (config.version !== 2) throw new CcpError("Gateway upstream config version must be 1 or 2.");
+  if (config.protocol !== "openai_chat_completions" && config.protocol !== "openai_responses") {
+    throw new CcpError("Gateway upstream protocol is invalid.");
+  }
+  const protocol = config.protocol;
+  const common = {
+    version: 2 as const,
+    id,
+    provider,
+    endpointUrl: normalizeGatewayEndpoint(protocol, provider, String(config.endpointUrl ?? "")),
+    models: normalizeGatewayModels(config.models)
+  };
+  if (protocol === "openai_responses") {
+    return {
+      ...common,
+      protocol,
+      compatibility: validateGatewayProtocolCompatibility(
+        protocol,
+        provider,
+        config.compatibility as Partial<GatewayResponsesCompatibility> | undefined
+      )
+    };
   }
   return {
-    version: 1,
-    id,
-    provider: config.provider,
-    protocol: "openai_chat_completions",
-    chatCompletionsUrl: resolveGatewayChatCompletionsUrl(
-      config.provider,
-      String(config.chatCompletionsUrl ?? "")
-    ),
-    models: normalizeGatewayModels(config.models),
-    compatibility: validateGatewayCompatibility(config.provider, config.compatibility)
+    ...common,
+    protocol,
+    compatibility: validateGatewayProtocolCompatibility(
+      protocol,
+      provider,
+      config.compatibility as Partial<GatewayCompatibility> | Partial<GatewayChatCompatibility> | undefined
+    )
   };
 }
 
@@ -179,7 +287,11 @@ export async function listGatewayUpstreams(context: PathContext = {}): Promise<G
     } catch (error) {
       if (!(error instanceof CcpError) || !error.message.includes("missing its API key")) throw error;
     }
-    summaries.push({ ...config, apiKeyStatus });
+    summaries.push({
+      ...config,
+      ...(config.protocol === "openai_chat_completions" ? { chatCompletionsUrl: config.endpointUrl } : {}),
+      apiKeyStatus
+    });
   }
   return summaries.sort((left, right) => left.id.localeCompare(right.id));
 }
@@ -188,12 +300,18 @@ export async function createGatewayUpstream(
   input: CreateGatewayUpstreamInput,
   context: PathContext = {}
 ): Promise<GatewayUpstreamSummary> {
+  const protocol = input.protocol ?? "openai_chat_completions";
+  const endpointUrl = input.endpointUrl ?? (
+    protocol === "openai_chat_completions"
+      ? resolveGatewayChatCompletionsUrl(input.provider, input.chatCompletionsUrl ?? "")
+      : ""
+  );
   const config = validateGatewayUpstreamConfig({
-    version: 1,
+    version: 2,
     id: input.id,
     provider: input.provider,
-    protocol: "openai_chat_completions",
-    chatCompletionsUrl: input.chatCompletionsUrl,
+    protocol,
+    endpointUrl,
     models: input.models,
     compatibility: input.compatibility
   });
@@ -220,7 +338,11 @@ export async function createGatewayUpstream(
     await rm(getGatewayUpstreamSecretPath(config.id, context), { force: true }).catch(() => undefined);
     throw error;
   }
-  return { ...config, apiKeyStatus: "set" };
+  return {
+    ...config,
+    ...(config.protocol === "openai_chat_completions" ? { chatCompletionsUrl: config.endpointUrl } : {}),
+    apiKeyStatus: "set"
+  };
 }
 
 export async function updateGatewayUpstream(
@@ -229,12 +351,18 @@ export async function updateGatewayUpstream(
   context: PathContext = {}
 ): Promise<GatewayUpstreamSummary> {
   const current = await readGatewayUpstream(id, context);
+  const protocol = input.protocol ?? current.config.protocol;
+  const endpointUrl = input.endpointUrl ?? (
+    input.chatCompletionsUrl !== undefined && protocol === "openai_chat_completions"
+      ? resolveGatewayChatCompletionsUrl(input.provider, input.chatCompletionsUrl)
+      : current.config.endpointUrl
+  );
   const config = validateGatewayUpstreamConfig({
-    version: 1,
+    version: 2,
     id,
     provider: input.provider,
-    protocol: "openai_chat_completions",
-    chatCompletionsUrl: input.chatCompletionsUrl,
+    protocol,
+    endpointUrl,
     models: input.models,
     compatibility: input.compatibility
   });
@@ -259,7 +387,11 @@ export async function updateGatewayUpstream(
     ]);
     throw error;
   }
-  return { ...config, apiKeyStatus: "set" };
+  return {
+    ...config,
+    ...(config.protocol === "openai_chat_completions" ? { chatCompletionsUrl: config.endpointUrl } : {}),
+    apiKeyStatus: "set"
+  };
 }
 
 export async function removeGatewayUpstream(id: string, context: PathContext = {}): Promise<void> {

@@ -1,9 +1,13 @@
 import { CcpError } from "./errors.js";
-import type { GatewayCompatibility, GatewayProvider } from "./types.js";
+import type {
+  GatewayProtocolCompatibility,
+  GatewayProvider,
+  GatewayUpstreamProtocol
+} from "./types.js";
 import {
-  MODERN_OPENAI_COMPATIBILITY,
-  OPENAI_CHAT_COMPLETIONS_URL,
-  OPENAI_GATEWAY_COMPATIBILITY
+  CUSTOM_RESPONSES_COMPATIBILITY,
+  OPENAI_RESPONSES_COMPATIBILITY,
+  OPENAI_RESPONSES_URL
 } from "../gateway/config.js";
 
 export type GatewayUpstreamTemplateId =
@@ -18,70 +22,64 @@ export interface GatewayUpstreamTemplate {
   description: string;
   defaultUpstreamId: string;
   provider: GatewayProvider;
-  chatCompletionsUrl: string;
+  protocol: GatewayUpstreamProtocol;
+  endpointUrl: string;
   models: string[];
-  compatibility: GatewayCompatibility;
-  compatibilityMode: "openai" | "modern" | "advanced";
+  compatibility: GatewayProtocolCompatibility;
+  compatibilityMode: "openai" | "responses" | "advanced";
   sourceUrl?: string;
 }
-
-const XAI_GROK_45_COMPATIBILITY: GatewayCompatibility = {
-  instructionRole: "system",
-  maxTokensField: "max_completion_tokens",
-  supportsStop: false,
-  supportsSampling: true,
-  parallelToolCalls: "supported",
-  streamUsage: "include",
-  reasoningEffort: "reasoning_effort",
-  structuredOutput: "response_format"
-};
 
 const TEMPLATES: GatewayUpstreamTemplate[] = [
   {
     id: "openai-official",
     label: "OpenAI official",
-    description: "Fixed official endpoint with the current GPT-5.6 model family.",
+    description: "Fixed official Responses endpoint with the current GPT-5.6 model family.",
     defaultUpstreamId: "openai",
     provider: "openai",
-    chatCompletionsUrl: OPENAI_CHAT_COMPLETIONS_URL,
+    protocol: "openai_responses",
+    endpointUrl: OPENAI_RESPONSES_URL,
     models: ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"],
-    compatibility: OPENAI_GATEWAY_COMPATIBILITY,
+    compatibility: OPENAI_RESPONSES_COMPATIBILITY,
     compatibilityMode: "openai",
     sourceUrl: "https://developers.openai.com/api/docs/guides/latest-model.md"
   },
   {
     id: "xai-grok-4.5",
     label: "xAI Grok 4.5",
-    description: "xAI OpenAI-compatible Chat Completions endpoint for Grok 4.5.",
+    description: "xAI OpenAI-compatible Responses endpoint for Grok 4.5.",
     defaultUpstreamId: "xai",
     provider: "openai-compatible",
-    chatCompletionsUrl: "https://api.x.ai/v1/chat/completions",
+    protocol: "openai_responses",
+    endpointUrl: "https://api.x.ai/v1/responses",
     models: ["grok-4.5"],
-    compatibility: XAI_GROK_45_COMPATIBILITY,
-    compatibilityMode: "advanced",
-    sourceUrl: "https://docs.x.ai/developers/model-capabilities/legacy/chat-completions"
+    compatibility: CUSTOM_RESPONSES_COMPATIBILITY,
+    compatibilityMode: "responses",
+    sourceUrl: "https://docs.x.ai/developers/model-capabilities/text/generate-text"
   },
   {
     id: "aicodemirror",
     label: "AICodeMirror",
-    description: "AICodeMirror Codex-compatible endpoint using the configured GPT model family.",
+    description: "AICodeMirror Codex-compatible Responses endpoint using the configured GPT model family.",
     defaultUpstreamId: "aicodemirror",
     provider: "openai-compatible",
-    chatCompletionsUrl: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/chat/completions",
+    protocol: "openai_responses",
+    endpointUrl: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/responses",
     models: ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5"],
-    compatibility: MODERN_OPENAI_COMPATIBILITY,
-    compatibilityMode: "modern"
+    compatibility: CUSTOM_RESPONSES_COMPATIBILITY,
+    compatibilityMode: "responses"
   },
   {
     id: "custom",
     label: "Custom OpenAI-compatible",
-    description: "Enter a custom OpenAI Chat Completions endpoint and model list.",
+    description: "Choose an OpenAI protocol, then enter a custom endpoint and model list.",
     defaultUpstreamId: "",
     provider: "openai-compatible",
-    chatCompletionsUrl: "",
+    protocol: "openai_responses",
+    endpointUrl: "",
     models: [],
-    compatibility: MODERN_OPENAI_COMPATIBILITY,
-    compatibilityMode: "modern"
+    compatibility: CUSTOM_RESPONSES_COMPATIBILITY,
+    compatibilityMode: "responses"
   }
 ];
 

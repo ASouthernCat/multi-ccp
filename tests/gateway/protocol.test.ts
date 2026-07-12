@@ -2,12 +2,20 @@ import { describe, expect, it } from "vitest";
 import { parseAnthropicMessagesRequest } from "../../src/gateway/anthropic-source.js";
 import { GatewayProtocolError } from "../../src/gateway/errors.js";
 import {
+  parseOpenAIResponsesResponse,
+  parseOpenAIResponsesResponseWithMetadata,
+  serializeOpenAIResponsesRequest
+} from "../../src/gateway/openai-responses-target.js";
+import {
   canonicalResponseToAnthropic,
   createToolNameMapping,
-  normalizeToolCallId,
+  normalizeToolCallId
+} from "../../src/gateway/utils.js";
+import {
   parseOpenAIChatResponse,
   serializeOpenAIChatRequest
-} from "../../src/gateway/openai-target.js";
+} from "../../src/gateway/openai-chat-target.js";
+
 
 function baseRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -393,5 +401,194 @@ describe("OpenAI Chat non-streaming response", () => {
     }, "Invalid JSON object"]
   ])("fails closed for malformed upstream responses", (response, message) => {
     expect(() => parseOpenAIChatResponse(response)).toThrow(message);
+  });
+});
+
+describe("OpenAI Responses target", () => {
+  it("serializes typed input, tools, capabilities, and strict output", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      system: "Be concise.",
+      messages: [
+        { role: "assistant", content: [
+          { type: "text", text: "Calling" },
+          { type: "tool_use", id: "call:1", name: "mcp.tool", input: { value: 1 } }
+        ] },
+        { role: "user", content: [
+          { type: "tool_result", tool_use_id: "call:1", content: "ok" },
+          { type: "text", text: "Continue" }
+        ] }
+      ],
+      tools: [{ name: "mcp.tool", description: "A tool", input_schema: {
+        type: "object", properties: { value: { type: "number" } }
+      } }],
+      tool_choice: { type: "tool", name: "mcp.tool", disable_parallel_tool_use: true },
+      output_config: {
+        effort: "high",
+        format: { type: "json_schema", schema: { type: "object", properties: { answer: { type: "string" } } } }
+      },
+      temperature: 0.2,
+      top_p: 0.8
+    }));
+    const converted = serializeOpenAIResponsesRequest(canonical, {
+      model: "gpt-5",
+      compatibility: { supportsSampling: true }
+    });
+
+    expect(converted.body).toMatchObject({
+      model: "gpt-5",
+      instructions: "Be concise.",
+      max_output_tokens: 2048,
+      stream: false,
+      store: false,
+      temperature: 0.2,
+      top_p: 0.8,
+      tool_choice: { type: "function", name: "mcp_tool" },
+      parallel_tool_calls: false,
+      reasoning: { effort: "high" },
+      text: { format: {
+        type: "json_schema", name: "structured_output", strict: true,
+        schema: { type: "object", additionalProperties: false, required: ["answer"], properties: { answer: { type: "string" } } }
+      } }
+    });
+    expect(converted.body.input).toEqual([
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "Calling" }] },
+      { type: "function_call", call_id: "call_1_0af63155", name: "mcp_tool", arguments: "{\"value\":1}" },
+      { type: "function_call_output", call_id: "call_1_0af63155", output: "ok" },
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }] }
+    ]);
+    // Default toolStrict is non_strict: preserve Claude optional-field schemas.
+    expect(converted.body.tools).toEqual([{
+      type: "function", name: "mcp_tool", description: "A tool", strict: false,
+      parameters: { type: "object", properties: { value: { type: "number" } } }
+    }]);
+    expect(converted.body.stop).toBeUndefined();
+  });
+
+  it("only expands tool schemas when toolStrict is strict", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      tools: [{
+        name: "Read",
+        input_schema: {
+          type: "object",
+          properties: {
+            file_path: { type: "string" },
+            offset: { type: "integer" },
+            limit: { type: "integer" }
+          },
+          required: ["file_path"]
+        }
+      }]
+    }));
+
+    const nonStrict = serializeOpenAIResponsesRequest(canonical, {
+      model: "gpt-5",
+      compatibility: { toolStrict: "non_strict" }
+    });
+    expect(nonStrict.body.tools).toEqual([{
+      type: "function",
+      name: "Read",
+      strict: false,
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: { type: "string" },
+          offset: { type: "integer" },
+          limit: { type: "integer" }
+        },
+        required: ["file_path"]
+      }
+    }]);
+
+    const strict = serializeOpenAIResponsesRequest(canonical, {
+      model: "gpt-5",
+      compatibility: { toolStrict: "strict" }
+    });
+    expect(strict.body.tools).toEqual([{
+      type: "function",
+      name: "Read",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          file_path: { type: "string" },
+          offset: { type: "integer" },
+          limit: { type: "integer" }
+        },
+        required: ["file_path", "offset", "limit"],
+        additionalProperties: false
+      }
+    }]);
+  });
+
+  it("supports system_input and rejects unsupported output and parallel semantics", () => {
+    const plain = parseAnthropicMessagesRequest(baseRequest({ system: "System" }));
+    expect(serializeOpenAIResponsesRequest(plain, {
+      model: "model",
+      compatibility: { instructions: "system_input" }
+    }).body).toMatchObject({ system_input: "System" });
+
+    const structured = parseAnthropicMessagesRequest(baseRequest({
+      output_config: { format: { type: "json_schema", schema: { type: "object", properties: {} } } }
+    }));
+    expect(() => serializeOpenAIResponsesRequest(structured, {
+      model: "model", compatibility: { structuredOutput: "unsupported" }
+    })).toThrow("does not support structured outputs");
+
+    const parallel = parseAnthropicMessagesRequest(baseRequest({
+      tools: [{ name: "x", input_schema: {} }],
+      tool_choice: { type: "auto", disable_parallel_tool_use: true }
+    }));
+    expect(() => serializeOpenAIResponsesRequest(parallel, {
+      model: "model", compatibility: { parallelToolCalls: "unsupported" }
+    })).toThrow("does not support parallel_tool_calls");
+  });
+
+  it("parses text, refusal, parallel function calls, status, usage, and item metadata", () => {
+    const mapping = createToolNameMapping(["mcp.tool"]);
+    const parsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_123",
+      model: "gpt-5",
+      status: "completed",
+      output: [
+        { type: "reasoning", id: "rs_1" },
+        { type: "message", content: [
+          { type: "output_text", text: "Working" },
+          { type: "refusal", refusal: "No more" }
+        ] },
+        { type: "function_call", call_id: "call:one", name: "mcp_tool", arguments: "{\"a\":1}" },
+        { type: "function_call", call_id: "call:two", name: "mcp_tool", arguments: "{}" }
+      ],
+      usage: { input_tokens: 10, output_tokens: 4 }
+    }, { toolNames: mapping });
+
+    expect(parsed.upstreamItemTypes).toEqual(["reasoning", "message", "function_call"]);
+    expect(parsed.response).toMatchObject({
+      id: "msg_resp_123",
+      model: "gpt-5",
+      finishReason: "tool_use",
+      usage: { inputTokens: 10, outputTokens: 4 },
+      content: [
+        { type: "text", text: "Working" },
+        { type: "text", text: "No more" },
+        { type: "tool_use", name: "mcp.tool", input: { a: 1 } },
+        { type: "tool_use", name: "mcp.tool", input: {} }
+      ]
+    });
+    expect(canonicalResponseToAnthropic(parsed.response)).toMatchObject({ stop_reason: "tool_use" });
+  });
+
+  it.each([
+    [{ id: "r", model: "m", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [{ type: "message", content: [{ type: "output_text", text: "partial" }] }] }, "max_tokens"],
+    [{ id: "r", model: "m", status: "failed", error: { message: "provider failed" }, output: [] }, "provider failed"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "web_search_call" }] }, "Unsupported output item type"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "reasoning" }] }, "No representable output"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: { input_tokens: -1 } }, "non-negative safe integer"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: null }, "response.usage"]
+  ])("handles Responses status and protocol errors", (response, expected) => {
+    if (expected === "max_tokens") {
+      expect(parseOpenAIResponsesResponse(response)).toMatchObject({ finishReason: "max_tokens" });
+    } else {
+      expect(() => parseOpenAIResponsesResponse(response)).toThrow(expected);
+    }
   });
 });

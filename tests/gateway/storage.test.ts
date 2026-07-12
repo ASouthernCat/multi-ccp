@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -12,19 +12,24 @@ import {
 } from "../../src/core/gateway-profile.js";
 import {
   createGatewayUpstream,
+  getGatewayUpstreamPath,
   getGatewayUpstreamSecretPath,
   listGatewayUpstreams,
   readGatewayUpstream,
   removeGatewayUpstream,
-  updateGatewayUpstream
+  updateGatewayUpstream,
+  validateGatewayUpstreamConfig
 } from "../../src/core/gateway-upstreams.js";
 import { readMeta, readSettings, writeSettings } from "../../src/core/settings.js";
 import { authorizeLocalGatewayRequest, readLocalGatewayToken } from "../../src/gateway/auth.js";
 import { GatewayRegistry } from "../../src/gateway/registry.js";
 import {
   normalizeChatCompletionsUrl,
+  normalizeGatewayEndpoint,
   OPENAI_CHAT_COMPLETIONS_URL,
   OPENAI_GATEWAY_COMPATIBILITY,
+  OPENAI_RESPONSES_COMPATIBILITY,
+  OPENAI_RESPONSES_URL,
   resolveGatewayChatCompletionsUrl
 } from "../../src/gateway/config.js";
 
@@ -64,6 +69,231 @@ describe("gateway upstream and profile storage", () => {
       .toThrow("fixed official endpoint");
   });
 
+  it("strictly validates protocol endpoints while preserving legacy Chat URL completion", () => {
+    expect(normalizeGatewayEndpoint(
+      "openai_chat_completions",
+      "openai-compatible",
+      "https://example.test/v1/chat/completions/#section"
+    )).toBe("https://example.test/v1/chat/completions");
+    expect(normalizeGatewayEndpoint(
+      "openai_responses",
+      "openai-compatible",
+      "https://example.test/v1/responses?api-version=2026-01-01#section"
+    )).toBe("https://example.test/v1/responses?api-version=2026-01-01");
+    expect(() => normalizeGatewayEndpoint(
+      "openai_responses",
+      "openai-compatible",
+      "https://example.test/v1/chat/completions"
+    )).toThrow("must end with '/responses'");
+    expect(() => normalizeGatewayEndpoint(
+      "openai_chat_completions",
+      "openai-compatible",
+      "https://user:pass@example.test/v1/chat/completions"
+    )).toThrow("username or password");
+    expect(() => normalizeGatewayEndpoint(
+      "openai_responses",
+      "openai-compatible",
+      "https://example.test/v1/responses?access_token=secret"
+    )).toThrow("may contain credentials");
+    expect(normalizeGatewayEndpoint("openai_responses", "openai", "")).toBe(OPENAI_RESPONSES_URL);
+    expect(() => normalizeGatewayEndpoint(
+      "openai_responses",
+      "openai",
+      "https://proxy.test/v1/responses"
+    )).toThrow("fixed official endpoint");
+  });
+
+  it("reads legacy v1 Chat configs as v2 without rewriting the file", async () => {
+    const context = await createContext();
+    const configPath = getGatewayUpstreamPath("legacy", context);
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await mkdir(path.dirname(getGatewayUpstreamSecretPath("legacy", context)), { recursive: true });
+    const original = `${JSON.stringify({
+      version: 1,
+      id: "legacy",
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      chatCompletionsUrl: "https://legacy.test/v1",
+      models: ["legacy-model"],
+      compatibility: {
+        instructionRole: "system",
+        maxTokensField: "max_tokens",
+        supportsStop: true,
+        supportsSampling: true,
+        parallelToolCalls: "unsupported",
+        streamUsage: "omit",
+        reasoningEffort: "omit",
+        structuredOutput: "unsupported"
+      }
+    }, null, 4)}\n`;
+    await writeFile(configPath, original, "utf8");
+    await writeFile(getGatewayUpstreamSecretPath("legacy", context), JSON.stringify({
+      version: 1,
+      apiKey: "legacy-key"
+    }), "utf8");
+
+    const upstream = await readGatewayUpstream("legacy", context);
+
+    expect(upstream.config).toMatchObject({
+      version: 2,
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://legacy.test/v1/chat/completions",
+      compatibility: { protocol: "openai_chat_completions", instructionRole: "system" }
+    });
+    expect(await readFile(configPath, "utf8")).toBe(original);
+  });
+
+  it("persists new Chat and Responses upstreams as version 2", async () => {
+    const context = await createContext();
+    await createGatewayUpstream({
+      id: "chat-v2",
+      provider: "openai-compatible",
+      endpointUrl: "https://chat.test/v1/chat/completions",
+      apiKey: "chat-key",
+      models: ["chat-model"]
+    }, context);
+    const responses = await createGatewayUpstream({
+      id: "responses-v2",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://responses.test/v1/responses",
+      apiKey: "responses-key",
+      models: ["responses-model"]
+    }, context);
+
+    const chatFile = JSON.parse(await readFile(getGatewayUpstreamPath("chat-v2", context), "utf8"));
+    const responsesFile = JSON.parse(await readFile(getGatewayUpstreamPath("responses-v2", context), "utf8"));
+    expect(chatFile).toMatchObject({
+      version: 2,
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://chat.test/v1/chat/completions",
+      compatibility: { protocol: "openai_chat_completions" }
+    });
+    expect(chatFile.chatCompletionsUrl).toBeUndefined();
+    expect(responses).toMatchObject({
+      version: 2,
+      protocol: "openai_responses",
+      endpointUrl: "https://responses.test/v1/responses",
+      compatibility: { ...OPENAI_RESPONSES_COMPATIBILITY, supportsSampling: true }
+    });
+    expect(responsesFile).toMatchObject({
+      version: 2,
+      protocol: "openai_responses",
+      endpointUrl: "https://responses.test/v1/responses",
+      compatibility: { ...OPENAI_RESPONSES_COMPATIBILITY, supportsSampling: true }
+    });
+  });
+
+  it("keeps the Chat URL alias only on Chat summaries", async () => {
+    const context = await createContext();
+    const chat = await createGatewayUpstream({
+      id: "chat-summary",
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://chat-summary.test/v1/chat/completions",
+      apiKey: "chat-key",
+      models: ["chat-model"]
+    }, context);
+    const responses = await createGatewayUpstream({
+      id: "responses-summary",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://responses-summary.test/v1/responses",
+      apiKey: "responses-key",
+      models: ["responses-model"]
+    }, context);
+
+    expect(chat).toMatchObject({
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://chat-summary.test/v1/chat/completions",
+      chatCompletionsUrl: "https://chat-summary.test/v1/chat/completions"
+    });
+    expect(responses).toMatchObject({
+      protocol: "openai_responses",
+      endpointUrl: "https://responses-summary.test/v1/responses"
+    });
+    expect(responses.chatCompletionsUrl).toBeUndefined();
+  });
+
+  it("upgrades a legacy v1 upstream to v2 when it is edited", async () => {
+    const context = await createContext();
+    const configPath = getGatewayUpstreamPath("legacy-edit", context);
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await mkdir(path.dirname(getGatewayUpstreamSecretPath("legacy-edit", context)), { recursive: true });
+    await writeFile(configPath, JSON.stringify({
+      version: 1,
+      id: "legacy-edit",
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      chatCompletionsUrl: "https://legacy.test/v1/chat/completions",
+      models: ["model"],
+      compatibility: {}
+    }), "utf8");
+    await writeFile(getGatewayUpstreamSecretPath("legacy-edit", context), JSON.stringify({
+      version: 1,
+      apiKey: "legacy-key"
+    }), "utf8");
+
+    await updateGatewayUpstream("legacy-edit", {
+      provider: "openai-compatible",
+      endpointUrl: "https://updated.test/v1/chat/completions",
+      models: ["model"],
+      compatibility: {}
+    }, context);
+
+    expect(JSON.parse(await readFile(configPath, "utf8"))).toMatchObject({
+      version: 2,
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://updated.test/v1/chat/completions"
+    });
+  });
+
+  it("rejects unknown versions, protocols, and mismatched compatibility", () => {
+    expect(() => validateGatewayUpstreamConfig({
+      version: 3,
+      id: "future",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://example.test/v1/responses",
+      models: ["model"]
+    })).toThrow("version must be 1 or 2");
+    expect(() => validateGatewayUpstreamConfig({
+      version: 2,
+      id: "unknown-protocol",
+      provider: "openai-compatible",
+      protocol: "unknown",
+      endpointUrl: "https://example.test/v1/responses",
+      models: ["model"]
+    })).toThrow("protocol is invalid");
+    expect(() => validateGatewayProfileConfig({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://example.test/v1/responses",
+      model: "model",
+      compatibility: { protocol: "openai_chat_completions" }
+    })).toThrow("must match the upstream protocol");
+    expect(() => validateGatewayProfileConfig({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://example.test/v1/responses",
+      model: "model",
+      compatibility: { instructionRole: "system" }
+    })).toThrow("Chat-only fields");
+    expect(() => validateGatewayProfileConfig({
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://example.test/v1/chat/completions",
+      model: "model",
+      compatibility: { store: false }
+    })).toThrow("Responses-only fields");
+    expect(() => validateGatewayProfileConfig({
+      provider: "openai-compatible",
+      protocol: "unknown",
+      endpointUrl: "https://example.test/v1/responses",
+      model: "model"
+    })).toThrow("protocol is invalid");
+  });
+
   it("locks official OpenAI compatibility while preserving compatible-provider overrides", () => {
     const override = {
       instructionRole: "system" as const,
@@ -90,8 +320,14 @@ describe("gateway upstream and profile storage", () => {
       compatibility: override
     });
 
-    expect(official.compatibility).toEqual(OPENAI_GATEWAY_COMPATIBILITY);
-    expect(compatible.compatibility).toEqual(override);
+    expect(official.compatibility).toEqual({
+      protocol: "openai_chat_completions",
+      ...OPENAI_GATEWAY_COMPATIBILITY
+    });
+    expect(compatible.compatibility).toEqual({
+      protocol: "openai_chat_completions",
+      ...override
+    });
   });
 
   it("stores upstream connection data separately from profile bindings and local tokens", async () => {
@@ -124,7 +360,7 @@ describe("gateway upstream and profile storage", () => {
     expect(JSON.stringify(meta)).not.toContain("sk-upstream-only");
     expect(JSON.stringify(profileSecret)).not.toContain("sk-upstream-only");
     expect(profileSecret?.localToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    expect(upstream.config.chatCompletionsUrl).toBe(OPENAI_CHAT_COMPLETIONS_URL);
+    expect(upstream.config.endpointUrl).toBe(OPENAI_CHAT_COMPLETIONS_URL);
     expect(upstream.secret.apiKey).toBe("sk-upstream-only");
     expect(settings?.env).toMatchObject({
       ANTHROPIC_BASE_URL: "http://127.0.0.1:3921/p/openai-main",
@@ -263,7 +499,7 @@ describe("gateway registry and authentication", () => {
     const upstreamReload = await registry.resolve("reload");
     expect(upstreamReload).not.toBe(first);
     expect(upstreamReload.secret.apiKey).toBe("second-provider-key-longer");
-    expect(upstreamReload.config.chatCompletionsUrl).toBe("https://changed.test/v1/chat/completions");
+    expect(upstreamReload.config.endpointUrl).toBe("https://changed.test/v1/chat/completions");
 
     await updateGatewayProfile(profile.dir, profile.name, {
       upstreamId: "reload-upstream",

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  GATEWAY_PROTOCOL_VERSION,
   getGatewayStatus,
   getProcessStartTimeMs,
   startGateway,
@@ -35,6 +36,16 @@ async function exists(filePath: string): Promise<boolean> {
 }
 
 function health(instanceId: string, profileCount = 0): Response {
+  return new Response(JSON.stringify({
+    ok: true,
+    service: "multi-ccp-gateway",
+    protocolVersion: GATEWAY_PROTOCOL_VERSION,
+    instanceId,
+    profileCount
+  }), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+function legacyHealth(instanceId: string, profileCount = 0): Response {
   return new Response(JSON.stringify({
     ok: true,
     service: "multi-ccp-gateway",
@@ -225,7 +236,7 @@ describe("gateway lifecycle", () => {
     expect(second).toMatchObject({ running: true, instanceId: "shared-instance" });
   });
 
-  it("removes a dead runtime without attempting to terminate a reused PID", async () => {
+  it("stops a verified prior-protocol runtime before starting protocol version 2", async () => {
     const context = await createContext();
     const runtimePath = getGatewayRuntimePath(context);
     await mkdir(path.dirname(runtimePath), { recursive: true });
@@ -233,6 +244,55 @@ describe("gateway lifecycle", () => {
       version: 1,
       service: "multi-ccp-gateway",
       protocolVersion: 1,
+      instanceId: "legacy-instance",
+      pid: 3131,
+      processStartedAt: new Date(5_000).toISOString(),
+      endpoint: "http://127.0.0.1:3921"
+    }), "utf8");
+    let legacyAlive = true;
+    let spawned = false;
+    const killProcess = vi.fn().mockImplementation((pid: number) => {
+      if (pid === 3131) legacyAlive = false;
+    });
+    const spawnProcess = vi.fn().mockImplementation(() => {
+      spawned = true;
+      return fakeChild(4242);
+    });
+    const fetchMock = vi.fn().mockImplementation(async () => {
+      if (legacyAlive) return legacyHealth("legacy-instance");
+      if (spawned) return health("instance-2");
+      throw new Error("offline");
+    });
+
+    const status = await startGateway(context, {
+      fetch: fetchMock,
+      processExists: (pid) => pid === 3131 ? legacyAlive : spawned,
+      getProcessStartTimeMs: async (pid) => pid === 3131 ? 5_000 : 10_000,
+      killProcess,
+      spawnProcess,
+      randomId: () => "instance-2",
+      processArgs: () => ({ command: process.execPath, args: ["gateway-entry.js"] }),
+      sleep: async () => undefined
+    });
+
+    expect(killProcess).toHaveBeenCalledWith(3131, "SIGTERM");
+    expect(spawnProcess).toHaveBeenCalledTimes(1);
+    expect(status).toMatchObject({ running: true, instanceId: "instance-2" });
+    expect(JSON.parse(await readFile(runtimePath, "utf8"))).toMatchObject({
+      protocolVersion: 2,
+      instanceId: "instance-2",
+      pid: 4242
+    });
+  });
+
+  it("removes a dead runtime without attempting to terminate a reused PID", async () => {
+    const context = await createContext();
+    const runtimePath = getGatewayRuntimePath(context);
+    await mkdir(path.dirname(runtimePath), { recursive: true });
+    await writeFile(runtimePath, JSON.stringify({
+      version: 1,
+      service: "multi-ccp-gateway",
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
       instanceId: "dead-instance",
       pid: 9999,
       processStartedAt: new Date(0).toISOString(),
@@ -258,7 +318,7 @@ describe("gateway lifecycle", () => {
     await writeFile(runtimePath, JSON.stringify({
       version: 1,
       service: "multi-ccp-gateway",
-      protocolVersion: 1,
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
       instanceId: "reused-pid",
       pid: 8181,
       processStartedAt: new Date(1_000).toISOString(),
@@ -285,7 +345,7 @@ describe("gateway lifecycle", () => {
     await writeFile(runtimePath, JSON.stringify({
       version: 1,
       service: "multi-ccp-gateway",
-      protocolVersion: 1,
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
       instanceId: "hung-instance",
       pid: 9191,
       processStartedAt: new Date(5_000).toISOString(),

@@ -255,8 +255,17 @@ body {
   display: none;
 }
 
+.gateway-toggles {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  margin-top: 3px;
+}
+
 .gateway-toggle {
   min-height: 36px;
+  align-self: end;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -977,7 +986,8 @@ body {
   }
 
   .gateway-form-grid,
-  .gateway-advanced {
+  .gateway-advanced,
+  .gateway-toggles {
     grid-template-columns: 1fr;
   }
 

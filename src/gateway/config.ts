@@ -2,7 +2,14 @@ import path from "node:path";
 import { CcpError } from "../core/errors.js";
 import { getGatewayConfigPath, type PathContext } from "../core/paths.js";
 import { readJsonFile, writeJsonFileAtomic } from "../core/settings.js";
-import type { GatewayCompatibility, GatewayProvider } from "../core/types.js";
+import type {
+  GatewayChatCompatibility,
+  GatewayCompatibility,
+  GatewayProtocolCompatibility,
+  GatewayProvider,
+  GatewayResponsesCompatibility,
+  GatewayUpstreamProtocol
+} from "../core/types.js";
 
 export interface GatewayRuntimeConfig {
   version: 1;
@@ -28,6 +35,26 @@ export const OPENAI_GATEWAY_COMPATIBILITY: GatewayCompatibility = {
 };
 
 export const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
+export const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+
+export const OPENAI_RESPONSES_COMPATIBILITY: GatewayResponsesCompatibility = {
+  protocol: "openai_responses",
+  instructions: "instructions",
+  maxOutputTokens: "max_output_tokens",
+  supportsStop: false,
+  supportsSampling: false,
+  parallelToolCalls: "supported",
+  // Claude Code / Anthropic tools are not generally strict-schema compatible.
+  toolStrict: "non_strict",
+  reasoningEffort: "reasoning.effort",
+  structuredOutput: "text.format",
+  store: false
+};
+
+export const CUSTOM_RESPONSES_COMPATIBILITY: GatewayResponsesCompatibility = {
+  ...OPENAI_RESPONSES_COMPATIBILITY,
+  supportsSampling: true
+};
 
 export const MODERN_OPENAI_COMPATIBILITY: GatewayCompatibility = {
   instructionRole: "developer",
@@ -65,6 +92,41 @@ export function mergeGatewayCompatibility(
   return provider === "openai" ? defaults : { ...defaults, ...value };
 }
 
+export function defaultGatewayProtocolCompatibility(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider
+): GatewayProtocolCompatibility {
+  if (protocol === "openai_responses") {
+    return {
+      ...(provider === "openai" ? OPENAI_RESPONSES_COMPATIBILITY : CUSTOM_RESPONSES_COMPATIBILITY)
+    };
+  }
+  return {
+    protocol: "openai_chat_completions",
+    ...defaultGatewayCompatibility(provider)
+  };
+}
+
+export function mergeGatewayProtocolCompatibility(
+  protocol: "openai_chat_completions",
+  provider: GatewayProvider,
+  value: Partial<GatewayCompatibility> | Partial<GatewayChatCompatibility> | undefined
+): GatewayChatCompatibility;
+export function mergeGatewayProtocolCompatibility(
+  protocol: "openai_responses",
+  provider: GatewayProvider,
+  value: Partial<GatewayResponsesCompatibility> | undefined
+): GatewayResponsesCompatibility;
+export function mergeGatewayProtocolCompatibility(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  value: Partial<GatewayProtocolCompatibility> | undefined
+): GatewayProtocolCompatibility {
+  const defaults = defaultGatewayProtocolCompatibility(protocol, provider);
+  if (provider === "openai") return defaults;
+  return { ...defaults, ...value, protocol } as GatewayProtocolCompatibility;
+}
+
 export function normalizeChatCompletionsUrl(value: string): string {
   let parsed: URL;
   try {
@@ -92,6 +154,50 @@ export function normalizeChatCompletionsUrl(value: string): string {
   }
   parsed.hash = "";
   return parsed.toString();
+}
+
+export function normalizeGatewayEndpoint(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  value: string
+): string {
+  const officialEndpoint = protocol === "openai_responses"
+    ? OPENAI_RESPONSES_URL
+    : OPENAI_CHAT_COMPLETIONS_URL;
+  const endpointLabel = protocol === "openai_responses" ? "Responses endpoint" : "Chat Completions endpoint";
+  const raw = value.trim();
+  if (provider === "openai" && !raw) return officialEndpoint;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new CcpError(`${endpointLabel} must be a valid http or https URL.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new CcpError(`${endpointLabel} must use http or https.`);
+  }
+  if (parsed.username || parsed.password) {
+    throw new CcpError(`${endpointLabel} must not contain a username or password.`);
+  }
+  for (const key of parsed.searchParams.keys()) {
+    if (/(?:key|token|secret|authorization)/i.test(key)) {
+      throw new CcpError(`${endpointLabel} query parameter '${key}' may contain credentials. Store credentials in the gateway API key field instead.`);
+    }
+  }
+
+  const normalizedPath = parsed.pathname.replace(/\/+$/, "");
+  const expectedSuffix = protocol === "openai_responses" ? "/responses" : "/chat/completions";
+  if (!normalizedPath.toLowerCase().endsWith(expectedSuffix)) {
+    throw new CcpError(`${endpointLabel} must end with '${expectedSuffix}'.`);
+  }
+  parsed.pathname = normalizedPath;
+  parsed.hash = "";
+  const normalized = parsed.toString();
+  if (provider === "openai" && normalized !== officialEndpoint) {
+    throw new CcpError(`OpenAI ${protocol === "openai_responses" ? "Responses" : "Chat Completions"} upstreams use the fixed official endpoint: ${officialEndpoint}`);
+  }
+  return normalized;
 }
 
 export function resolveGatewayChatCompletionsUrl(provider: GatewayProvider, value: string): string {

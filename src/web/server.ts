@@ -29,14 +29,31 @@ import {
   readGatewayUpstreamConfig,
   readGatewayUpstreamSecret,
   updateGatewayUpstream,
-  validateGatewayCompatibility
+  validateGatewayProtocolCompatibility
 } from "../core/gateway-upstreams.js";
 import { listGatewayUpstreamTemplates } from "../core/gateway-upstream-templates.js";
 import { readMeta, readSettings, writeMeta, writeSettings } from "../core/settings.js";
 import { getPackageVersion } from "../core/version.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, scanSessionProject, syncSessionProject, type SyncProjectSessionSelection } from "../core/sessions.js";
-import type { ClaudeSettings, GatewayCompatibility, GatewayProvider, GatewayUpstreamSummary, ProfileMeta, ProfileSummary } from "../core/types.js";
-import { CUSTOM_GATEWAY_COMPATIBILITY, MODERN_OPENAI_COMPATIBILITY, OPENAI_CHAT_COMPLETIONS_URL, OPENAI_GATEWAY_COMPATIBILITY } from "../gateway/config.js";
+import type {
+  ClaudeSettings,
+  GatewayCompatibility,
+  GatewayProtocolCompatibility,
+  GatewayProvider,
+  GatewayResponsesCompatibility,
+  GatewayUpstreamProtocol,
+  GatewayUpstreamSummary,
+  ProfileMeta,
+  ProfileSummary
+} from "../core/types.js";
+import {
+  CUSTOM_GATEWAY_COMPATIBILITY,
+  CUSTOM_RESPONSES_COMPATIBILITY,
+  MODERN_OPENAI_COMPATIBILITY,
+  OPENAI_GATEWAY_COMPATIBILITY,
+  OPENAI_RESPONSES_COMPATIBILITY,
+  resolveGatewayChatCompletionsUrl
+} from "../gateway/config.js";
 
 export interface UiServerOptions {
   host?: string;
@@ -153,13 +170,31 @@ export function assertWebProfileWritable(profile: ProfileSummary): void {
   }
 }
 
-export type WebGatewayCompatibilityMode = "openai" | "modern" | "legacy" | "advanced";
+export type WebGatewayCompatibilityMode = "openai" | "responses" | "modern" | "legacy" | "advanced";
 
 export function resolveWebGatewayCompatibility(
+  protocol: GatewayUpstreamProtocol,
   provider: GatewayProvider,
   mode: WebGatewayCompatibilityMode,
   advanced?: unknown
-): GatewayCompatibility {
+): GatewayProtocolCompatibility {
+  if (protocol === "openai_responses") {
+    let compatibility: Partial<GatewayResponsesCompatibility>;
+    if (mode === "openai") {
+      if (provider !== "openai") throw new CcpError("The OpenAI compatibility profile requires the OpenAI provider.");
+      compatibility = OPENAI_RESPONSES_COMPATIBILITY;
+    } else if (mode === "responses") {
+      compatibility = CUSTOM_RESPONSES_COMPATIBILITY;
+    } else if (mode === "advanced" && advanced && typeof advanced === "object" && !Array.isArray(advanced)) {
+      compatibility = advanced as Partial<GatewayResponsesCompatibility>;
+    } else if (mode === "modern" || mode === "legacy") {
+      throw new CcpError("Chat compatibility profiles cannot be used with the Responses protocol.");
+    } else {
+      throw new CcpError("Advanced Responses compatibility settings are required.");
+    }
+    return validateGatewayProtocolCompatibility(protocol, provider, compatibility);
+  }
+
   let compatibility: Partial<GatewayCompatibility>;
   if (mode === "openai") {
     if (provider !== "openai") throw new CcpError("The OpenAI compatibility profile requires the OpenAI provider.");
@@ -168,12 +203,14 @@ export function resolveWebGatewayCompatibility(
     compatibility = MODERN_OPENAI_COMPATIBILITY;
   } else if (mode === "legacy") {
     compatibility = CUSTOM_GATEWAY_COMPATIBILITY;
-  } else if (advanced && typeof advanced === "object" && !Array.isArray(advanced)) {
+  } else if (mode === "advanced" && advanced && typeof advanced === "object" && !Array.isArray(advanced)) {
     compatibility = advanced as Partial<GatewayCompatibility>;
+  } else if (mode === "responses") {
+    throw new CcpError("The Responses compatibility profile requires the Responses protocol.");
   } else {
-    throw new CcpError("Advanced gateway compatibility settings are required.");
+    throw new CcpError("Advanced Chat compatibility settings are required.");
   }
-  return validateGatewayCompatibility(provider, compatibility);
+  return validateGatewayProtocolCompatibility(protocol, provider, compatibility);
 }
 
 function maskToken(token: string): string {
@@ -472,11 +509,42 @@ function gatewayProvider(value: unknown): GatewayProvider {
   throw new CcpError("Gateway provider must be openai or openai-compatible.");
 }
 
-function gatewayCompatibilityMode(value: unknown, provider: GatewayProvider): WebGatewayCompatibilityMode {
-  const fallback = provider === "openai" ? "openai" : "modern";
+function gatewayProtocol(value: unknown): GatewayUpstreamProtocol {
+  if (value === "openai_chat_completions" || value === "openai_responses") return value;
+  throw new CcpError("Gateway protocol must be openai_responses or openai_chat_completions.");
+}
+
+function gatewayCompatibilityMode(
+  value: unknown,
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider
+): WebGatewayCompatibilityMode {
+  const fallback = provider === "openai" ? "openai" : protocol === "openai_responses" ? "responses" : "modern";
   const mode = String(value ?? fallback) as WebGatewayCompatibilityMode;
-  if (["openai", "modern", "legacy", "advanced"].includes(mode)) return mode;
+  if (["openai", "responses", "modern", "legacy", "advanced"].includes(mode)) return mode;
   throw new CcpError("Unknown gateway compatibility profile.");
+}
+
+function gatewayRequestProtocol(body: Record<string, unknown>): GatewayUpstreamProtocol {
+  if (body.protocol !== undefined) return gatewayProtocol(body.protocol);
+  return "openai_chat_completions";
+}
+
+function gatewayRequestEndpoint(
+  body: Record<string, unknown>,
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider
+): string {
+  const endpointUrl = body.endpointUrl === undefined ? undefined : String(body.endpointUrl);
+  const legacyUrl = body.chatCompletionsUrl === undefined ? undefined : String(body.chatCompletionsUrl);
+  if (protocol === "openai_responses") {
+    if (legacyUrl !== undefined) {
+      throw new CcpError("chatCompletionsUrl cannot be used with the Responses protocol. Send endpointUrl instead.");
+    }
+    return endpointUrl ?? "";
+  }
+  if (endpointUrl !== undefined) return endpointUrl;
+  return legacyUrl === undefined ? "" : resolveGatewayChatCompletionsUrl(provider, legacyUrl);
 }
 
 function gatewayModels(value: unknown): string[] {
@@ -488,6 +556,7 @@ async function webGatewayUpstreams(): Promise<Array<GatewayUpstreamSummary & { p
   const upstreams = await listGatewayUpstreams();
   return Promise.all(upstreams.map(async (upstream) => ({
     ...upstream,
+    ...(upstream.protocol === "openai_chat_completions" ? { chatCompletionsUrl: upstream.endpointUrl } : {}),
     profileNames: await findGatewayUpstreamReferences(upstream.id)
   })));
 }
@@ -849,16 +918,16 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (req.method === "POST") {
         const body = await readJsonBody<Record<string, unknown>>(req);
         const provider = gatewayProvider(body.provider);
-        const mode = gatewayCompatibilityMode(body.compatibilityMode, provider);
+        const protocol = gatewayRequestProtocol(body);
+        const mode = gatewayCompatibilityMode(body.compatibilityMode, protocol, provider);
         const created = await createGatewayUpstream({
           id: String(body.id ?? ""),
           provider,
-          chatCompletionsUrl: provider === "openai"
-            ? OPENAI_CHAT_COMPLETIONS_URL
-            : String(body.chatCompletionsUrl ?? ""),
+          protocol,
+          endpointUrl: gatewayRequestEndpoint(body, protocol, provider),
           apiKey: String(body.apiKey ?? ""),
           models: gatewayModels(body.models),
-          compatibility: resolveWebGatewayCompatibility(provider, mode, body.compatibility)
+          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
         });
         addActivity("success", `Created gateway upstream '${created.id}'.`);
         return json(res, 201, { upstream: { ...created, profileNames: [] } });
@@ -886,6 +955,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return json(res, 200, {
           upstream: {
             ...upstream,
+            ...(upstream.protocol === "openai_chat_completions" ? { chatCompletionsUrl: upstream.endpointUrl } : {}),
             apiKeyStatus: "set",
             profileNames: await findGatewayUpstreamReferences(id)
           }
@@ -894,15 +964,15 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       if (req.method === "PUT") {
         const body = await readJsonBody<Record<string, unknown>>(req);
         const provider = gatewayProvider(body.provider);
-        const mode = gatewayCompatibilityMode(body.compatibilityMode, provider);
+        const protocol = gatewayRequestProtocol(body);
+        const mode = gatewayCompatibilityMode(body.compatibilityMode, protocol, provider);
         const updated = await updateGatewayUpstream(id, {
           provider,
-          chatCompletionsUrl: provider === "openai"
-            ? OPENAI_CHAT_COMPLETIONS_URL
-            : String(body.chatCompletionsUrl ?? ""),
+          protocol,
+          endpointUrl: gatewayRequestEndpoint(body, protocol, provider),
           apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
           models: gatewayModels(body.models),
-          compatibility: resolveWebGatewayCompatibility(provider, mode, body.compatibility)
+          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
         });
         addActivity("success", `Updated gateway upstream '${id}'.`);
         return json(res, 200, {

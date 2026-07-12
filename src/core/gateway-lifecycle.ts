@@ -17,13 +17,13 @@ import { writeJsonFileAtomic } from "./settings.js";
 import { getGatewayEndpoint, readGatewayRuntimeConfig } from "../gateway/config.js";
 
 export const GATEWAY_SERVICE_NAME = "multi-ccp-gateway";
-export const GATEWAY_PROTOCOL_VERSION = 1;
+export const GATEWAY_PROTOCOL_VERSION = 2;
 const DEFAULT_GATEWAY_LOG_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface GatewayRuntimeState {
   version: 1;
   service: typeof GATEWAY_SERVICE_NAME;
-  protocolVersion: typeof GATEWAY_PROTOCOL_VERSION;
+  protocolVersion: number;
   instanceId: string;
   pid: number;
   processStartedAt: string;
@@ -124,7 +124,7 @@ export async function getGatewayStatus(
     };
   }
 
-  const matches = isOurGateway(probe.health) &&
+  const matches = isCompatibleGateway(probe.health) &&
     probe.health?.instanceId === runtime.instanceId &&
     runtime.endpoint === endpoint;
   const exists = (deps.processExists ?? processExists)(runtime.pid);
@@ -153,23 +153,34 @@ export async function startGateway(
     if (existingStatus.running && existingStatus.owned) {
       return existingStatus;
     }
-    if (existingStatus.statusText === "Port In Use") {
-      throw new CcpError(`Gateway endpoint is already in use by an unowned process: ${endpoint}`);
-    }
     const staleRuntime = await readGatewayRuntime(context);
-    if (staleRuntime && (deps.processExists ?? processExists)(staleRuntime.pid)) {
-      const actualStart = await (deps.getProcessStartTimeMs ?? getProcessStartTimeMs)(staleRuntime.pid);
-      const expectedStart = Date.parse(staleRuntime.processStartedAt);
+    if (existingStatus.statusText === "Port In Use") {
+      const probe = await probeGateway(endpoint, deps.fetch ?? fetch);
+      const priorOwnedRuntime = staleRuntime &&
+        staleRuntime.protocolVersion < GATEWAY_PROTOCOL_VERSION &&
+        isPriorOwnedGateway(probe.health) &&
+        probe.health?.protocolVersion === staleRuntime.protocolVersion &&
+        probe.health.instanceId === staleRuntime.instanceId &&
+        staleRuntime.endpoint === endpoint;
+      if (!priorOwnedRuntime) {
+        throw new CcpError(`Gateway endpoint is already in use by an unowned process: ${endpoint}`);
+      }
+      await stopGateway(context, deps);
+    }
+    const refreshedRuntime = await readGatewayRuntime(context);
+    if (refreshedRuntime && (deps.processExists ?? processExists)(refreshedRuntime.pid)) {
+      const actualStart = await (deps.getProcessStartTimeMs ?? getProcessStartTimeMs)(refreshedRuntime.pid);
+      const expectedStart = Date.parse(refreshedRuntime.processStartedAt);
       if (actualStart === undefined || !Number.isFinite(expectedStart)) {
         throw new CcpError("Gateway runtime is stale and its recorded process identity cannot be verified. Inspect the PID before removing runtime.json.");
       }
       if (Math.abs(actualStart - expectedStart) <= 2_000) {
         throw new CcpError("Gateway runtime is stale but its recorded process is still alive. Run 'ccp gateway stop' to recover it safely.");
       }
-      await removeRuntimeIfInstance(context, staleRuntime.instanceId);
+      await removeRuntimeIfInstance(context, refreshedRuntime.instanceId);
     }
-    if (staleRuntime) {
-      await removeRuntimeIfInstance(context, staleRuntime.instanceId);
+    if (refreshedRuntime) {
+      await removeRuntimeIfInstance(context, refreshedRuntime.instanceId);
     }
 
     const instanceId = (deps.randomId ?? randomUUID)();
@@ -258,7 +269,7 @@ export async function stopGateway(
     throw new CcpError("Refusing to stop gateway because its PID creation time cannot be verified.");
   }
   const probe = await probeGateway(runtime.endpoint, deps.fetch ?? fetch);
-  if (isOurGateway(probe.health) && probe.health?.instanceId !== runtime.instanceId) {
+  if (isRecognizedGateway(probe.health) && probe.health?.instanceId !== runtime.instanceId) {
     throw new CcpError("Refusing to stop gateway because another gateway instance owns the endpoint.");
   }
 
@@ -269,7 +280,7 @@ export async function stopGateway(
   }
   if ((deps.processExists ?? processExists)(runtime.pid)) {
     const latestProbe = await probeGateway(runtime.endpoint, deps.fetch ?? fetch);
-    if (!isOurGateway(latestProbe.health) || latestProbe.health?.instanceId !== runtime.instanceId) {
+    if (!isRecognizedGateway(latestProbe.health) || latestProbe.health?.instanceId !== runtime.instanceId) {
       throw new CcpError("Gateway ownership changed while stopping; refusing to force terminate the PID.");
     }
     const latestStart = await (deps.getProcessStartTimeMs ?? getProcessStartTimeMs)(runtime.pid);
@@ -348,17 +359,43 @@ async function probeGateway(endpoint: string, fetchImpl: typeof fetch): Promise<
   }
 }
 
+function isRecognizedGateway(health: GatewayHealth | undefined): boolean {
+  return health?.service === GATEWAY_SERVICE_NAME &&
+    Number.isInteger(health.protocolVersion) &&
+    (health.protocolVersion ?? 0) >= 1 &&
+    (health.protocolVersion ?? 0) <= GATEWAY_PROTOCOL_VERSION;
+}
+
+function isCompatibleGateway(health: GatewayHealth | undefined): boolean {
+  return isRecognizedGateway(health) && health?.protocolVersion === GATEWAY_PROTOCOL_VERSION;
+}
+
+function isPriorOwnedGateway(health: GatewayHealth | undefined): boolean {
+  return isRecognizedGateway(health) && (health?.protocolVersion ?? 0) < GATEWAY_PROTOCOL_VERSION;
+}
+
 function isOurGateway(health: GatewayHealth | undefined): boolean {
-  return health?.service === GATEWAY_SERVICE_NAME && health.protocolVersion === GATEWAY_PROTOCOL_VERSION;
+  return isCompatibleGateway(health);
 }
 
 async function readGatewayRuntime(context: PathContext): Promise<GatewayRuntimeState | undefined> {
   try {
     const raw = await readFile(getGatewayRuntimePath(context), "utf8");
-    const value = JSON.parse(raw) as GatewayRuntimeState;
-    return value?.service === GATEWAY_SERVICE_NAME && value.protocolVersion === GATEWAY_PROTOCOL_VERSION
-      ? value
-      : undefined;
+    const value = JSON.parse(raw) as Partial<GatewayRuntimeState>;
+    if (
+      value.version !== 1 ||
+      value.service !== GATEWAY_SERVICE_NAME ||
+      !Number.isInteger(value.protocolVersion) ||
+      (value.protocolVersion ?? 0) < 1 ||
+      (value.protocolVersion ?? 0) > GATEWAY_PROTOCOL_VERSION ||
+      typeof value.instanceId !== "string" ||
+      !Number.isInteger(value.pid) ||
+      typeof value.processStartedAt !== "string" ||
+      typeof value.endpoint !== "string"
+    ) {
+      return undefined;
+    }
+    return value as GatewayRuntimeState;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return undefined;

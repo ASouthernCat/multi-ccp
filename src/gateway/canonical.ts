@@ -74,6 +74,7 @@ export interface ToolNameMapping {
 
 export type CanonicalStreamEvent =
   | { type: "message_start"; id: string; model: string }
+  | { type: "text_start"; blockKey: string }
   | { type: "text_delta"; blockKey: string; text: string }
   | { type: "tool_start"; blockKey: string; id: string; name: string }
   | { type: "tool_arguments_delta"; blockKey: string; partialJson: string }

@@ -7,7 +7,10 @@ import type {
 } from "./canonical.js";
 import { EMPTY_TOOL_NAME_MAPPING } from "./canonical.js";
 import { asGatewayError, type GatewayError, type GatewayErrorType, upstreamProtocolError } from "./errors.js";
-import { mapOpenAIFinishReason, normalizeToolCallId, toAnthropicMessageId } from "./openai-target.js";
+import { mapOpenAIFinishReason } from "./openai-chat-target.js";
+import { normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
+import type { AnthropicStreamBridge } from "./openai-responses-streaming.js";
+
 
 type JsonObject = Record<string, unknown>;
 
@@ -497,6 +500,18 @@ export class AnthropicSseEmitter {
       throw new Error(`Canonical stream emitted ${event.type} before message_start.`);
     }
 
+    if (event.type === "text_start") {
+      if (this.blocks.has(event.blockKey)) {
+        throw new Error(`Canonical stream reused block key '${event.blockKey}'.`);
+      }
+      const block = { index: this.nextBlockIndex++, kind: "text" as const, stopped: false };
+      this.blocks.set(event.blockKey, block);
+      return [formatSse("content_block_start", {
+        type: "content_block_start",
+        index: block.index,
+        content_block: { type: "text", text: "" }
+      })];
+    }
     if (event.type === "text_delta") {
       const output: string[] = [];
       let block = this.blocks.get(event.blockKey);
@@ -567,7 +582,7 @@ export class AnthropicSseEmitter {
   }
 }
 
-export class OpenAIAnthropicStreamBridge {
+export class OpenAIAnthropicStreamBridge implements AnthropicStreamBridge {
   private readonly parser = new SseParser();
   private readonly converter: OpenAIStreamConverter;
   private readonly emitter = new AnthropicSseEmitter();
@@ -587,6 +602,11 @@ export class OpenAIAnthropicStreamBridge {
   get error(): GatewayError | undefined {
     return this.converter.error;
   }
+
+  get metadata(): undefined {
+    return undefined;
+  }
+
 
   push(chunk: string | Uint8Array): string[] {
     return this.convert(this.parser.push(chunk));

@@ -8,10 +8,11 @@ import {
 import type { AddressInfo } from "node:net";
 import { assertProfileName, CcpError } from "../core/errors.js";
 import type { PathContext } from "../core/paths.js";
-import type { GatewayCompatibility } from "../core/types.js";
+import { GATEWAY_PROTOCOL_VERSION } from "../core/gateway-lifecycle.js";
+import type { GatewayProtocolCompatibility, GatewayUpstreamProtocol } from "../core/types.js";
 import { authorizeLocalGatewayRequest } from "./auth.js";
 import { parseAnthropicMessagesRequest } from "./anthropic-source.js";
-import type { CanonicalReasoningEffort, CanonicalUsage } from "./canonical.js";
+import type { CanonicalReasoningEffort, CanonicalUsage, ToolNameMapping } from "./canonical.js";
 import {
   GatewayProtocolError,
   invalidRequest,
@@ -20,10 +21,20 @@ import {
   type GatewayErrorType
 } from "./errors.js";
 import {
-  canonicalResponseToAnthropic,
+  OpenAIResponsesAnthropicStreamBridge,
+  type AnthropicStreamBridge
+} from "./openai-responses-streaming.js";
+import {
+  parseOpenAIResponsesResponseWithMetadata,
+  serializeOpenAIResponsesRequest
+} from "./openai-responses-target.js";
+import {
+  canonicalResponseToAnthropic
+} from "./utils.js";
+import {
   parseOpenAIChatResponse,
   serializeOpenAIChatRequest
-} from "./openai-target.js";
+} from "./openai-chat-target.js";
 import { GatewayRegistry, type GatewayRouteSnapshot } from "./registry.js";
 import { OpenAIAnthropicStreamBridge } from "./streaming.js";
 
@@ -49,9 +60,13 @@ export interface GatewayRequestLog {
   model?: string;
   clientModel?: string;
   stream?: boolean;
+  protocol?: GatewayUpstreamProtocol;
+  endpointHost?: string;
   effort?: CanonicalReasoningEffort;
-  effortMapping?: GatewayCompatibility["reasoningEffort"];
+  effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
   upstreamFields?: string[];
+  upstreamEventTypes?: string[];
+  upstreamItemTypes?: string[];
   inputTokens?: number;
   outputTokens?: number;
   sessionId?: string;
@@ -95,9 +110,13 @@ interface RequestState {
   model?: string;
   clientModel?: string;
   stream?: boolean;
+  protocol?: GatewayUpstreamProtocol;
+  endpointHost?: string;
   effort?: CanonicalReasoningEffort;
-  effortMapping?: GatewayCompatibility["reasoningEffort"];
+  effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
   upstreamFields?: string[];
+  upstreamEventTypes?: string[];
+  upstreamItemTypes?: string[];
   inputTokens?: number;
   outputTokens?: number;
   status: number;
@@ -108,6 +127,8 @@ interface RequestState {
 interface GatewayStreamResult {
   usage: CanonicalUsage;
   error?: GatewayError;
+  upstreamEventTypes?: string[];
+  upstreamItemTypes?: string[];
 }
 
 class ClientDisconnectedError extends Error {
@@ -257,7 +278,7 @@ async function handleRequest(
       sendJson(res, 200, {
         ok: true,
         service: "multi-ccp-gateway",
-        protocolVersion: 1,
+        protocolVersion: GATEWAY_PROTOCOL_VERSION,
         instanceId: deps.instanceId,
         pid: process.pid,
         endpoint: deps.getEndpoint(),
@@ -304,15 +325,68 @@ async function handleRequest(
     validateJsonContentType(req);
     const input = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
     const canonical = parseAnthropicMessagesRequest(input);
+    state.model = snapshot.config.model;
+    state.clientModel = canonical.clientModel;
+    state.stream = canonical.stream;
+    state.protocol = snapshot.config.protocol;
+    state.endpointHost = new URL(snapshot.config.endpointUrl).host;
+    state.effort = canonical.outputConfig?.effort;
+    state.effortMapping = snapshot.config.compatibility.reasoningEffort;
+
+    if (snapshot.config.protocol === "openai_responses") {
+      const converted = serializeOpenAIResponsesRequest(canonical, {
+        model: snapshot.config.model,
+        compatibility: snapshot.config.compatibility
+      });
+      state.upstreamFields = Object.keys(converted.body).sort();
+      const upstream = await fetchUpstream(snapshot, converted.body, controller.signal, deps.fetchImpl, state);
+      if (!upstream.ok) {
+        const mapped = await mapUpstreamError(
+          upstream,
+          snapshot,
+          deps.maxUpstreamErrorBytes ?? DEFAULT_MAX_UPSTREAM_ERROR_BYTES,
+          state
+        );
+        state.status = mapped.status;
+        sendError(res, mapped.status, mapped.error);
+        return;
+      }
+      if (canonical.stream) {
+        const result = await pipeStreamingResponse(
+          res,
+          upstream,
+          snapshot.config.protocol,
+          converted.toolNames,
+          snapshot.config.model,
+          controller.signal
+        );
+        state.upstreamEventTypes = result.upstreamEventTypes;
+        state.upstreamItemTypes = result.upstreamItemTypes;
+        state.inputTokens = result.usage.inputTokens;
+        state.outputTokens = result.usage.outputTokens;
+        state.status = result.error ? 502 : 200;
+        return;
+      }
+      const parsed = await readUpstreamJson(
+        upstream,
+        deps.maxUpstreamResponseBytes ?? DEFAULT_MAX_UPSTREAM_RESPONSE_BYTES
+      );
+      const convertedResponse = parseOpenAIResponsesResponseWithMetadata(parsed, {
+        toolNames: converted.toolNames,
+        modelFallback: snapshot.config.model
+      });
+      state.upstreamItemTypes = convertedResponse.upstreamItemTypes;
+      state.inputTokens = convertedResponse.response.usage.inputTokens;
+      state.outputTokens = convertedResponse.response.usage.outputTokens;
+      state.status = 200;
+      sendJson(res, 200, canonicalResponseToAnthropic(convertedResponse.response));
+      return;
+    }
+
     const converted = serializeOpenAIChatRequest(canonical, {
       model: snapshot.config.model,
       compatibility: snapshot.config.compatibility
     });
-    state.model = snapshot.config.model;
-    state.clientModel = canonical.clientModel;
-    state.stream = canonical.stream;
-    state.effort = canonical.outputConfig?.effort;
-    state.effortMapping = snapshot.config.compatibility.reasoningEffort;
     state.upstreamFields = Object.keys(converted.body).sort();
     const upstream = await fetchUpstream(snapshot, converted.body, controller.signal, deps.fetchImpl, state);
 
@@ -329,27 +403,24 @@ async function handleRequest(
     }
 
     if (canonical.stream) {
-      const result = await pipeStreamingResponse(res, upstream, converted.toolNames, snapshot.config.model, controller.signal);
+      const result = await pipeStreamingResponse(
+        res,
+        upstream,
+        snapshot.config.protocol,
+        converted.toolNames,
+        snapshot.config.model,
+        controller.signal
+      );
       state.inputTokens = result.usage.inputTokens;
       state.outputTokens = result.usage.outputTokens;
       state.status = result.error ? 502 : 200;
       return;
     }
 
-    const raw = await readResponseTextLimited(
+    const parsed = await readUpstreamJson(
       upstream,
       deps.maxUpstreamResponseBytes ?? DEFAULT_MAX_UPSTREAM_RESPONSE_BYTES
     );
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (error) {
-      throw new GatewayProtocolError(
-        { type: "api_error", message: "Upstream response is not valid JSON." },
-        502,
-        { cause: error }
-      );
-    }
     const response = parseOpenAIChatResponse(parsed, {
       toolNames: converted.toolNames,
       modelFallback: snapshot.config.model
@@ -484,7 +555,7 @@ async function fetchUpstream(
   state: RequestState
 ): Promise<Response> {
   try {
-    return await fetchImpl(snapshot.config.chatCompletionsUrl, {
+    return await fetchImpl(snapshot.config.endpointUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${snapshot.secret.apiKey}`,
@@ -509,18 +580,32 @@ async function fetchUpstream(
 async function pipeStreamingResponse(
   res: ServerResponse,
   upstream: Response,
-  toolNames: ReturnType<typeof serializeOpenAIChatRequest>["toolNames"],
+  protocol: GatewayUpstreamProtocol,
+  toolNames: ToolNameMapping,
   model: string,
   signal: AbortSignal
 ): Promise<GatewayStreamResult> {
   if (!upstream.body) {
     throw new GatewayProtocolError({ type: "api_error", message: "Upstream streaming response has no body." }, 502);
   }
-  const bridge = new OpenAIAnthropicStreamBridge({
-    messageId: `msg_${randomUUID().replace(/-/g, "")}`,
-    model,
-    toolNames
-  });
+  const bridge: AnthropicStreamBridge = protocol === "openai_responses"
+    ? new OpenAIResponsesAnthropicStreamBridge({ model, toolNames })
+    : new OpenAIAnthropicStreamBridge({
+        messageId: `msg_${randomUUID().replace(/-/g, "")}`,
+        model,
+        toolNames
+      });
+  const toResult = (): GatewayStreamResult => {
+    const metadata = bridge.metadata;
+    return {
+      usage: bridge.usage,
+      ...(bridge.error ? { error: bridge.error } : {}),
+      ...(metadata ? {
+        upstreamEventTypes: metadata.upstreamEventTypes,
+        upstreamItemTypes: metadata.upstreamItemTypes
+      } : {})
+    };
+  };
   res.writeHead(200, {
     "content-type": "text/event-stream; charset=utf-8",
     "cache-control": "no-cache, no-transform",
@@ -539,14 +624,14 @@ async function pipeStreamingResponse(
       if (bridge.isTerminal) {
         await reader.cancel();
         res.end();
-        return { usage: bridge.usage, ...(bridge.error ? { error: bridge.error } : {}) };
+        return toResult();
       }
     }
     for (const output of bridge.finish()) {
       await writeWithBackpressure(res, output, signal);
     }
     res.end();
-    return { usage: bridge.usage, ...(bridge.error ? { error: bridge.error } : {}) };
+    return toResult();
   } finally {
     if (signal.aborted) {
       await reader.cancel(signal.reason).catch(() => undefined);
@@ -582,6 +667,19 @@ async function writeWithBackpressure(res: ServerResponse, value: string, signal:
     res.once("close", onClose);
     signal.addEventListener("abort", onAbort, { once: true });
   });
+}
+
+async function readUpstreamJson(response: Response, maxBytes: number): Promise<unknown> {
+  const raw = await readResponseTextLimited(response, maxBytes);
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new GatewayProtocolError(
+      { type: "api_error", message: "Upstream response is not valid JSON." },
+      502,
+      { cause: error }
+    );
+  }
 }
 
 async function readResponseTextLimited(response: Response, maxBytes: number): Promise<string> {
@@ -730,10 +828,14 @@ function emitRequestLog(
       ...(state.profileName ? { profileName: state.profileName } : {}),
       ...(state.model ? { model: state.model } : {}),
       ...(state.clientModel ? { clientModel: state.clientModel } : {}),
+      ...(state.protocol ? { protocol: state.protocol } : {}),
+      ...(state.endpointHost ? { endpointHost: state.endpointHost } : {}),
       ...(state.stream === undefined ? {} : { stream: state.stream }),
       ...(state.effort ? { effort: state.effort } : {}),
       ...(state.effortMapping ? { effortMapping: state.effortMapping } : {}),
       ...(state.upstreamFields ? { upstreamFields: [...state.upstreamFields] } : {}),
+      ...(state.upstreamEventTypes ? { upstreamEventTypes: [...state.upstreamEventTypes] } : {}),
+      ...(state.upstreamItemTypes ? { upstreamItemTypes: [...state.upstreamItemTypes] } : {}),
       ...(state.inputTokens === undefined ? {} : { inputTokens: state.inputTokens }),
       ...(state.outputTokens === undefined ? {} : { outputTokens: state.outputTokens }),
       ...(sessionId ? { sessionId } : {}),
