@@ -5,3 +5,8 @@ coverage/
 .DS_Store
 npm-debug.log*
 .npmrc
+
+# Local experiment / live-test scratch (not part of the product)
+scratch/
+tmp/
+tmp-*
