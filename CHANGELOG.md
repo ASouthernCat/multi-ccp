@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1
+
+- Web UI 补全 Profile 名称、API 模型、Upstream ID、Chat Completions URL 和 API Key 等输入提示，并使用当前 Claude Code 支持的完整模型 ID 示例。
+- Gateway 管理面板新增创建 Gateway Profile 的快捷入口；创建弹窗可叠加在管理面板上，创建成功后刷新网关状态并自动打开新 Profile 详情。
+- CCR 与 Gateway 状态卡增加明确的悬停和无障碍提示，嵌套弹窗中的校验与接口错误会显示在最上层。
+
 ## 0.2.0
 
 - Profile 创建合并为单一 Gateway 模板，可选择任意已创建的 Upstream 和模型；OpenAI official 与 OpenAI-compatible 仅保留为 Upstream 创建预设，无可用上游时 Web UI 会显示管理引导。
