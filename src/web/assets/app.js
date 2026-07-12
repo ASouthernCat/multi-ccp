@@ -37,7 +37,7 @@ function bindMetricAction(element, action) { element.onclick = action; element.o
     event.preventDefault();
     action();
 } }; }
-function renderSummary() { const d = state.dashboard?.profiles || {}; const c = state.dashboard?.ccr || {}; const g = state.dashboard?.gateway || {}; const metrics = [['Profiles', d.total ?? 0, 'all'], ['API', d.api ?? 0, 'api'], ['Gateway', d.gateway ?? 0, 'gateway'], ['Login', d.login ?? 0, 'login'], ['CCR', d.ccr ?? 0, 'ccr'], ['Attention', d.needsAttention ?? 0, 'attention']]; $('summaryGrid').innerHTML = metrics.map(([label, val, kind]) => `<article class="metric ${kind}"><span>${label}</span><b>${val}</b></article>`).join('') + `<article class="metric ccr-status" role="button" tabindex="0" id="ccrMetric"><span>CCR</span><b>${escapeHtml(c.statusText || (c.running ? 'Running' : 'Offline'))}</b></article><article class="metric gateway-service ${g.running ? 'running' : ''}" role="button" tabindex="0" id="gatewayMetric"><span>Gateway Service</span><b>${escapeHtml(g.statusText || (g.running ? 'Running' : 'Offline'))}</b></article>`; bindMetricAction($('ccrMetric'), openCcrPanel); bindMetricAction($('gatewayMetric'), openGatewayPanel); }
+function renderSummary() { const d = state.dashboard?.profiles || {}; const c = state.dashboard?.ccr || {}; const g = state.dashboard?.gateway || {}; const ccrStatus = c.statusText || (c.running ? 'Running' : 'Offline'); const gatewayStatus = g.statusText || (g.running ? 'Running' : 'Offline'); const metrics = [['Profiles', d.total ?? 0, 'all'], ['API', d.api ?? 0, 'api'], ['Gateway', d.gateway ?? 0, 'gateway'], ['Login', d.login ?? 0, 'login'], ['CCR', d.ccr ?? 0, 'ccr'], ['Attention', d.needsAttention ?? 0, 'attention']]; $('summaryGrid').innerHTML = metrics.map(([label, val, kind]) => `<article class="metric ${kind}"><span>${label}</span><b>${val}</b></article>`).join('') + `<article class="metric ccr-status" role="button" tabindex="0" id="ccrMetric" title="打开 CCR 管理" aria-label="打开 CCR 管理，当前状态 ${escapeHtml(ccrStatus)}"><span>CCR</span><b>${escapeHtml(ccrStatus)}</b></article><article class="metric gateway-service ${g.running ? 'running' : ''}" role="button" tabindex="0" id="gatewayMetric" title="打开 Gateway 管理" aria-label="打开 Gateway 管理，当前状态 ${escapeHtml(gatewayStatus)}"><span>Gateway Service</span><b>${escapeHtml(gatewayStatus)}</b></article>`; bindMetricAction($('ccrMetric'), openCcrPanel); bindMetricAction($('gatewayMetric'), openGatewayPanel); }
 function iconSvg(name) {
     const icons = {
         home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.4 12 4l8 7.4v7.1a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-7.1Z"/><path d="M9 20v-6h6v6"/></svg>',
@@ -253,7 +253,7 @@ function gatewaySettingsForm(p) {
 }
 function settingsForm(p, env) {
     if (p.type === 'api')
-        return `<div class="drawer-section"><p class="eyebrow">settings</p><label>Base URL<input id="baseUrl" value="${escapeHtml(env.ANTHROPIC_BASE_URL || '')}"></label><label>API Key${secretInput('apiKey', '', { disabled: true, placeholder: 'Loading...' })}</label><label>Model<input id="model" value="${escapeHtml(env.ANTHROPIC_MODEL || '')}"></label><label>Opus Model<input id="opusModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '')}"></label><label>Sonnet Model<input id="sonnetModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_SONNET_MODEL || '')}"></label><label>Haiku Model<input id="haikuModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '')}"></label><label>Subagent Model<input id="subagentModel" value="${escapeHtml(env.CLAUDE_CODE_SUBAGENT_MODEL || '')}"></label><button class="primary" id="saveSettings" disabled>Save Settings</button></div>`;
+        return `<div class="drawer-section"><p class="eyebrow">settings</p><label>Base URL<input id="baseUrl" value="${escapeHtml(env.ANTHROPIC_BASE_URL || '')}" placeholder="https://api.example.com/anthropic" autocomplete="url"></label><label>API Key${secretInput('apiKey', '', { disabled: true, placeholder: 'Loading...' })}</label><label>Model<input id="model" value="${escapeHtml(env.ANTHROPIC_MODEL || '')}" placeholder="留空使用默认，或完整模型ID如 claude-opus-4-8" autocomplete="off"></label><label>Opus Model<input id="opusModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '')}" placeholder="claude-opus-4-8" autocomplete="off"></label><label>Sonnet Model<input id="sonnetModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_SONNET_MODEL || '')}" placeholder="claude-sonnet-5" autocomplete="off"></label><label>Haiku Model<input id="haikuModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '')}" placeholder="claude-haiku-4-5" autocomplete="off"></label><label>Subagent Model<input id="subagentModel" value="${escapeHtml(env.CLAUDE_CODE_SUBAGENT_MODEL || '')}" placeholder="claude-haiku-4-5" autocomplete="off"></label><button class="primary" id="saveSettings" disabled>Save Settings</button></div>`;
     if (p.type === 'ccr')
         return `<div class="drawer-section"><p class="eyebrow">ccr router</p><label>模型路由<select id="route" required>${ccrRouteOptions(p.meta?.ccrRoute || '')}</select></label><div class="kv"><span>Preset</span><strong>${escapeHtml(p.meta?.ccrPreset || p.name)}</strong><span>Endpoint</span><strong>${escapeHtml(env.ANTHROPIC_BASE_URL || p.baseUrl || '')}</strong></div><p class="hint">保存后 multi-ccp 会根据模型路由重新生成该 CCR preset。provider/model 请在 <a href="#" id="openCcrUiFromDrawer">CCR UI</a> 中管理。</p><button class="primary" id="saveSettings">Save Route</button></div>`;
     if (p.type === 'gateway')
@@ -396,7 +396,7 @@ function gatewayTabButton(id, label, count) {
     return `<button class="gateway-tab ${active ? 'active' : ''}" type="button" role="tab" aria-selected="${active}" data-gateway-tab="${id}"><span>${label}</span><b>${count}</b></button>`;
 }
 function gatewayUpstreamsView(upstreams) {
-    return `<section class="gateway-view gateway-upstreams" role="tabpanel"><div class="gateway-view-toolbar"><div><p class="eyebrow">upstreams</p><h3>OpenAI-format providers</h3></div><button class="primary icon-action" id="gatewayAddUpstream" type="button">${iconSvg('plus')}<span>New Upstream</span></button></div>${gatewayUpstreamRows(upstreams)}</section>`;
+    return `<section class="gateway-view gateway-upstreams" role="tabpanel"><div class="gateway-view-toolbar"><div><p class="eyebrow">upstreams</p><h3>OpenAI-format providers</h3></div><div class="gateway-view-actions"><button class="ghost icon-action" id="gatewayCreateProfile" type="button" title="创建 Gateway Profile">${iconSvg('plus')}<span>New Profile</span></button><button class="primary icon-action" id="gatewayAddUpstream" type="button">${iconSvg('plus')}<span>New Upstream</span></button></div></div>${gatewayUpstreamRows(upstreams)}</section>`;
 }
 function gatewayLogView(log, status) {
     const entries = log?.entries || [];
@@ -415,6 +415,8 @@ function bindGatewayPanel(status, log, upstreams) {
     document.querySelectorAll('[data-log-filter]').forEach(button => button.onclick = () => { state.gatewayLogFilter = button.dataset.logFilter; renderGatewayPanel(status, log, upstreams); });
     const add = $('gatewayAddUpstream'); if (add)
         add.onclick = () => openUpstreamEditor();
+    const createProfile = $('gatewayCreateProfile'); if (createProfile)
+        createProfile.onclick = () => void openNewGatewayProfileFromManager();
     document.querySelectorAll('[data-edit-upstream]').forEach(button => button.onclick = () => openUpstreamEditor(button.dataset.editUpstream));
     document.querySelectorAll('[data-delete-upstream]').forEach(button => button.onclick = () => deleteGatewayUpstream(button.dataset.deleteUpstream));
     const start = $('gatewayStart'); if (start)
@@ -452,6 +454,29 @@ async function openGatewayPanel() { try {
 catch (err) {
     toast(err.message);
 } }
+async function openNewProfileDialog(options = {}) {
+    resetNewProfileForm();
+    if (options.presetId)
+        state.selectedPreset = options.presetId;
+    if (options.presetFilter)
+        state.presetFilter = options.presetFilter;
+    await Promise.all([loadRoutes(), loadPresets()]);
+    if (options.presetId && state.presets.some(preset => preset.id === options.presetId))
+        state.selectedPreset = options.presetId;
+    renderPresetPicker();
+    const dialog = $('newProfileDialog');
+    document.body.append(dialog);
+    dialog.showModal();
+}
+async function openNewGatewayProfileFromManager() {
+    if (!state.upstreams.length) {
+        toast('请先创建一个上游供应商');
+        openUpstreamEditor();
+        return;
+    }
+    await closeUpstreamEditor();
+    await openNewProfileDialog({ presetId: 'gateway', presetFilter: 'gateway' });
+}
 function gatewayUpstreamTemplateOptions(selectedId) {
     return state.gatewayUpstreamTemplates.map(template => `<option value="${escapeHtml(template.id)}" ${template.id === selectedId ? 'selected' : ''}>${escapeHtml(template.label)}</option>`).join('');
 }
@@ -511,7 +536,7 @@ function renderUpstreamEditor(upstream) {
     form.classList.remove('is-closing');
     scrim.classList.remove('is-closing');
     const template = state.gatewayUpstreamTemplates.find(item => item.id === templateId);
-    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">×</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint" id="upstreamTemplateHint">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required ${editing ? 'readonly' : ''} autocomplete="off" /></label><label>Provider Format<input id="upstreamProviderLabel" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Chat Completions URL<input id="upstreamUrl" value="${escapeHtml(upstream?.chatCompletionsUrl || '')}" required autocomplete="url" /></label><label class="gateway-wide">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><span class="gateway-field-hint">Separate multiple model IDs with commas, for example: gpt-5.6-sol, gpt-5.5</span></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : '' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, provider)}</div>${gatewayAdvancedFields('upstreamEditor', compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
+    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">×</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint" id="upstreamTemplateHint">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required ${editing ? 'readonly' : ''} placeholder="my-provider" autocomplete="off" /></label><label>Provider Format<input id="upstreamProviderLabel" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Chat Completions URL<input id="upstreamUrl" value="${escapeHtml(upstream?.chatCompletionsUrl || '')}" required placeholder="https://api.example.com/v1/chat/completions" autocomplete="url" /></label><label class="gateway-wide">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><span class="gateway-field-hint">Separate multiple model IDs with commas, for example: gpt-5.6-sol, gpt-5.5</span></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... 或供应商 API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, provider)}</div>${gatewayAdvancedFields('upstreamEditor', compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
     bindSecretToggles(form);
     const url = $('upstreamUrl');
     if (provider === 'openai-compatible')
@@ -1009,7 +1034,7 @@ function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(()
     closeSyncConfirm();
     return;
 } if (dialog.id === 'newProfileDialog')
-    resetNewProfileForm(); dialog.close(); })); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = async () => { resetNewProfileForm(); await Promise.all([loadRoutes(), loadPresets()]); renderPresetPicker(); $('newProfileDialog').showModal(); }; $('createProfileSubmit').onclick = createProfile; }
+    resetNewProfileForm(); dialog.close(); })); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = () => void openNewProfileDialog(); $('createProfileSubmit').onclick = createProfile; }
 async function loadRoutes() { try {
     const [status, data] = await Promise.all([api('/api/ccr/status'), api('/api/ccr/routes')]);
     state.ccr = status;
@@ -1074,14 +1099,32 @@ else if (kind === 'ccr') {
 else if (kind === 'gateway') {
     body = { presetId: raw.presetId, name: raw.name, kind: 'gateway', upstreamId: raw.gatewayUpstream || '', model: raw.gatewayModel || '' };
 }
-api(url, { method: 'POST', body: JSON.stringify(body) }).then(async () => { $('newProfileDialog').close(); resetNewProfileForm(); toast('Profile 已创建'); if (kind === 'ccr' || kind === 'manual-ccr') {
-    const current = await api('/api/ccr/status');
-    if (current.installed && !current.running && current.routeCount > 0 && confirm('CCR 尚未运行，是否立即启动？'))
-        await api('/api/ccr/start', { method: 'POST' });
-} if (kind === 'gateway') {
-    const current = await api('/api/gateway/status');
-    if (!current.running && confirm('Gateway 尚未运行，是否立即启动？'))
-        await api('/api/gateway/start', { method: 'POST' });
-} await load(); }).catch(err => toast(err.message)); }
+api(url, { method: 'POST', body: JSON.stringify(body) }).then(async () => {
+    const createdName = String(raw.name || '').trim();
+    $('newProfileDialog').close();
+    resetNewProfileForm();
+    toast('Profile 已创建');
+    if (kind === 'ccr' || kind === 'manual-ccr') {
+        const current = await api('/api/ccr/status');
+        if (current.installed && !current.running && current.routeCount > 0 && confirm('CCR 尚未运行，是否立即启动？'))
+            await api('/api/ccr/start', { method: 'POST' });
+    }
+    if (kind === 'gateway') {
+        const current = await api('/api/gateway/status');
+        if (!current.running && confirm('Gateway 尚未运行，是否立即启动？'))
+            await api('/api/gateway/start', { method: 'POST' });
+    }
+    await load();
+    if ($('gatewayDialog')?.open)
+        await openGatewayPanel();
+    if (createdName) {
+        try {
+            await selectProfile(createdName);
+        }
+        catch (err) {
+            toast(err.message);
+        }
+    }
+}).catch(err => toast(err.message)); }
 bind();
 load().catch(err => toast(err.message));

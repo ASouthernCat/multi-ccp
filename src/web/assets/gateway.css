@@ -112,11 +112,17 @@ body {
 .section-heading,
 .gateway-log-head,
 .gateway-view-toolbar,
-.gateway-service-actions {
+.gateway-service-actions,
+.gateway-view-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.gateway-view-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .section-heading h3,
