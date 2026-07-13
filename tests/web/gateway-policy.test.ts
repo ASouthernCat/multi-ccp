@@ -111,7 +111,8 @@ describe("gateway Web UI policy", () => {
 
     expect(app).toContain("aria-disabled=\"${references.length ? 'true' : 'false'}\"");
     expect(app).not.toContain("profileNames?.length ? 'disabled' : ''");
-    expect(app).toContain("Separate multiple model IDs with commas");
+    expect(app).toContain('Separate multiple model IDs with ,');
+    expect(app).toContain('Common models are suggestions only; availability depends on the provider.');
     expect(app).toContain("const openDialogs = Array.from(document.querySelectorAll('dialog[open]'))");
     expect(app).toContain("openDialogs[openDialogs.length - 1]");
     expect(app).toContain('<span>CCR</span>');
@@ -127,16 +128,34 @@ describe("gateway Web UI policy", () => {
     expect(app).toContain('openNewGatewayProfileFromManager');
     expect(app).toContain("openNewProfileDialog({ presetId: 'gateway', presetFilter: 'gateway' })");
     expect(app).not.toContain("$('gatewayDialog').close();\n    await openNewProfileDialog({ presetId: 'gateway'");
-    expect(app).toContain("document.body.append(dialog)");
+    expect(app).not.toContain("document.body.append(dialog)");
+    expect(app).toContain("primaryModalHistory.push(current.id)");
+    expect(app).toContain("primaryModalSuppressedCloseCounts.set(dialog.id, suppressedCount + 1)");
+    expect(app).toContain("primaryModalSuppressedCloseCounts.set(dialogId, suppressedCount - 1)");
+    expect(app).toContain("previous.showModal()");
+    expect(app).toContain("primaryModalCanReturnTo('newProfileDialog')");
+    expect(app).toContain("const canReturnToGateway = primaryModalCanReturnTo('gatewayDialog')");
+    expect(app).toContain('button.hidden = canReturnToGateway');
+    expect(app).toContain("closePrimaryModal('gatewayDialog')");
+    expect(app).toContain("restorePreviousPrimaryModal()");
     expect(app).toContain('placeholder="my-provider"');
-    expect(app).toContain('OpenAI Responses (recommended)');
-    expect(app).toContain('OpenAI Chat Completions (legacy compatibility)');
+    expect(app).not.toContain('name.value = preset.defaultProfileName');
+    expect(app).toContain('Renaming also updates bound Profiles.');
+    expect(app).toContain('Full Endpoint URL');
+    expect(app).toContain('id="upstreamCommonModel"');
+    expect(app).toContain('class="gateway-log-endpoint" title=');
+    expect(app).toContain('Responses (recommended)');
+    expect(app).toContain('Chat Completions (legacy)');
     expect(app).toContain("protocol,");
-    expect(app).toContain("endpointUrl: $('upstreamUrl').value");
+    expect(app).toContain("? { endpointUrl: $('upstreamEndpointUrl').value }");
+    expect(app).toContain(": { baseUrl: $('upstreamBaseUrl').value }");
     expect(app).toContain("gatewayProtocolLabel(upstream.protocol)");
     expect(app).toContain("template.protocol === upstream.protocol && template.endpointUrl === upstream.endpointUrl");
     expect(app).toContain("Change protocol from ${gatewayProtocolLabel(form.dataset.originalProtocol)}");
-    expect(app).toContain("url.value = ''");
+    expect(app).toContain("baseUrl.value = gatewayBaseUrlFromEndpointLikeValue(baseUrl.value)");
+    expect(app).toContain("endpointUrl.value = gatewayEndpointForProtocolSwitch(endpointUrl.value, baseUrl.value, protocol)");
+    expect(app).not.toContain("baseUrl.value = ''");
+    expect(app).not.toContain("endpointUrl.value = ''");
     expect(app).toContain('https://api.example.com/v1/responses');
     expect(app).toContain('https://api.example.com/v1/chat/completions');
     expect(app).toContain("await selectProfile(createdName)");
@@ -164,7 +183,11 @@ describe("gateway Web UI policy", () => {
     expect(html).not.toContain('data-kind-fields="custom-gateway"');
     expect(app).toContain("bindGatewayBinding('newGateway')");
     expect(css).toContain('.gateway-profile-upstream-empty');
+    expect(css).toContain('.gateway-manage-upstreams[hidden]');
     expect(css).toContain('#createProfileSubmit[data-unavailable="1"]:disabled');
+    expect(css).toContain('flex-wrap: wrap');
+    expect(css).toContain('flex-basis: 100%');
+    expect(css).toContain('width: min(250px, 100%)');
     expect(app).toContain("function secretInput(");
     expect(app).toContain("data-secret-toggle");
     expect(app).toContain("/api/profiles/${encodeURIComponent(name)}/api-key");
@@ -176,7 +199,8 @@ describe("gateway Web UI policy", () => {
     expect(css).toContain('.secret-toggle');
     expect(server).toContain('"cache-control": "no-store"');
     expect(server).toContain('protocol = gatewayRequestProtocol(body)');
-    expect(server).toContain('endpointUrl: gatewayRequestEndpoint(body, protocol, provider)');
+    expect(server).toContain('endpointUrl: gatewayRequestUrl(body, protocol, provider)');
+    expect(server).toContain('Send either baseUrl or endpointUrl, not both.');
     expect(server).toContain('chatCompletionsUrl cannot be used with the Responses protocol');
     expect(html).toContain('href="https://github.com/ASouthernCat/multi-ccp"');
     expect(html).toContain('v__CCP_VERSION__');
@@ -248,6 +272,7 @@ describe("gateway Web UI policy", () => {
         completedAt: "2026-07-11T00:00:00.000Z",
         profileName: "gpt-5.6",
         model: "gpt-5.6-sol",
+        endpointUrl: "https://provider.test/v1/responses",
         stream: true,
         effort: "high",
         status: 200,
@@ -262,6 +287,7 @@ describe("gateway Web UI policy", () => {
       kind: "request",
       profileName: "gpt-5.6",
       model: "gpt-5.6-sol",
+      endpointUrl: "https://provider.test/v1/responses",
       stream: true,
       effort: "high",
       status: 200,

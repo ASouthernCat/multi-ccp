@@ -193,20 +193,54 @@ export function normalizeGatewayEndpoint(
   }
   parsed.pathname = normalizedPath;
   parsed.hash = "";
-  const normalized = parsed.toString();
-  if (provider === "openai" && normalized !== officialEndpoint) {
-    throw new CcpError(`OpenAI ${protocol === "openai_responses" ? "Responses" : "Chat Completions"} upstreams use the fixed official endpoint: ${officialEndpoint}`);
+  return parsed.toString();
+}
+
+export function resolveGatewayBaseUrl(
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider,
+  value: string
+): string {
+  const officialEndpoint = protocol === "openai_responses"
+    ? OPENAI_RESPONSES_URL
+    : OPENAI_CHAT_COMPLETIONS_URL;
+  if (provider === "openai" && !value.trim()) return officialEndpoint;
+
+  const raw = value.trim();
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new CcpError("Gateway base URL must be a valid http or https URL.");
   }
-  return normalized;
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new CcpError("Gateway base URL must use http or https.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new CcpError("Gateway base URL must not contain a username or password.");
+  }
+  for (const key of parsed.searchParams.keys()) {
+    if (/(?:key|token|secret|authorization)/i.test(key)) {
+      throw new CcpError(`Gateway base URL query parameter '${key}' may contain credentials. Store credentials in the gateway API key field instead.`);
+    }
+  }
+
+  const suffix = protocol === "openai_responses" ? "responses" : "chat/completions";
+  let pathname = parsed.pathname.replace(/\/+$/, "");
+  const lowerPath = pathname.toLowerCase();
+  const fullSuffix = `/${suffix}`;
+  if (!lowerPath.endsWith(fullSuffix)) {
+    pathname = lowerPath.endsWith("/v1")
+      ? `${pathname}/${suffix}`
+      : `${pathname}/v1/${suffix}`;
+  }
+  parsed.pathname = pathname.replace(/^\/{2,}/, "/");
+  parsed.hash = "";
+  return normalizeGatewayEndpoint(protocol, provider, parsed.toString());
 }
 
 export function resolveGatewayChatCompletionsUrl(provider: GatewayProvider, value: string): string {
-  if (provider === "openai") {
-    if (value.trim() && normalizeChatCompletionsUrl(value) !== OPENAI_CHAT_COMPLETIONS_URL) {
-      throw new CcpError(`OpenAI upstreams use the fixed official endpoint: ${OPENAI_CHAT_COMPLETIONS_URL}`);
-    }
-    return OPENAI_CHAT_COMPLETIONS_URL;
-  }
+  if (provider === "openai" && !value.trim()) return OPENAI_CHAT_COMPLETIONS_URL;
   return normalizeChatCompletionsUrl(value);
 }
 

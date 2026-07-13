@@ -180,6 +180,7 @@ export interface CreateGatewayUpstreamInput {
 }
 
 export interface UpdateGatewayUpstreamInput {
+  id?: string;
   provider: GatewayProvider;
   protocol?: GatewayUpstreamProtocol;
   endpointUrl?: string;

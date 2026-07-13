@@ -62,6 +62,7 @@ export interface GatewayRequestLog {
   stream?: boolean;
   protocol?: GatewayUpstreamProtocol;
   endpointHost?: string;
+  endpointUrl?: string;
   effort?: CanonicalReasoningEffort;
   effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
   upstreamFields?: string[];
@@ -112,6 +113,7 @@ interface RequestState {
   stream?: boolean;
   protocol?: GatewayUpstreamProtocol;
   endpointHost?: string;
+  endpointUrl?: string;
   effort?: CanonicalReasoningEffort;
   effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
   upstreamFields?: string[];
@@ -330,6 +332,7 @@ async function handleRequest(
     state.stream = canonical.stream;
     state.protocol = snapshot.config.protocol;
     state.endpointHost = new URL(snapshot.config.endpointUrl).host;
+    state.endpointUrl = snapshot.config.endpointUrl;
     state.effort = canonical.outputConfig?.effort;
     state.effortMapping = snapshot.config.compatibility.reasoningEffort;
 
@@ -830,6 +833,7 @@ function emitRequestLog(
       ...(state.clientModel ? { clientModel: state.clientModel } : {}),
       ...(state.protocol ? { protocol: state.protocol } : {}),
       ...(state.endpointHost ? { endpointHost: state.endpointHost } : {}),
+      ...(state.endpointUrl ? { endpointUrl: state.endpointUrl } : {}),
       ...(state.stream === undefined ? {} : { stream: state.stream }),
       ...(state.effort ? { effort: state.effort } : {}),
       ...(state.effortMapping ? { effortMapping: state.effortMapping } : {}),

@@ -30,6 +30,7 @@ import {
   OPENAI_GATEWAY_COMPATIBILITY,
   OPENAI_RESPONSES_COMPATIBILITY,
   OPENAI_RESPONSES_URL,
+  resolveGatewayBaseUrl,
   resolveGatewayChatCompletionsUrl
 } from "../../src/gateway/config.js";
 
@@ -59,14 +60,25 @@ async function createCompatibleUpstream(
 }
 
 describe("gateway upstream and profile storage", () => {
-  it("keeps safe query parameters, rejects credentials, and fixes the OpenAI endpoint", () => {
+  it("keeps safe query parameters, rejects credentials, and defaults the OpenAI endpoint", () => {
     expect(normalizeChatCompletionsUrl("https://example.test/openai?api-version=2026-01-01"))
       .toBe("https://example.test/openai/chat/completions?api-version=2026-01-01");
     expect(() => normalizeChatCompletionsUrl("https://example.test/v1?api_key=secret"))
       .toThrow("may contain credentials");
     expect(resolveGatewayChatCompletionsUrl("openai", "")).toBe(OPENAI_CHAT_COMPLETIONS_URL);
-    expect(() => resolveGatewayChatCompletionsUrl("openai", "https://proxy.test/v1"))
-      .toThrow("fixed official endpoint");
+    expect(resolveGatewayChatCompletionsUrl("openai", "https://proxy.test/v1"))
+      .toBe("https://proxy.test/v1/chat/completions");
+  });
+
+  it("completes flexible gateway base URLs without duplicating v1", () => {
+    expect(resolveGatewayBaseUrl("openai_responses", "openai-compatible", "https://suoxie.codes/"))
+      .toBe("https://suoxie.codes/v1/responses");
+    expect(resolveGatewayBaseUrl("openai_responses", "openai-compatible", "https://suoxie.codes/v1"))
+      .toBe("https://suoxie.codes/v1/responses");
+    expect(resolveGatewayBaseUrl("openai_chat_completions", "openai-compatible", "https://example.test/custom"))
+      .toBe("https://example.test/custom/v1/chat/completions");
+    expect(resolveGatewayBaseUrl("openai_responses", "openai-compatible", "https://example.test/v1/responses"))
+      .toBe("https://example.test/v1/responses");
   });
 
   it("strictly validates protocol endpoints while preserving legacy Chat URL completion", () => {
@@ -96,11 +108,11 @@ describe("gateway upstream and profile storage", () => {
       "https://example.test/v1/responses?access_token=secret"
     )).toThrow("may contain credentials");
     expect(normalizeGatewayEndpoint("openai_responses", "openai", "")).toBe(OPENAI_RESPONSES_URL);
-    expect(() => normalizeGatewayEndpoint(
+    expect(normalizeGatewayEndpoint(
       "openai_responses",
       "openai",
       "https://proxy.test/v1/responses"
-    )).toThrow("fixed official endpoint");
+    )).toBe("https://proxy.test/v1/responses");
   });
 
   it("reads legacy v1 Chat configs as v2 without rewriting the file", async () => {
@@ -371,6 +383,30 @@ describe("gateway upstream and profile storage", () => {
       expect((await stat(getGatewaySecretPath(profile.dir))).mode & 0o777).toBe(0o600);
       expect((await stat(getGatewayUpstreamSecretPath("openai", context))).mode & 0o777).toBe(0o600);
     }
+  });
+
+  it("renames an upstream and updates existing profile bindings", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "old-provider", models: ["model"] });
+    const profile = await createGatewayProfile({
+      name: "bound-profile",
+      upstreamId: "old-provider",
+      model: "model"
+    }, context);
+
+    const renamed = await updateGatewayUpstream("old-provider", {
+      id: "new-provider",
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://example.test/v1/chat/completions",
+      models: ["model"],
+      compatibility: OPENAI_GATEWAY_COMPATIBILITY
+    }, context);
+
+    expect(renamed.id).toBe("new-provider");
+    expect((await readMeta(profile.dir))?.gateway?.upstreamId).toBe("new-provider");
+    await expect(readGatewayUpstream("old-provider", context)).rejects.toThrow("does not exist");
+    expect((await readGatewayUpstream("new-provider", context)).secret.apiKey).toBe("provider-key");
   });
 
   it("preserves upstream ID casing while rejecting case-only duplicates on every filesystem", async () => {

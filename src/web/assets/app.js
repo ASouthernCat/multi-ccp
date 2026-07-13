@@ -1,6 +1,8 @@
 const token = document.querySelector('meta[name="ccp-ui-token"]').content;
-const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', ccr: null, gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], ccrRoutes: [], ccrRoutesReason: '', ccrRoutesMessage: '', presets: [], selectedPreset: 'custom-api', lastPresetName: '', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
+const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', ccr: null, gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], ccrRoutes: [], ccrRoutesReason: '', ccrRoutesMessage: '', presets: [], selectedPreset: 'custom-api', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
 const $ = (id) => document.getElementById(id);
+const primaryModalHistory = [];
+const primaryModalSuppressedCloseCounts = new Map();
 const api = async (path, options = {}) => {
     const res = await fetch(path, { ...options, headers: { 'content-type': 'application/json', 'x-ccp-ui-token': token, ...(options.headers || {}) } });
     const data = await res.json().catch(() => ({}));
@@ -51,6 +53,7 @@ function iconSvg(name) {
         plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
         search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
         history: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>',
+        terminal: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3"/><path d="M13 15h4"/></svg>',
         trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>',
         power: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v10"/><path d="M18.4 6.6a8 8 0 1 1-12.8 0"/></svg>',
         fileText: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>',
@@ -86,7 +89,7 @@ function iconFor(type) { return iconSvg({ main: 'home', api: 'key', gateway: 'ro
 const providerIcons = {
     aicodemirror: '/icons/aicodemirror.ico',
     anthropic: '/icons/anthropic.svg',
-    claude: '/icons/claude-code.svg',
+    claude: '/icons/claude.svg',
     deepseek: '/icons/deepseek.svg',
     mimo: '/icons/mimo.svg',
     openai: '/icons/chatgpt.svg',
@@ -153,18 +156,24 @@ function bindBoardControls(scope) { const search = scope.querySelector('#searchI
         return; state.filter = e.target.dataset.filter; renderBoard(); }; const card = scope.querySelector('#cardViewBtn'); if (card)
     card.onclick = () => { state.view = 'cards'; renderBoard(); }; const list = scope.querySelector('#listViewBtn'); if (list)
     list.onclick = () => { state.view = 'list'; renderBoard(); }; }
-function renderCards(arr) { return `<div class="cards">${arr.map(p => `<article class="profile-card ${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><div class="card-top"><div class="profile-icon ${p.type}">${profileIcon(p)}</div><div class="card-title"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(actionHint(p))}</p></div></div>${tags(p.tags)}<div class="profile-meta">${brief(p)}</div><div class="card-actions"><button class="ghost tiny" data-term="${escapeHtml(p.name)}">term ↗</button></div></article>`).join('')}</div>`; }
-function renderList(arr) { return `<table class="list-table"><thead><tr><th>Name</th><th>Tags</th><th>Model / Route</th><th>Base / Path</th><th>Actions</th></tr></thead><tbody>${arr.map(p => `<tr class="${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><td><span class="profile-list-name"><span class="profile-icon ${p.type}">${profileIcon(p)}</span><strong>${escapeHtml(p.name)}</strong></span></td><td>${tags(p.tags)}</td><td>${escapeHtml(p.model || p.meta?.ccrRoute || '—')}</td><td>${escapeHtml(hostname(p.baseUrl) || shortPath(p.dir))}</td><td><button class="ghost tiny" data-term="${escapeHtml(p.name)}">term ↗</button></td></tr>`).join('')}</tbody></table>`; }
+function renderCards(arr) { return `<div class="cards">${arr.map(p => `<article class="profile-card ${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><div class="card-top"><div class="profile-icon ${p.type}">${profileIcon(p)}</div><div class="card-title"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(actionHint(p))}</p></div></div>${tags(p.tags)}<div class="profile-meta">${brief(p)}</div><div class="card-actions"><button class="ghost tiny icon-action" type="button" data-term="${escapeHtml(p.name)}" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button></div><img class="profile-clawd profile-clawd-card" src="/icons/clawd.svg" alt="" aria-hidden="true" draggable="false" /></article>`).join('')}</div>`; }
+function renderList(arr) { return `<table class="list-table"><thead><tr><th>Name</th><th>Tags</th><th>Model / Route</th><th>Base / Path</th><th>Actions</th></tr></thead><tbody>${arr.map(p => `<tr class="${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><td><span class="profile-list-name"><span class="profile-icon ${p.type}">${profileIcon(p)}</span><strong>${escapeHtml(p.name)}</strong></span></td><td>${tags(p.tags)}</td><td>${escapeHtml(p.model || p.meta?.ccrRoute || '—')}</td><td>${escapeHtml(hostname(p.baseUrl) || shortPath(p.dir))}</td><td><span class="profile-list-actions"><button class="ghost tiny icon-action" type="button" data-term="${escapeHtml(p.name)}" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button><img class="profile-clawd profile-clawd-list" src="/icons/clawd.svg" alt="" aria-hidden="true" draggable="false" /></span></td></tr>`).join('')}</tbody></table>`; }
+function updateBoardSelection(name) {
+    const board = $('profileBoard');
+    if (!board)
+        return;
+    board.querySelectorAll('[data-select]').forEach(element => element.classList.toggle('selected', element.dataset.select === name));
+}
 async function selectProfile(name) { const data = await api(`/api/profiles/${encodeURIComponent(name)}`); if (data.profile?.type === 'ccr')
-    await loadRoutes(); state.selected = name; $('workspace').classList.add('drawer-open'); $('drawer').setAttribute('aria-hidden', 'false'); renderDrawer(data.profile); renderBoard(); }
-function renderDrawer(p) { const env = p.settings?.env || {}; $('drawer').innerHTML = `<div class="drawer-rail"><button class="icon-btn" id="drawerClose" type="button" title="关闭">×</button></div><div class="drawer-fixed"><p class="eyebrow">${escapeHtml(p.type)} profile</p><h2>${escapeHtml(p.name)}</h2>${tags(p.tags)}<div class="drawer-section launch-section"><p class="eyebrow">launch</p><div class="command"><code>${escapeHtml(p.startCommand)}</code><span class="command-actions"><button class="ghost tiny" id="copyStart">Copy</button><button class="ghost tiny" id="termStart">term ↗</button></span></div></div></div><div class="drawer-scroll"><div class="profile-summary"><div class="drawer-section profile-info"><div class="kv"><span>Status</span><strong>${escapeHtml(p.statusText)}</strong><span>Path</span><strong><button class="path-link" id="revealSettings" type="button" title="在文件管理器中显示">${escapeHtml(p.settingsPath)}</button></strong></div>${fullConfigBlock(p)}</div></div>${settingsForm(p, env)}<div class="drawer-section drawer-sync-section"><p class="eyebrow">sessions</p><button class="ghost icon-action" id="openSyncWorkspace" type="button">${iconSvg('history')}<span>Sync Workspace</span></button><p class="hint">在 profile 之间可视化同步项目会话日志。</p></div>${p.type !== 'main' ? `<div class="drawer-section"><p class="eyebrow">danger zone</p><p class="hint">删除操作不可撤销。请输入 profile 名称确认。</p><div class="danger-actions"><input id="deleteConfirm" placeholder="${escapeHtml(p.name)}"/><button class="ghost" id="deleteBtn">Delete Profile</button></div></div>` : ''}</div>`; $('drawerClose').onclick = closeDrawer; $('copyStart').onclick = () => copy(p.startCommand); $('termStart').onclick = () => launchTerminal(p.name); $('revealSettings').onclick = () => revealSettings(p.name); $('openSyncWorkspace').onclick = () => openSyncWorkspace(p.name); bindSecretToggles($('drawer')); if (p.type === 'api')
+    await loadRoutes(); state.selected = name; $('drawer').inert = false; $('drawer').setAttribute('aria-hidden', 'false'); renderDrawer(data.profile); updateBoardSelection(name); $('workspace').classList.add('drawer-open'); }
+function renderDrawer(p) { const env = p.settings?.env || {}; $('drawer').innerHTML = `<div class="drawer-rail"><button class="icon-btn" id="drawerClose" type="button" title="关闭">×</button></div><div class="drawer-fixed"><p class="eyebrow">${escapeHtml(p.type)} profile</p><h2>${escapeHtml(p.name)}</h2>${tags(p.tags)}<div class="drawer-section launch-section"><p class="eyebrow">launch</p><div class="command"><code>${escapeHtml(p.startCommand)}</code><span class="command-actions"><button class="ghost tiny" id="copyStart">Copy</button><button class="ghost tiny icon-action" id="termStart" type="button" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button></span></div></div></div><div class="drawer-scroll"><div class="profile-summary"><div class="drawer-section profile-info"><div class="kv"><span>Status</span><strong>${escapeHtml(p.statusText)}</strong><span>Path</span><strong><button class="path-link" id="revealSettings" type="button" title="在文件管理器中显示">${escapeHtml(p.settingsPath)}</button></strong></div>${fullConfigBlock(p)}</div></div>${settingsForm(p, env)}<div class="drawer-section drawer-sync-section"><p class="eyebrow">sessions</p><button class="ghost icon-action" id="openSyncWorkspace" type="button">${iconSvg('history')}<span>Sync Workspace</span></button><p class="hint">在 profile 之间可视化同步项目会话日志。</p></div>${p.type !== 'main' ? `<div class="drawer-section"><p class="eyebrow">danger zone</p><p class="hint">删除操作不可撤销。请输入 profile 名称确认。</p><div class="danger-actions"><input id="deleteConfirm" placeholder="${escapeHtml(p.name)}"/><button class="ghost" id="deleteBtn">Delete Profile</button></div></div>` : ''}</div>`; $('drawerClose').onclick = closeDrawer; $('copyStart').onclick = () => copy(p.startCommand); $('termStart').onclick = () => launchTerminal(p.name); $('revealSettings').onclick = () => revealSettings(p.name); $('openSyncWorkspace').onclick = () => openSyncWorkspace(p.name); bindSecretToggles($('drawer')); if (p.type === 'api')
     void hydrateProfileApiKey(p.name); const openCcr = $('openCcrUiFromDrawer'); if (openCcr)
     openCcr.onclick = e => { e.preventDefault(); openCcrUi(); }; const openGateway = $('openGatewayFromDrawer'); if (openGateway)
     openGateway.onclick = openGatewayPanel; if (p.type === 'gateway')
     bindGatewayBinding('editGateway', p.meta?.gateway?.upstreamId, p.meta?.gateway?.model); const save = $('saveSettings'); if (save)
     save.onclick = () => saveProfile(p).catch(err => toast(err.message)); const del = $('deleteBtn'); if (del)
     del.onclick = () => deleteProfile(p.name); }
-function closeDrawer() { state.selected = null; $('workspace').classList.remove('drawer-open'); $('drawer').setAttribute('aria-hidden', 'true'); $('drawer').innerHTML = '<div class="drawer-rail"><button class="icon-btn" id="drawerClose" type="button" title="关闭">×</button></div><div class="empty-drawer"><p class="eyebrow">profile details</p><h2>选择一个 Profile</h2><p>点击左侧卡片后，详情和编辑面板会从右侧展开。</p></div>'; $('drawerClose').onclick = closeDrawer; renderBoard(); }
+function closeDrawer() { state.selected = null; updateBoardSelection(null); $('workspace').classList.remove('drawer-open'); $('drawer').setAttribute('aria-hidden', 'true'); $('drawer').inert = true; }
 function ccrRouteOptions(selected = '') { const routes = state.ccrRoutes || []; if (!routes.length)
     return `<option value="">${escapeHtml(state.ccrRoutesMessage || '没有可用 CCR 路由')}</option>`; const missing = selected && !routes.includes(selected) ? `<option value="" selected>当前路由不可用：${escapeHtml(selected)}</option>` : ''; const placeholder = selected && routes.includes(selected) ? '<option value="">选择模型路由</option>' : '<option value="" selected>选择模型路由</option>'; return [missing || placeholder, ...routes.map(route => `<option value="${escapeHtml(route)}" ${route === selected ? 'selected' : ''}>${escapeHtml(route)}</option>`)].join(''); }
 function fullConfigBlock(p) { const config = { settings: p.settings || {}, ...(p.meta ? { ccp: p.meta } : {}) }; return `<details class="preset-config drawer-config"><summary>完整配置</summary><pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre></details>`; }
@@ -398,8 +407,8 @@ function gatewayFilteredLogEntries(log) {
     return entries;
 }
 function gatewayLogRows(log) { const entries = gatewayFilteredLogEntries(log); if (!entries.length)
-    return '<div class="gateway-log-empty">No matching request events</div>'; return `<div class="gateway-log-scroll"><table class="gateway-log-table"><thead><tr><th>Time</th><th>Profile</th><th>Model</th><th>Mode</th><th>Effort</th><th>Status</th><th>Latency</th><th>Tokens</th></tr></thead><tbody>${entries.map(entry => { if (entry.kind === 'system')
-    return `<tr class="system"><td>${gatewayLogTime(entry.completedAt)}</td><td colspan="7">${escapeHtml(entry.message || 'Gateway event')}</td></tr>`; const status = Number(entry.status || 0); const statusClass = status >= 500 ? 'bad' : status >= 400 ? 'warn' : 'ok'; const tokens = entry.inputTokens === undefined && entry.outputTokens === undefined ? '&mdash;' : `${entry.inputTokens ?? 0} / ${entry.outputTokens ?? 0}`; return `<tr><td>${gatewayLogTime(entry.completedAt)}</td><td><strong>${escapeHtml(entry.profileName || '—')}</strong></td><td>${escapeHtml(entry.model || '—')}</td><td>${entry.stream ? 'Stream' : 'JSON'}</td><td>${escapeHtml(entry.effort || '—')}</td><td><span class="gateway-http ${statusClass}">${status || '—'}</span></td><td>${entry.durationMs === undefined ? '&mdash;' : `${Math.round(entry.durationMs)} ms`}</td><td>${tokens}</td></tr>`; }).join('')}</tbody></table></div>`; }
+    return '<div class="gateway-log-empty">No matching request events</div>'; return `<div class="gateway-log-scroll"><table class="gateway-log-table"><thead><tr><th>Time</th><th>Profile</th><th>Model</th><th>Endpoint URL</th><th>Mode</th><th>Effort</th><th>Status</th><th>Latency</th><th>Tokens</th></tr></thead><tbody>${entries.map(entry => { if (entry.kind === 'system')
+    return `<tr class="system"><td>${gatewayLogTime(entry.completedAt)}</td><td colspan="8">${escapeHtml(entry.message || 'Gateway event')}</td></tr>`; const status = Number(entry.status || 0); const statusClass = status >= 500 ? 'bad' : status >= 400 ? 'warn' : 'ok'; const tokens = entry.inputTokens === undefined && entry.outputTokens === undefined ? '&mdash;' : `${entry.inputTokens ?? 0} / ${entry.outputTokens ?? 0}`; const endpointUrl = entry.endpointUrl || '-'; return `<tr><td>${gatewayLogTime(entry.completedAt)}</td><td><strong>${escapeHtml(entry.profileName || '-')}</strong></td><td>${escapeHtml(entry.model || '-')}</td><td class="gateway-log-endpoint" title="${escapeHtml(endpointUrl)}">${escapeHtml(endpointUrl)}</td><td>${entry.stream ? 'Stream' : 'JSON'}</td><td>${escapeHtml(entry.effort || '-')}</td><td><span class="gateway-http ${statusClass}">${status || '-'}</span></td><td>${entry.durationMs === undefined ? '&mdash;' : `${Math.round(entry.durationMs)} ms`}</td><td>${tokens}</td></tr>`; }).join('')}</tbody></table></div>`; }
 function gatewayModelChips(models = []) {
     const visible = models.slice(0, 5);
     const overflow = models.length > visible.length;
@@ -415,7 +424,8 @@ function gatewayTabButton(id, label, count) {
     return `<button class="gateway-tab ${active ? 'active' : ''}" type="button" role="tab" aria-selected="${active}" data-gateway-tab="${id}"><span>${label}</span><b>${count}</b></button>`;
 }
 function gatewayUpstreamsView(upstreams) {
-    return `<section class="gateway-view gateway-upstreams" role="tabpanel"><div class="gateway-view-toolbar"><div><p class="eyebrow">upstreams</p><h3>OpenAI-format providers</h3></div><div class="gateway-view-actions"><button class="ghost icon-action" id="gatewayCreateProfile" type="button" title="创建 Gateway Profile">${iconSvg('plus')}<span>New Profile</span></button><button class="primary icon-action" id="gatewayAddUpstream" type="button">${iconSvg('plus')}<span>New Upstream</span></button></div></div>${gatewayUpstreamRows(upstreams)}</section>`;
+    const createProfileAction = primaryModalCanReturnTo('newProfileDialog') ? '' : `<button class="ghost icon-action" id="gatewayCreateProfile" type="button" title="创建 Gateway Profile">${iconSvg('plus')}<span>New Profile</span></button>`;
+    return `<section class="gateway-view gateway-upstreams" role="tabpanel"><div class="gateway-view-toolbar"><div><p class="eyebrow">upstreams</p><h3>OpenAI-format providers</h3></div><div class="gateway-view-actions">${createProfileAction}<button class="primary icon-action" id="gatewayAddUpstream" type="button">${iconSvg('plus')}<span>New Upstream</span></button></div></div>${gatewayUpstreamRows(upstreams)}</section>`;
 }
 function gatewayLogView(log, status) {
     const entries = log?.entries || [];
@@ -429,7 +439,7 @@ function gatewayLogView(log, status) {
     return `<section class="gateway-view gateway-log" role="tabpanel"><div class="gateway-view-toolbar gateway-log-toolbar"><div><p class="eyebrow">request log</p><h3>${escapeHtml(entries.length)} recent events${filterCount}</h3><code title="${escapeHtml(log?.path || '')}">${escapeHtml(shortPath(log?.path || status.logPath || ''))}</code></div><div class="gateway-log-tools"><div class="gateway-log-filters" role="group" aria-label="Request log filter"><button type="button" data-log-filter="all" class="${state.gatewayLogFilter === 'all' ? 'active' : ''}">All</button><button type="button" data-log-filter="errors" class="${state.gatewayLogFilter === 'errors' ? 'active' : ''}">Errors</button><button type="button" data-log-filter="success" class="${state.gatewayLogFilter === 'success' ? 'active' : ''}">Success</button></div><button class="ghost icon-action icon-only" id="gatewayLogRefresh" type="button" title="Refresh log" aria-label="Refresh log">${iconSvg('refresh')}</button><button class="ghost icon-action danger-lite" id="gatewayLogClear" type="button">${iconSvg('trash')}<span>Clear</span></button></div></div>${gatewayLogRows(log)}</section>`;
 }
 function bindGatewayPanel(status, log, upstreams) {
-    $('gatewayClose').onclick = () => $('gatewayDialog').close();
+    $('gatewayClose').onclick = () => closePrimaryModal('gatewayDialog');
     document.querySelectorAll('[data-gateway-tab]').forEach(button => button.onclick = () => { state.gatewayTab = button.dataset.gatewayTab; renderGatewayPanel(status, log, upstreams); });
     document.querySelectorAll('[data-log-filter]').forEach(button => button.onclick = () => { state.gatewayLogFilter = button.dataset.logFilter; renderGatewayPanel(status, log, upstreams); });
     const add = $('gatewayAddUpstream'); if (add)
@@ -467,8 +477,8 @@ async function openGatewayPanel() { try {
     state.upstreams = upstreamData.upstreams || [];
     state.gatewayUpstreamTemplates = templateData.templates || [];
     renderGatewayPanel(status, log, state.upstreams);
-    if (!$('gatewayDialog').open)
-        $('gatewayDialog').showModal();
+    activatePrimaryModal('gatewayDialog');
+    renderGatewayPanel(status, log, state.upstreams);
 }
 catch (err) {
     toast(err.message);
@@ -483,9 +493,60 @@ async function openNewProfileDialog(options = {}) {
     if (options.presetId && state.presets.some(preset => preset.id === options.presetId))
         state.selectedPreset = options.presetId;
     renderPresetPicker();
-    const dialog = $('newProfileDialog');
-    document.body.append(dialog);
-    dialog.showModal();
+    activatePrimaryModal('newProfileDialog');
+    renderPresetDetail();
+}
+
+function activatePrimaryModal(targetId) {
+    const target = $(targetId);
+    const current = ['newProfileDialog', 'gatewayDialog']
+        .map(id => $(id))
+        .find(dialog => dialog.open);
+    if (current && current.id !== targetId) {
+        primaryModalHistory.push(current.id);
+        closePrimaryModalWithoutHistory(current);
+    }
+    if (!target.open)
+        target.showModal();
+}
+
+function primaryModalCanReturnTo(dialogId) {
+    return primaryModalHistory.at(-1) === dialogId;
+}
+
+function handlePrimaryModalClose(dialogId) {
+    const suppressedCount = primaryModalSuppressedCloseCounts.get(dialogId) || 0;
+    if (suppressedCount > 0) {
+        if (suppressedCount === 1)
+            primaryModalSuppressedCloseCounts.delete(dialogId);
+        else
+            primaryModalSuppressedCloseCounts.set(dialogId, suppressedCount - 1);
+        return;
+    }
+    restorePreviousPrimaryModal();
+}
+
+function closePrimaryModal(dialogId) {
+    const dialog = $(dialogId);
+    if (!dialog.open)
+        return;
+    closePrimaryModalWithoutHistory(dialog);
+    restorePreviousPrimaryModal();
+}
+
+function closePrimaryModalWithoutHistory(dialog) {
+    const suppressedCount = primaryModalSuppressedCloseCounts.get(dialog.id) || 0;
+    primaryModalSuppressedCloseCounts.set(dialog.id, suppressedCount + 1);
+    dialog.close();
+}
+
+function restorePreviousPrimaryModal() {
+    const previousId = primaryModalHistory.pop();
+    if (!previousId)
+        return;
+    const previous = $(previousId);
+    if (!previous.open)
+        previous.showModal();
 }
 async function openNewGatewayProfileFromManager() {
     if (!state.upstreams.length) {
@@ -531,17 +592,121 @@ function applyGatewayUpstreamTemplate(templateId, seedId = false) {
     provider.value = template.provider;
     providerLabel.value = template.provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible';
     protocol.value = template.protocol;
-    $('upstreamUrl').value = template.endpointUrl || '';
+    $('upstreamEndpointUrl').value = template.endpointUrl || '';
+    $('upstreamBaseUrl').value = gatewayEndpointToBaseUrl(template.endpointUrl || '', template.protocol);
     $('upstreamModels').value = (template.models || []).join(', ');
     $('upstreamTemplateHint').textContent = template.description || '';
+    $('upstreamTemplateHint').title = template.description || '';
     updateUpstreamBrandPreview(gatewayTemplateBrand(templateId));
     const templateDefaultIds = state.gatewayUpstreamTemplates.map(item => item.defaultUpstreamId).filter(Boolean);
     if (seedId && (!upstreamId.value.trim() || templateDefaultIds.includes(upstreamId.value.trim())))
         upstreamId.value = template.defaultUpstreamId || '';
+    syncUpstreamUrlMode('base');
     syncUpstreamProtocolEditor(changedProtocol && template.id === 'custom');
     const mode = template.compatibilityMode || gatewayCompatibilityMode(template.protocol, template.provider, template.compatibility);
     const modeButton = document.querySelector(`[data-gateway-mode-control="upstreamEditor"] [data-gateway-mode="${mode}"]`);
     modeButton?.click();
+}
+function gatewayEndpointToBaseUrl(endpointUrl, protocol) {
+    if (!endpointUrl)
+        return '';
+    try {
+        const url = new URL(endpointUrl);
+        const suffix = protocol === 'openai_responses' ? '/responses' : '/chat/completions';
+        if (url.pathname.toLowerCase().endsWith(suffix))
+            url.pathname = url.pathname.slice(0, -suffix.length) || '/';
+        return url.toString().replace(/\/$/, '');
+    }
+    catch {
+        return endpointUrl;
+    }
+}
+function gatewayBaseUrlFromEndpointLikeValue(value) {
+    if (!value.trim())
+        return '';
+    try {
+        const url = new URL(value);
+        for (const suffix of ['/responses', '/chat/completions']) {
+            if (url.pathname.toLowerCase().endsWith(suffix)) {
+                url.pathname = url.pathname.slice(0, -suffix.length) || '/';
+                return url.toString().replace(/\/$/, '');
+            }
+        }
+        return url.toString().replace(/\/$/, '');
+    }
+    catch {
+        return value;
+    }
+}
+function gatewayHasKnownEndpointSuffix(value) {
+    try {
+        const pathname = new URL(value).pathname.toLowerCase();
+        return ['/responses', '/chat/completions'].some(suffix => pathname.endsWith(suffix));
+    }
+    catch {
+        return false;
+    }
+}
+function gatewayEndpointFromBaseUrl(baseUrl, protocol) {
+    if (!baseUrl.trim())
+        return '';
+    try {
+        const url = new URL(gatewayBaseUrlFromEndpointLikeValue(baseUrl));
+        const suffix = protocol === 'openai_responses' ? 'responses' : 'chat/completions';
+        let pathname = url.pathname.replace(/\/+$/, '');
+        if (!pathname.toLowerCase().endsWith(`/${suffix}`))
+            pathname = pathname.toLowerCase().endsWith('/v1') ? `${pathname}/${suffix}` : `${pathname}/v1/${suffix}`;
+        url.pathname = pathname.replace(/^\/{2,}/, '/');
+        url.hash = '';
+        return url.toString();
+    }
+    catch {
+        return '';
+    }
+}
+function gatewayEndpointForProtocolSwitch(endpointUrl, baseUrl, protocol) {
+    if (!endpointUrl.trim())
+        return gatewayEndpointFromBaseUrl(baseUrl, protocol);
+    if (!gatewayHasKnownEndpointSuffix(endpointUrl))
+        return endpointUrl;
+    return gatewayEndpointFromBaseUrl(endpointUrl, protocol) || endpointUrl;
+}
+function gatewayActiveUpstreamUrl() {
+    return $('upstreamUrlMode')?.value === 'endpoint' ? $('upstreamEndpointUrl')?.value || '' : $('upstreamBaseUrl')?.value || '';
+}
+function gatewayCommonModels(protocol) {
+    return protocol === 'openai_responses'
+        ? ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'grok-4.5']
+        : ['gpt-5.6', 'gpt-5.5', 'gpt-4.1', 'o3', 'deepseek-chat'];
+}
+function gatewayCommonModelOptions(protocol) {
+    return gatewayCommonModels(protocol).map(model => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`).join('');
+}
+function bindGatewayCommonModels() {
+    const select = $('upstreamCommonModel');
+    if (!select)
+        return;
+    select.onchange = () => {
+        const model = select.value;
+        if (!model)
+            return;
+        const input = $('upstreamModels');
+        const models = input.value.split(',').map(value => value.trim()).filter(Boolean);
+        if (!models.includes(model))
+            models.push(model);
+        input.value = models.join(', ');
+        select.value = '';
+        input.dispatchEvent(new Event('input'));
+    };
+}
+function syncUpstreamUrlMode(mode = $('upstreamUrlMode')?.value || 'base') {
+    const isEndpoint = mode === 'endpoint';
+    $('upstreamUrlMode').value = mode;
+    document.querySelectorAll('[data-upstream-url-mode]').forEach(button => button.classList.toggle('active', button.dataset.upstreamUrlMode === mode));
+    $('upstreamBaseUrlField').hidden = isEndpoint;
+    $('upstreamEndpointUrlField').hidden = !isEndpoint;
+    $('upstreamBaseUrl').required = !isEndpoint;
+    $('upstreamEndpointUrl').required = isEndpoint;
 }
 function renderUpstreamEditor(upstream) {
     const editing = Boolean(upstream);
@@ -559,45 +724,74 @@ function renderUpstreamEditor(upstream) {
     form.classList.remove('is-closing');
     scrim.classList.remove('is-closing');
     const template = state.gatewayUpstreamTemplates.find(item => item.id === templateId);
-    const endpointLabel = protocol === 'openai_responses' ? 'Responses Endpoint URL' : 'Chat Completions Endpoint URL';
-    const endpointPlaceholder = protocol === 'openai_responses' ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions';
-    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">×</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint" id="upstreamTemplateHint">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required ${editing ? 'readonly' : ''} placeholder="my-provider" autocomplete="off" /></label><label>Provider Format<input id="upstreamProviderLabel" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Protocol<select id="upstreamProtocol"><option value="openai_responses" ${protocol === 'openai_responses' ? 'selected' : ''}>OpenAI Responses (recommended)</option><option value="openai_chat_completions" ${protocol === 'openai_chat_completions' ? 'selected' : ''}>OpenAI Chat Completions (legacy compatibility)</option></select></label><label class="gateway-wide"><span id="upstreamUrlLabel">${endpointLabel}</span><input id="upstreamUrl" value="${escapeHtml(upstream?.endpointUrl || '')}" required placeholder="${endpointPlaceholder}" autocomplete="url" /></label><label class="gateway-wide">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><span class="gateway-field-hint">Separate multiple model IDs with commas, for example: gpt-5.6-sol, gpt-5.5</span></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... 或供应商 API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}</div>${gatewayAdvancedFields('upstreamEditor', protocol, compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
+    const baseUrl = gatewayEndpointToBaseUrl(upstream?.endpointUrl || '', protocol);
+    const endpointUrl = upstream?.endpointUrl || '';
+    const renameHint = editing ? '<span class="gateway-field-hint gateway-field-hint-compact">Renaming also updates bound Profiles.</span>' : '';
+    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">&times;</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide gateway-template-field">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamTemplateHint" title="${escapeHtml(template?.description || '')}">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required placeholder="my-provider" autocomplete="off" />${renameHint}</label><label>Provider Format<input id="upstreamProviderLabel" class="gateway-readonly" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly title="Provider Format is controlled by the selected template" /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Protocol<select id="upstreamProtocol"><option value="openai_responses" ${protocol === 'openai_responses' ? 'selected' : ''}>Responses (recommended)</option><option value="openai_chat_completions" ${protocol === 'openai_chat_completions' ? 'selected' : ''}>Chat Completions (legacy)</option></select></label><div class="gateway-wide gateway-url-config"><div class="gateway-url-heading"><span>URL</span><div class="segmented gateway-url-mode" role="group"><button type="button" class="active" data-upstream-url-mode="base">Base URL</button><button type="button" data-upstream-url-mode="endpoint">Full Endpoint</button></div><input id="upstreamUrlMode" type="hidden" value="base" /></div><label id="upstreamBaseUrlField">Base URL<input id="upstreamBaseUrl" value="${escapeHtml(baseUrl)}" required placeholder="https://api.example.com or .../v1" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamBaseUrlHint">Auto-completes <code>/v1/responses</code></span></label><label id="upstreamEndpointUrlField" hidden>Full Endpoint URL<input id="upstreamEndpointUrl" value="${escapeHtml(endpointUrl)}" placeholder="https://api.example.com/v1/responses" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact">Used exactly as entered</span></label></div><label class="gateway-wide gateway-model-field">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><div class="gateway-model-help"><span>Separate multiple model IDs with ,</span><span>Common models may not be supported by this provider.</span></div><div class="gateway-model-quick"><span>Quick add</span><select id="upstreamCommonModel"><option value="">Select a common model...</option>${gatewayCommonModelOptions(protocol)}</select></div></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... or provider API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}</div>${gatewayAdvancedFields('upstreamEditor', protocol, compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
+    const modelHints = form.querySelectorAll('.gateway-model-help span');
+    modelHints[0].textContent = 'Separate multiple model IDs with commas.';
+    modelHints[1].remove();
+    const modelAvailability = document.createElement('span');
+    modelAvailability.className = 'gateway-model-availability';
+    modelAvailability.textContent = 'Common models are suggestions only; availability depends on the provider.';
+    $('upstreamCommonModel').after(modelAvailability);
     bindSecretToggles(form);
+    $('upstreamTemplate').title = template?.description || '';
+    $('upstreamTemplateHint').hidden = true;
     $('upstreamTemplate').onchange = event => applyGatewayUpstreamTemplate(event.target.value, !editing);
     $('upstreamProtocol').onchange = () => {
         $('upstreamTemplate').value = 'custom';
         syncUpstreamProtocolEditor(true);
     };
+    document.querySelector('.gateway-url-mode').onclick = event => {
+        if (event.target.dataset.upstreamUrlMode)
+            syncUpstreamUrlMode(event.target.dataset.upstreamUrlMode);
+    };
     const refreshCustomBrand = () => {
         if ($('upstreamTemplate').value === 'custom')
-            updateUpstreamBrandPreview(inferProviderBrand($('upstreamId').value, $('upstreamUrl').value, $('upstreamModels').value));
+            updateUpstreamBrandPreview(inferProviderBrand($('upstreamId').value, gatewayActiveUpstreamUrl(), $('upstreamModels').value));
     };
     $('upstreamId').addEventListener('input', refreshCustomBrand);
-    $('upstreamUrl').addEventListener('input', refreshCustomBrand);
+    $('upstreamBaseUrl').addEventListener('input', refreshCustomBrand);
+    $('upstreamEndpointUrl').addEventListener('input', refreshCustomBrand);
     $('upstreamModels').addEventListener('input', refreshCustomBrand);
     $('upstreamClose').onclick = () => void closeUpstreamEditor();
     $('upstreamCancel').onclick = () => void closeUpstreamEditor();
     $('upstreamSave').onclick = () => saveGatewayUpstream(editing ? upstream.id : '');
     form.hidden = false;
     scrim.hidden = false;
+    syncUpstreamUrlMode('base');
+    bindGatewayCommonModels();
     syncUpstreamProtocolEditor(false, compatibility, mode);
 }
+
 function syncUpstreamProtocolEditor(clearCustomEndpoint = false, compatibility, requestedMode) {
     const protocol = $('upstreamProtocol').value;
     const provider = $('upstreamProvider').value;
     const responses = protocol === 'openai_responses';
-    const url = $('upstreamUrl');
-    $('upstreamUrlLabel').textContent = responses ? 'Responses Endpoint URL' : 'Chat Completions Endpoint URL';
-    url.placeholder = responses ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions';
+    const baseUrl = $('upstreamBaseUrl');
+    const endpointUrl = $('upstreamEndpointUrl');
+    endpointUrl.placeholder = responses ? 'https://api.example.com/v1/responses' : 'https://api.example.com/v1/chat/completions';
+    $('upstreamBaseUrlHint').innerHTML = responses
+        ? 'Auto-completes <code>/v1/responses</code>'
+        : 'Auto-completes <code>/v1/chat/completions</code>';
     if (provider === 'openai') {
-        url.value = responses ? 'https://api.openai.com/v1/responses' : 'https://api.openai.com/v1/chat/completions';
-        url.readOnly = true;
+        const officialEndpoint = responses ? 'https://api.openai.com/v1/responses' : 'https://api.openai.com/v1/chat/completions';
+        if (clearCustomEndpoint || !endpointUrl.value.trim())
+            endpointUrl.value = officialEndpoint;
+        if (clearCustomEndpoint || !baseUrl.value.trim())
+            baseUrl.value = 'https://api.openai.com/v1';
     }
-    else {
-        url.readOnly = false;
-        if (clearCustomEndpoint)
-            url.value = '';
+    else if (clearCustomEndpoint) {
+        baseUrl.value = gatewayBaseUrlFromEndpointLikeValue(baseUrl.value);
+        endpointUrl.value = gatewayEndpointForProtocolSwitch(endpointUrl.value, baseUrl.value, protocol);
     }
+    baseUrl.readOnly = false;
+    endpointUrl.readOnly = false;
+    baseUrl.classList.remove('gateway-readonly');
+    endpointUrl.classList.remove('gateway-readonly');
+    $('upstreamCommonModel').innerHTML = `<option value="">Select a common model...</option>${gatewayCommonModelOptions(protocol)}`;
+    bindGatewayCommonModels();
     const mode = provider === 'openai' ? 'openai' : requestedMode || (responses ? 'responses' : 'modern');
     const modeField = document.querySelector('.gateway-mode-field');
     modeField.innerHTML = `<span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}`;
@@ -690,6 +884,13 @@ async function saveGatewayUpstream(existingId = '') {
     const provider = $('upstreamProvider').value;
     const protocol = $('upstreamProtocol').value;
     const mode = $('upstreamEditorMode').value;
+    const nextId = $('upstreamId').value.trim();
+    if (existingId && nextId !== existingId) {
+        const profiles = state.upstreams.find(item => item.id === existingId)?.profileNames || [];
+        const impact = profiles.length ? ` The bound Profiles (${profiles.join(', ')}) will be updated automatically.` : '';
+        if (!confirm(`Rename upstream "${existingId}" to "${nextId}"?${impact}`))
+            return;
+    }
     if (existingId && form.dataset.originalProtocol && form.dataset.originalProtocol !== protocol) {
         const profiles = state.upstreams.find(item => item.id === existingId)?.profileNames || [];
         const profileImpact = profiles.length ? ` Bound profiles (${profiles.join(', ')})` : ' Any bound profiles';
@@ -700,7 +901,9 @@ async function saveGatewayUpstream(existingId = '') {
         id: $('upstreamId').value,
         provider,
         protocol,
-        endpointUrl: $('upstreamUrl').value,
+        ...($('upstreamUrlMode').value === 'endpoint'
+            ? { endpointUrl: $('upstreamEndpointUrl').value }
+            : { baseUrl: $('upstreamBaseUrl').value }),
         apiKey: $('upstreamApiKey').value,
         models: $('upstreamModels').value,
         compatibilityMode: mode,
@@ -1043,10 +1246,6 @@ function renderPresetDetail() {
         return;
     $('presetId').value = preset.id;
     $('newKind').value = preset.type;
-    const name = $('newProfileName');
-    if (!name.value || state.lastPresetName === name.value)
-        name.value = preset.defaultProfileName || '';
-    state.lastPresetName = name.value;
     document.querySelectorAll('[data-kind-fields]').forEach(el => { const active = el.dataset.kindFields === preset.type; el.hidden = !active; el.querySelectorAll('input,select,textarea,button').forEach(field => { field.disabled = !active; }); });
     const env = preset.env || {};
     const rows = [];
@@ -1074,17 +1273,21 @@ function renderPresetDetail() {
         unavailableMessage = '请先创建一个上游供应商';
     }
     setCreateProfileAvailability(canCreate, unavailableMessage);
-    document.querySelectorAll('[data-open-gateway-manager]').forEach(button => button.onclick = openGatewayPanel);
+    const canReturnToGateway = primaryModalCanReturnTo('gatewayDialog');
+    document.querySelectorAll('[data-open-gateway-manager]').forEach(button => {
+        button.hidden = canReturnToGateway;
+        button.onclick = openGatewayPanel;
+    });
     const refresh = $('ccrRefreshRoutes');
     if (refresh)
         refresh.onclick = () => loadRoutes().then(() => toast('CCR 路由已刷新'));
 }
-function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(() => toast('已刷新')); $('topSyncWorkspace').onclick = () => openSyncWorkspace(state.selected || 'main'); $('drawerClose').onclick = closeDrawer; document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => { resetNewProfileForm(); $(btn.dataset.dialogClose).close(); })); document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target !== dialog)
+function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(() => toast('已刷新')); $('topSyncWorkspace').onclick = () => openSyncWorkspace(state.selected || 'main'); $('drawerClose').onclick = closeDrawer; document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => { resetNewProfileForm(); const dialogId = btn.dataset.dialogClose; if (dialogId === 'newProfileDialog' || dialogId === 'gatewayDialog') closePrimaryModal(dialogId); else $(dialogId).close(); })); document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target !== dialog)
     return; if (dialog.id === 'syncConfirmDialog') {
     closeSyncConfirm();
     return;
 } if (dialog.id === 'newProfileDialog')
-    resetNewProfileForm(); dialog.close(); })); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = () => void openNewProfileDialog(); $('createProfileSubmit').onclick = createProfile; }
+    resetNewProfileForm(); if (dialog.id === 'newProfileDialog' || dialog.id === 'gatewayDialog') closePrimaryModal(dialog.id); else dialog.close(); })); ['newProfileDialog', 'gatewayDialog'].forEach(id => $(id).addEventListener('close', () => handlePrimaryModalClose(id))); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = () => void openNewProfileDialog(); $('createProfileSubmit').onclick = createProfile; }
 async function loadRoutes() { try {
     const [status, data] = await Promise.all([api('/api/ccr/status'), api('/api/ccr/routes')]);
     state.ccr = status;
@@ -1106,7 +1309,7 @@ catch (err) {
     renderPresetDetail();
 } }
 function resetNewProfileForm() { const formEl = $('newProfileForm'); if (!formEl)
-    return; formEl.reset(); state.selectedPreset = 'custom-api'; state.lastPresetName = ''; state.presetQuery = ''; state.presetFilter = 'all'; if (state.presets.length)
+    return; formEl.reset(); state.selectedPreset = 'custom-api'; state.presetQuery = ''; state.presetFilter = 'all'; if (state.presets.length)
     renderPresetPicker(); }
 async function ccrCreateBlocked(kind, preset) { if (kind !== 'ccr' && kind !== 'manual-ccr')
     return false; let c = state.ccr; try {
@@ -1151,7 +1354,7 @@ else if (kind === 'gateway') {
 }
 api(url, { method: 'POST', body: JSON.stringify(body) }).then(async () => {
     const createdName = String(raw.name || '').trim();
-    $('newProfileDialog').close();
+    closePrimaryModal('newProfileDialog');
     resetNewProfileForm();
     toast('Profile 已创建');
     if (kind === 'ccr' || kind === 'manual-ccr') {

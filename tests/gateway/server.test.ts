@@ -255,6 +255,7 @@ describe("gateway HTTP protocol", () => {
     expect(logs[0]).toMatchObject({
       protocol: "openai_responses",
       endpointHost: new URL(upstream.endpoint).host,
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
       upstreamItemTypes: ["message"],
       inputTokens: 7,
       outputTokens: 2,

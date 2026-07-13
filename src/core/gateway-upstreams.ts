@@ -7,7 +7,7 @@ import {
   getProfilesRoot,
   type PathContext
 } from "./paths.js";
-import { readJsonFile, readMeta, writeJsonFileAtomic } from "./settings.js";
+import { readJsonFile, readMeta, writeJsonFileAtomic, writeMeta } from "./settings.js";
 import type {
   CreateGatewayUpstreamInput,
   GatewayChatCompatibility,
@@ -351,6 +351,18 @@ export async function updateGatewayUpstream(
   context: PathContext = {}
 ): Promise<GatewayUpstreamSummary> {
   const current = await readGatewayUpstream(id, context);
+  const nextId = String(input.id ?? id).trim();
+  assertGatewayUpstreamId(nextId);
+  if (nextId !== id && gatewayUpstreamIdKey(nextId) === gatewayUpstreamIdKey(id)) {
+    throw new CcpError("Changing only the letter case of an upstream ID is not supported. Choose a distinct ID.");
+  }
+  if (nextId !== id) {
+    const conflictingId = await findCaseInsensitiveGatewayUpstreamId(nextId, context);
+    if (conflictingId) {
+      throw new CcpError(`Gateway upstream '${nextId}' conflicts with existing upstream '${conflictingId}'.`);
+    }
+  }
+
   const protocol = input.protocol ?? current.config.protocol;
   const endpointUrl = input.endpointUrl ?? (
     input.chatCompletionsUrl !== undefined && protocol === "openai_chat_completions"
@@ -359,15 +371,15 @@ export async function updateGatewayUpstream(
   );
   const config = validateGatewayUpstreamConfig({
     version: 2,
-    id,
+    id: nextId,
     provider: input.provider,
     protocol,
     endpointUrl,
     models: input.models,
     compatibility: input.compatibility
   });
-  const invalidBindings = (await findGatewayUpstreamBindings(id, context))
-    .filter((binding) => !config.models.includes(binding.model));
+  const bindings = await findGatewayUpstreamBindings(id, context);
+  const invalidBindings = bindings.filter((binding) => !config.models.includes(binding.model));
   if (invalidBindings.length) {
     throw new CcpError(
       `Gateway upstream '${id}' cannot remove models used by profiles: ${invalidBindings.map((binding) => `${binding.profileName}/${binding.model}`).join(", ")}.`
@@ -377,15 +389,44 @@ export async function updateGatewayUpstream(
     version: 1,
     apiKey: input.apiKey?.trim() || current.secret.apiKey
   });
-  try {
-    await writeJsonFileAtomic(getGatewayUpstreamSecretPath(id, context), secret, 0o600);
-    await writeJsonFileAtomic(getGatewayUpstreamPath(id, context), config, 0o600);
-  } catch (error) {
-    await Promise.allSettled([
-      writeJsonFileAtomic(getGatewayUpstreamSecretPath(id, context), current.secret, 0o600),
-      writeJsonFileAtomic(getGatewayUpstreamPath(id, context), current.config, 0o600)
-    ]);
-    throw error;
+
+  if (nextId === id) {
+    try {
+      await writeJsonFileAtomic(getGatewayUpstreamSecretPath(id, context), secret, 0o600);
+      await writeJsonFileAtomic(getGatewayUpstreamPath(id, context), config, 0o600);
+    } catch (error) {
+      await Promise.allSettled([
+        writeJsonFileAtomic(getGatewayUpstreamSecretPath(id, context), current.secret, 0o600),
+        writeJsonFileAtomic(getGatewayUpstreamPath(id, context), current.config, 0o600)
+      ]);
+      throw error;
+    }
+  } else {
+    const updatedBindings: typeof bindings = [];
+    try {
+      await writeJsonFileAtomic(getGatewayUpstreamSecretPath(nextId, context), secret, 0o600);
+      await writeJsonFileAtomic(getGatewayUpstreamPath(nextId, context), config, 0o600);
+      for (const binding of bindings) {
+        await writeMeta(binding.profileDir, {
+          ...binding.meta,
+          gateway: { upstreamId: nextId, model: binding.model }
+        });
+        updatedBindings.push(binding);
+      }
+      await Promise.all([
+        rm(getGatewayUpstreamPath(id, context), { force: true }),
+        rm(getGatewayUpstreamSecretPath(id, context), { force: true })
+      ]);
+    } catch (error) {
+      await Promise.allSettled(updatedBindings.map((binding) => writeMeta(binding.profileDir, binding.meta)));
+      await Promise.allSettled([
+        writeJsonFileAtomic(getGatewayUpstreamPath(id, context), current.config, 0o600),
+        writeJsonFileAtomic(getGatewayUpstreamSecretPath(id, context), current.secret, 0o600),
+        rm(getGatewayUpstreamPath(nextId, context), { force: true }),
+        rm(getGatewayUpstreamSecretPath(nextId, context), { force: true })
+      ]);
+      throw error;
+    }
   }
   return {
     ...config,
@@ -418,7 +459,7 @@ export async function findGatewayUpstreamReferences(
 async function findGatewayUpstreamBindings(
   id: string,
   context: PathContext
-): Promise<Array<{ profileName: string; model: string }>> {
+): Promise<Array<{ profileName: string; model: string; profileDir: string; meta: NonNullable<Awaited<ReturnType<typeof readMeta>>> }>> {
   let entries;
   try {
     entries = await readdir(getProfilesRoot(context), { withFileTypes: true });
@@ -426,12 +467,13 @@ async function findGatewayUpstreamBindings(
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const references: Array<{ profileName: string; model: string }> = [];
+  const references: Array<{ profileName: string; model: string; profileDir: string; meta: NonNullable<Awaited<ReturnType<typeof readMeta>>> }> = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const meta = await readMeta(path.join(getProfilesRoot(context), entry.name));
+    const profileDir = path.join(getProfilesRoot(context), entry.name);
+    const meta = await readMeta(profileDir);
     if (meta?.type === "gateway" && meta.gateway?.upstreamId === id) {
-      references.push({ profileName: entry.name, model: meta.gateway.model });
+      references.push({ profileName: entry.name, model: meta.gateway.model, profileDir, meta });
     }
   }
   return references.sort((left, right) => left.profileName.localeCompare(right.profileName));

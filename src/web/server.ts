@@ -52,6 +52,7 @@ import {
   MODERN_OPENAI_COMPATIBILITY,
   OPENAI_GATEWAY_COMPATIBILITY,
   OPENAI_RESPONSES_COMPATIBILITY,
+  resolveGatewayBaseUrl,
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
 
@@ -340,6 +341,7 @@ export interface WebGatewayLogEntry {
   completedAt?: string;
   profileName?: string;
   model?: string;
+  endpointUrl?: string;
   stream?: boolean;
   effort?: string;
   effortMapping?: string;
@@ -361,6 +363,7 @@ function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
         completedAt: typeof value.completedAt === "string" ? value.completedAt : undefined,
         profileName: typeof value.profileName === "string" ? value.profileName : undefined,
         model: typeof value.model === "string" ? value.model : undefined,
+        endpointUrl: typeof value.endpointUrl === "string" ? value.endpointUrl : undefined,
         stream: typeof value.stream === "boolean" ? value.stream : undefined,
         effort: typeof value.effort === "string" ? value.effort : undefined,
         effortMapping: typeof value.effortMapping === "string" ? value.effortMapping : undefined,
@@ -550,6 +553,20 @@ function gatewayRequestEndpoint(
 function gatewayModels(value: unknown): string[] {
   const source = Array.isArray(value) ? value : String(value ?? "").split(/[\s,]+/);
   return [...new Set(source.map((model) => String(model).trim()).filter(Boolean))];
+}
+
+function gatewayRequestUrl(
+  body: Record<string, unknown>,
+  protocol: GatewayUpstreamProtocol,
+  provider: GatewayProvider
+): string {
+  const baseUrl = body.baseUrl === undefined ? undefined : String(body.baseUrl);
+  const endpointUrl = body.endpointUrl === undefined ? undefined : String(body.endpointUrl);
+  if (baseUrl !== undefined && endpointUrl !== undefined) {
+    throw new CcpError("Send either baseUrl or endpointUrl, not both.");
+  }
+  if (baseUrl !== undefined) return resolveGatewayBaseUrl(protocol, provider, baseUrl);
+  return gatewayRequestEndpoint(body, protocol, provider);
 }
 
 async function webGatewayUpstreams(): Promise<Array<GatewayUpstreamSummary & { profileNames: string[] }>> {
@@ -924,7 +941,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
           id: String(body.id ?? ""),
           provider,
           protocol,
-          endpointUrl: gatewayRequestEndpoint(body, protocol, provider),
+          endpointUrl: gatewayRequestUrl(body, protocol, provider),
           apiKey: String(body.apiKey ?? ""),
           models: gatewayModels(body.models),
           compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
@@ -967,18 +984,19 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         const protocol = gatewayRequestProtocol(body);
         const mode = gatewayCompatibilityMode(body.compatibilityMode, protocol, provider);
         const updated = await updateGatewayUpstream(id, {
+          id: String(body.id ?? id),
           provider,
           protocol,
-          endpointUrl: gatewayRequestEndpoint(body, protocol, provider),
+          endpointUrl: gatewayRequestUrl(body, protocol, provider),
           apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
           models: gatewayModels(body.models),
           compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
         });
-        addActivity("success", `Updated gateway upstream '${id}'.`);
+        addActivity("success", `Updated gateway upstream '${id}'${updated.id === id ? "" : ` as '${updated.id}'`}.`);
         return json(res, 200, {
           upstream: {
             ...updated,
-            profileNames: await findGatewayUpstreamReferences(id)
+            profileNames: await findGatewayUpstreamReferences(updated.id)
           }
         });
       }
