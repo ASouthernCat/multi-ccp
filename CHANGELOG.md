@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- 内置 Gateway 新增 OpenAI Responses 上游协议，同时保留既有 OpenAI Chat Completions 上游兼容路径。
+- Gateway Upstream 配置升级为 v2，显式保存 `protocol` 与 `endpointUrl`；旧 v1 Chat Completions 配置可继续读取，并只在编辑后写回为 v2。
+- OpenAI official、xAI Grok 4.5 与 AICodeMirror Upstream 模板默认使用 Responses；自定义上游可选择 Responses 或 Chat Completions。
+- 新增 Responses 请求转换、非流式解析、SSE 流式转换、usage 映射、工具调用、结构化输出、reasoning effort 映射与协议级日志元数据。
+- Web UI 与 CLI 支持更灵活的 endpoint/base URL 配置；Web UI 会按所选协议自动补全 `/v1/responses` 或 `/v1/chat/completions`。
+- 支持重命名 Upstream，并自动更新已绑定的 Gateway Profile。
+- 多模态 `tool_result` 现在会被安全接收，并为 OpenAI 格式上游降级为文本占位符，避免图片内容导致请求转换失败。
+- Gateway 请求日志继续记录 endpoint host，并将 endpoint URL 脱敏为 scheme/host/path，移除 userinfo、query string 与 fragment。
+
 ## 0.2.1
 
 - Web UI 补全 Profile 名称、API 模型、Upstream ID、Chat Completions URL 和 API Key 等输入提示，并使用当前 Claude Code 支持的完整模型 ID 示例。

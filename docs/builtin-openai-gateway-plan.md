@@ -1,5 +1,7 @@
 # multi-ccp 内置 OpenAI 兼容网关方案
 
+> 状态：历史设计文档。本文记录 `0.2.x` 第一期 Chat Completions 网关方案；`0.3.0` 之后的双协议（OpenAI Responses / Chat Completions）行为以 [`openai-responses-gateway-design.md`](./openai-responses-gateway-design.md) 为准。
+
 ## 1. 文档状态
 
 本文定义 multi-ccp 第一期内置网关的可实现契约。

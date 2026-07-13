@@ -2,7 +2,7 @@
 
 ## 1. 文档状态
 
-本文定义 multi-ccp 内置网关在 **OpenAI Responses / xAI Responses** 上游协议下，将供应商 **reasoning** 输出映射为 Claude Code 可消费的 **Anthropic Messages thinking 内容块** 的开发契约。
+本文是 `0.3.0` 未包含的后续设计，定义 multi-ccp 内置网关在 **OpenAI Responses / xAI Responses** 上游协议下，将供应商 **reasoning** 输出映射为 Claude Code 可消费的 **Anthropic Messages thinking 内容块** 的开发契约。当前已发布/待发布的 Responses 支持会忽略 reasoning summary，不会映射为 Anthropic thinking。
 
 本文是 [`openai-responses-gateway-design.md`](./openai-responses-gateway-design.md) 的后续增量，**不改变**已落地的：
 
@@ -24,7 +24,7 @@
 
 ### 1.2 目标版本
 
-该功能扩展 canonical IR、流式 emitter 与 Responses 解析路径，建议并入 **`0.3.x`** 的 Responses 能力批次；若 0.3.0 已发布，可作为 `0.3.1` 或 `0.4.0`（若引入配置字段变更）。
+该功能扩展 canonical IR、流式 emitter 与 Responses 解析路径，未随 `0.3.0` 发布；后续可作为 `0.3.x` 增量或 `0.4.0`（若引入配置字段变更）单独规划。
 
 ---
 
@@ -171,7 +171,7 @@ export type CanonicalResponseContent =
 
 1. 所有 thinking 块（若有）
 2. text 块
-3. tool_use 块  
+3. tool_use 块
 
 （若上游交错产生 text 与后续 reasoning，流式按到达顺序发射；非流式解析时按 `output[]` 顺序，但可配置「thinking 提升到 content 前部」以贴合 Anthropic 常见形态，默认 **保持 output 顺序**。）
 
@@ -222,7 +222,7 @@ Anthropic 的 `signature` 用于 **多轮回传完整性校验**。上游 OpenAI
 | B. 透传上游 encrypted 为 signature | 语义错误，体积大，可能泄露供应商内部格式 | 禁止 |
 | C. 网关自签 HMAC | 仅对本网关多轮校验有意义；Claude Code 未必回传 | 可选后续 |
 
-**P1 默认采用 A**：输出无 signature 的 thinking 块。  
+**P1 默认采用 A**：输出无 signature 的 thinking 块。
 若 Claude Code 在 tool loop 中回传 thinking 且网关再次收到，**请求解析侧**应：
 
 - 接受 assistant 历史中的 `thinking` content block（今天可能被 strip/reject，需放宽）
@@ -349,11 +349,11 @@ else:
 ### 7.3 blockKey 稳定规则
 
 ```text
-blockKey = `reasoning:${itemId}` 
+blockKey = `reasoning:${itemId}`
          或 `reasoning:output:${outputIndex}`（无 id 时）
 ```
 
-多个 `summary_index`：**默认合并到同一 blockKey**（单 thinking 块更符合 Claude Code 阅读体验）。  
+多个 `summary_index`：**默认合并到同一 blockKey**（单 thinking 块更符合 Claude Code 阅读体验）。
 若未来需要分块，再引入 `reasoning:${itemId}:s${summaryIndex}`。
 
 ### 7.4 与 text / tool 交错

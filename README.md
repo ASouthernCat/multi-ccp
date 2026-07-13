@@ -20,7 +20,7 @@ Use it when you want separate Claude Code sessions for work, personal projects, 
 - Create Claude login profiles that use Claude Code's normal account login flow without storing account passwords.
 - Create [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profiles for multiple model providers and routes.
 - Manage [Claude Code Router](https://github.com/musistudio/claude-code-router) from the same CLI.
-- Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Chat Completions providers.
+- Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Responses and Chat Completions providers.
 - Run multiple gateway profiles concurrently through one local process while keeping upstream URLs, models, credentials, tools, streams, and cancellation state isolated per request.
 - Sync historical Claude Code sessions between profiles or between `main` and a profile.
 - Open and inspect profile settings quickly from the terminal.
@@ -193,16 +193,16 @@ http://127.0.0.1:3456/preset/gpt-route
 
 ### Built-in Gateway
 
-The gateway translates Claude Code's Anthropic Messages protocol to OpenAI Chat Completions. It uses three independent layers: one shared local service, reusable upstream provider records, and lightweight profiles that only select an upstream and model.
+The gateway translates Claude Code's Anthropic Messages protocol to either OpenAI Responses or OpenAI Chat Completions, depending on the selected upstream protocol. It uses three independent layers: one shared local service, reusable upstream provider records, and lightweight profiles that only select an upstream and model.
 
-Create an official OpenAI upstream. The official template always uses `https://api.openai.com/v1/chat/completions`:
+Create an official OpenAI upstream. The official template defaults to the Responses endpoint `https://api.openai.com/v1/responses`:
 
 Upstream creation provides shared preset templates:
 
-- `OpenAI official`: pre-fills `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`.
-- `xAI Grok 4.5`: pre-fills `https://api.x.ai/v1/chat/completions` and `grok-4.5`.
-- `AICodeMirror`: pre-fills the Codex endpoint and `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.5`.
-- `Custom OpenAI-compatible`: accepts a manually configured endpoint, models, and compatibility settings.
+- `OpenAI official`: pre-fills the Responses endpoint with `gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.6-luna`.
+- `xAI Grok 4.5`: pre-fills `https://api.x.ai/v1/responses` and `grok-4.5`.
+- `AICodeMirror`: pre-fills the Codex-compatible Responses endpoint and `gpt-5.6-sol`, `gpt-5.6-terra`, and `gpt-5.5`.
+- `Custom OpenAI-compatible`: lets you choose Responses or Chat Completions and enter a base URL or full endpoint URL, models, and compatibility settings.
 
 ```bash
 ccp gateway add openai
@@ -210,7 +210,7 @@ ccp add --preset gateway openai-work
 ccp start openai-work
 ```
 
-Create an OpenAI-compatible upstream such as AICodeMirror, Mimo, or OpenRouter. This template accepts a custom Chat Completions endpoint and a list of models:
+Create an OpenAI-compatible upstream such as AICodeMirror, Mimo, OpenRouter, or another proxy. Custom upstreams can use either Responses or Chat Completions; the Web UI accepts a base URL and completes it to `/v1/responses` or `/v1/chat/completions` based on the selected protocol. The CLI prompts for the full endpoint URL.
 
 Separate multiple model IDs with commas, for example `gpt-5.6-sol, gpt-5.5`.
 
@@ -226,15 +226,19 @@ The single Gateway profile template can bind any existing upstream; OpenAI offic
 ccp gateway use gpt-5.6 aicodemirror gpt-5.5
 ```
 
-OpenAI-compatible upstreams offer modern, legacy, and advanced compatibility modes. Only the advanced mode asks for individual instruction-role, token-limit, sampling, stop, parallel-tool, streaming-usage, Claude-effort, and structured-output mappings. Native Gemini or Anthropic provider formats are not supported by this gateway.
+Responses upstreams offer OpenAI-compatible and advanced Responses mappings. Chat Completions upstreams offer modern, legacy, and advanced Chat Completions mappings. The gateway does not auto-detect provider protocol support: choose the protocol that the upstream actually supports. Native Gemini or Anthropic provider formats are not supported by this gateway.
+
+Existing Chat Completions upstreams continue to work and are not silently migrated to Responses. Legacy v1 upstream configs load as Chat Completions and are saved as v2 only after editing. Starting the upgraded CLI may replace an owned protocol-v1 gateway process so later requests use the v2 runtime.
+
+Responses reasoning summaries are currently omitted rather than mapped to Anthropic thinking, and Anthropic extended-thinking requests remain rejected. Image-bearing tool results are accepted but degraded to textual placeholders for OpenAI-format upstreams instead of being sent as binary image content.
 
 All gateway profiles use one loopback-only service at `http://127.0.0.1:3921`. Each Claude Code process receives a profile-specific base path and local token, so concurrent profiles can safely target different providers. Starting a second gateway profile reuses the running service and does not restart active streams.
 
 The local Web UI masks API keys by default. Opening an API profile or upstream editor retrieves the stored key through a UI-token-protected, non-cacheable POST endpoint; normal profile and upstream GET responses never expose the plaintext key.
 
-The gateway writes one redacted JSON line per profile request to `~/.claude-profiles/.gateway/gateway.log`. It records the profile, model, Claude effort, upstream field names, status, duration, and available token usage, but never prompt or response content, authorization headers, or API keys. If an SSE response has already started with HTTP 200 and later fails protocol conversion, the internal log status is `502`. Logs rotate to `gateway.log.1` at 10 MiB when the gateway starts.
+The gateway writes one redacted JSON line per profile request to `~/.claude-profiles/.gateway/gateway.log`. It records the profile, model, protocol, endpoint host, sanitized endpoint URL, Claude effort, upstream field names, status, duration, and available token usage, but never prompt or response content, authorization headers, API keys, URL userinfo, query strings, or fragments. If an SSE response has already started with HTTP 200 and later fails protocol conversion, the internal log status is `502`. Logs rotate to `gateway.log.1` at 10 MiB when the gateway starts.
 
-The first release supports Messages requests, non-streaming and SSE responses, text and tool calls, parallel tool calls, `output_config.effort`, JSON Schema structured output, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Optional token counting and model discovery endpoints intentionally return `404`, allowing Claude Code to use its fallback behavior.
+The gateway supports Messages requests, non-streaming and SSE responses, text and tool calls, multimodal tool-result degradation, parallel tool calls, `output_config.effort`, JSON Schema structured output, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Optional token counting and model discovery endpoints intentionally return `404`, allowing Claude Code to use its fallback behavior.
 
 ## Session Sync
 
@@ -307,7 +311,7 @@ ccp ccr model
 
 `ccp ccr install` pins CCR to `@musistudio/claude-code-router@2.0.0`. CCR 3.x is a rewrite and is not compatible with multi-ccp.
 
-If a provider exposes an OpenAI Chat Completions-compatible API, prefer the built-in Gateway instead of CCR. It requires no separate router installation and provides reusable upstreams, model selection, compatibility mappings, and request logs.
+If a provider exposes an OpenAI Responses or Chat Completions-compatible API, prefer the built-in Gateway instead of CCR. It requires no separate router installation and provides reusable upstreams, model selection, compatibility mappings, and request logs.
 
 Session sync commands:
 
@@ -324,7 +328,7 @@ Profiles are stored under:
 ~/.claude-profiles/<profile>
 ```
 
-Gateway profile metadata stores only `upstreamId` and the selected model. Its `.ccp-gateway.json` stores only the generated local token. Reusable upstream configs are stored under `~/.claude-profiles/.gateway/upstreams/`, while provider API keys are stored separately under `~/.claude-profiles/.gateway/secrets/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
+Gateway profile metadata stores only `upstreamId` and the selected model. Its `.ccp-gateway.json` stores only the generated local token. Reusable upstream configs store the selected `protocol`, full `endpointUrl`, model list, and compatibility mapping under `~/.claude-profiles/.gateway/upstreams/`, while provider API keys are stored separately under `~/.claude-profiles/.gateway/secrets/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
 
 Claude Code's default config directory is still available as:
 

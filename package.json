@@ -1,7 +1,7 @@
 {
   "name": "multi-ccp",
-  "version": "0.2.1",
-  "description": "Cross-platform Claude Code profile manager for API, login, and router workflows.",
+  "version": "0.3.0",
+  "description": "Cross-platform Claude Code profile manager for API, login, router, and built-in gateway workflows.",
   "type": "module",
   "bin": {
     "ccp": "dist/cli/index.js"
@@ -31,10 +31,23 @@
     "claude",
     "profiles",
     "cli",
-    "anthropic"
+    "anthropic",
+    "openai",
+    "gateway"
   ],
   "author": "asoutherncat",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ASouthernCat/multi-ccp.git"
+  },
+  "homepage": "https://github.com/ASouthernCat/multi-ccp#readme",
+  "bugs": {
+    "url": "https://github.com/ASouthernCat/multi-ccp/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=20"
   },

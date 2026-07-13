@@ -2,21 +2,21 @@
 
 ## 1. 文档状态
 
-本文定义 multi-ccp 内置网关第二阶段的开发契约：在保留 OpenAI Chat Completions 兼容路径的同时，新增 OpenAI Responses 上游协议，并让 OpenAI official、xAI 与 AICodeMirror 内置 Upstream 模板默认使用 Responses。
+本文记录 multi-ccp `0.3.0` 已实现的内置网关第二阶段设计：在保留 OpenAI Chat Completions 兼容路径的同时，新增 OpenAI Responses 上游协议，并让 OpenAI official、xAI 与 AICodeMirror 内置 Upstream 模板默认使用 Responses。
 
-本文是 [`builtin-openai-gateway-plan.md`](./builtin-openai-gateway-plan.md) 的增量设计，不改变该文档已经落地的共享进程、Profile Binding、请求快照、凭据隔离、热加载、客户端断连取消和 Anthropic Messages 入口等基本架构。
+本文是 [`builtin-openai-gateway-plan.md`](./builtin-openai-gateway-plan.md) 的增量设计，不改变该文档已经落地的共享进程、Profile Binding、请求快照、凭据隔离、热加载、客户端断连取消和 Anthropic Messages 入口等基本架构；原文档的 Chat-only 范围说明以本文为准。
 
 ### 1.1 已确认事实
 
 1. Claude Code 仍通过 Anthropic Messages API 调用本地网关：`POST /p/<profile>/v1/messages`。
 2. 本阶段只改变网关访问上游供应商时的 wire protocol；网关不对客户端暴露 OpenAI `/v1/responses`。
-3. 当前实现只支持 `openai_chat_completions`，并在类型、URL、请求序列化、非流式解析和 SSE 转换层硬编码 Chat Completions。
-4. OpenAI official、xAI 与 AICodeMirror 均支持 Responses；新建内置 Upstream 时默认使用 Responses。
+3. 当前实现同时支持 `openai_chat_completions` 与 `openai_responses`，并通过 Upstream 的 `protocol` 字段进行运行时分发。
+4. OpenAI official、xAI 与 AICodeMirror 新建内置 Upstream 时默认使用 Responses；供应商实际兼容范围仍由所选模型和 endpoint 决定。
 5. 已存在的 Upstream 不静默迁移，仍按其已保存的 Chat Completions 配置运行。
 
 ### 1.2 目标版本
 
-该功能改变持久化配置、运行时分发和协议转换，建议作为 `0.3.0` 功能发布，而不是 patch 版本。
+该功能改变持久化配置、运行时分发和协议转换，按 `0.3.0` 功能发布，而不是 patch 版本。
 
 ## 2. 目标与非目标
 
@@ -545,7 +545,7 @@ Upstream editor：
 
 ### 13.3 供应商契约 fixture
 
-每个 Responses 模板至少保存以下脱敏 fixture：
+当前仓库测试覆盖 mocked Responses 请求分发、解析、流式转换、v1 配置兼容、runtime 迁移、重命名与多模态 tool result 降级；尚未提交公开、脱敏的供应商 live fixture。每个 Responses 模板后续至少保存以下脱敏 fixture：
 
 - 非流式文本。
 - 流式文本。
@@ -559,7 +559,7 @@ Fixture 必须记录抓取日期、模型、endpoint、是否 `store: false`，�
 
 ## 14. 完成标准
 
-只有满足以下条件才能宣称 Responses 支持完成：
+`0.3.0` 已满足代码级 Responses 支持所需的双协议分发、v1/v2 配置兼容、请求/响应转换、流式转换、隔离、错误日志和文档更新要求。若要宣称某个外部供应商模板具备完整实测覆盖，还应满足以下 live smoke / fixture 条件：
 
 1. Chat Completions 现有 107+ 回归测试保持通过。
 2. v1 Upstream 无需手动迁移即可继续工作。

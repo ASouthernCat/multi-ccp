@@ -20,7 +20,7 @@
 - 创建 Claude 登录 profile，使用 Claude Code 正常账号登录流程，不保存账号密码。
 - 创建 [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profile，支持多个模型 provider 和 route。
 - 通过同一个 CLI 管理 [Claude Code Router](https://github.com/musistudio/claude-code-router)。
-- 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Chat Completions provider。
+- 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Responses / Chat Completions provider。
 - 多个 gateway profile 可以并发复用一个本地进程，同时按请求隔离上游 URL、模型、凭据、工具映射、流状态和取消信号。
 - 在不同 profile 之间，或在 `main` 与 profile 之间同步 Claude Code 历史会话。
 - 快速查看、打开和编辑 profile 配置。
@@ -193,16 +193,16 @@ http://127.0.0.1:3456/preset/gpt-route
 
 ### 内置 Gateway
 
-Gateway 会把 Claude Code 的 Anthropic Messages 协议转换为 OpenAI Chat Completions。现在分为三个独立层级：一个共享的本地网关服务、可复用的上游供应商配置，以及只选择上游和模型的轻量 Profile。
+Gateway 会根据上游协议，把 Claude Code 的 Anthropic Messages 协议转换为 OpenAI Responses 或 OpenAI Chat Completions。现在分为三个独立层级：一个共享的本地网关服务、可复用的上游供应商配置，以及只选择上游和模型的轻量 Profile。
 
-创建 OpenAI 官方上游。官方模板固定使用 `https://api.openai.com/v1/chat/completions`：
+创建 OpenAI 官方上游。官方模板默认使用 Responses endpoint：`https://api.openai.com/v1/responses`：
 
 创建上游时可以选择共享预设模板：
 
-- `OpenAI official`：预填 `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`。
-- `xAI Grok 4.5`：预填 `https://api.x.ai/v1/chat/completions` 和 `grok-4.5`。
-- `AICodeMirror`：预填 Codex endpoint，以及 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.5`。
-- `Custom OpenAI-compatible`：手动填写 endpoint、模型与兼容参数。
+- `OpenAI official`：预填 Responses endpoint，以及 `gpt-5.6`、`gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna`。
+- `xAI Grok 4.5`：预填 `https://api.x.ai/v1/responses` 和 `grok-4.5`。
+- `AICodeMirror`：预填 Codex-compatible Responses endpoint，以及 `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.5`。
+- `Custom OpenAI-compatible`：可以选择 Responses 或 Chat Completions，并填写 base URL 或完整 endpoint URL、模型与兼容参数。
 
 ```bash
 ccp gateway add openai
@@ -210,7 +210,7 @@ ccp add --preset gateway openai-work
 ccp start openai-work
 ```
 
-创建 AICodeMirror、Mimo、OpenRouter 等 OpenAI-compatible 上游。该模板允许填写自定义 Chat Completions endpoint 和多个模型：
+创建 AICodeMirror、Mimo、OpenRouter 或其他代理等 OpenAI-compatible 上游。自定义上游可以使用 Responses 或 Chat Completions；Web UI 可填写 base URL，并会根据所选 protocol 自动补全为 `/v1/responses` 或 `/v1/chat/completions`。CLI 当前会提示填写完整 endpoint URL。
 
 输入多个模型时使用英文逗号分隔，例如 `gpt-5.6-sol, gpt-5.5`。
 
@@ -226,15 +226,19 @@ Profile 创建只保留一个 Gateway 模板，可以绑定任意已创建的上
 ccp gateway use gpt-5.6 aicodemirror gpt-5.5
 ```
 
-OpenAI-compatible 上游提供“现代”“传统”“高级自定义”三种兼容档案。只有高级模式才逐项询问 instruction role、token limit、sampling、stop、并行工具调用、流式 usage、Claude effort 与结构化输出映射。该网关不支持 Gemini、Anthropic 等原生供应商格式。
+Responses 上游提供 OpenAI-compatible 和高级 Responses 映射；Chat Completions 上游提供现代、传统和高级 Chat Completions 映射。网关不会自动探测供应商支持哪种协议，请选择供应商实际支持的 protocol。该网关不支持 Gemini、Anthropic 等原生供应商格式。
+
+已有 Chat Completions 上游会继续工作，不会被静默迁移到 Responses。旧版 v1 上游配置会按 Chat Completions 读取，只有在编辑后才会保存为 v2。升级后的 CLI 首次启动时，可能会替换由 multi-ccp 管理的 protocol-v1 网关进程，以便后续请求使用 v2 runtime。
+
+Responses reasoning summary 当前会被省略，不会映射为 Anthropic thinking；Anthropic extended-thinking 请求仍会被拒绝。带图片的 tool result 会被接受，但会为 OpenAI 格式上游降级为文本占位符，而不是以二进制/图片内容发送。
 
 所有 gateway profile 共用一个仅监听 loopback 的服务：`http://127.0.0.1:3921`。每个 Claude Code 进程使用独立的 profile path 和本地 token，因此不同供应商 profile 可以安全并发运行。启动第二个 gateway profile 时会复用现有服务，不会重启或中断正在执行的流。
 
 本地 Web UI 默认遮罩 API Key。打开 API Profile 或 Upstream 编辑器时，会通过受 UI Token 保护且禁止缓存的 POST 接口读取已保存密钥；普通 Profile 和 Upstream GET 响应不会暴露密钥明文。
 
-网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token 或 API key。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
+网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
 
-第一期支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
+网关支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、多模态 tool result 降级、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
 
 ## 历史会话同步
 
@@ -307,7 +311,7 @@ ccp ccr model
 
 `ccp ccr install` 会固定安装 `@musistudio/claude-code-router@2.0.0`。CCR 3.x 是一次不兼容重写，当前 multi-ccp 不支持。
 
-如果供应商提供 OpenAI Chat Completions 兼容接口，建议优先使用内置 Gateway，而不是 CCR。内置 Gateway 无需安装额外路由服务，并提供可复用 Upstream、模型选择、兼容映射和请求日志。
+如果供应商提供 OpenAI Responses 或 Chat Completions 兼容接口，建议优先使用内置 Gateway，而不是 CCR。内置 Gateway 无需安装额外路由服务，并提供可复用 Upstream、模型选择、兼容映射和请求日志。
 
 历史会话同步命令：
 
@@ -324,7 +328,7 @@ Profiles 默认存放在：
 ~/.claude-profiles/<profile>
 ```
 
-Gateway Profile 元数据只保存 `upstreamId` 和选中的模型；它的 `.ccp-gateway.json` 只保存生成的本地 token。可复用的上游配置保存在 `~/.claude-profiles/.gateway/upstreams/`，供应商 API key 则单独保存在 `~/.claude-profiles/.gateway/secrets/`。Profile 的 `settings.json` 会在启动前自动派生和修复，不应作为网关路由配置的真相来源。
+Gateway Profile 元数据只保存 `upstreamId` 和选中的模型；它的 `.ccp-gateway.json` 只保存生成的本地 token。可复用的上游配置会把所选 `protocol`、完整 `endpointUrl`、模型列表与兼容映射保存在 `~/.claude-profiles/.gateway/upstreams/`，供应商 API key 则单独保存在 `~/.claude-profiles/.gateway/secrets/`。Profile 的 `settings.json` 会在启动前自动派生和修复，不应作为网关路由配置的真相来源。
 
 Claude Code 默认配置目录仍然可以通过 `main` 访问：
 
