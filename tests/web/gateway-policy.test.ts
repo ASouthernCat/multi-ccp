@@ -272,7 +272,7 @@ describe("gateway Web UI policy", () => {
         completedAt: "2026-07-11T00:00:00.000Z",
         profileName: "gpt-5.6",
         model: "gpt-5.6-sol",
-        endpointUrl: "https://provider.test/v1/responses",
+        endpointUrl: "https://user:pass@provider.test/v1/responses?credential=must-not-leak#fragment",
         stream: true,
         effort: "high",
         status: 200,
@@ -294,6 +294,9 @@ describe("gateway Web UI policy", () => {
       durationMs: 321
     });
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
+    expect(JSON.stringify(result)).not.toContain("credential=must-not-leak");
+    expect(JSON.stringify(result)).not.toContain("user:pass");
+    expect(JSON.stringify(result)).not.toContain("#fragment");
     expect(JSON.stringify(result)).not.toContain("top-secret-provider-key");
     expect(result.entries[1]?.message).toContain("[redacted]");
   });

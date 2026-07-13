@@ -42,6 +42,19 @@ export function digest(value: string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function sanitizeEndpointUrlForLog(value: string): string {
+  try {
+    const parsed = new URL(value);
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString();
+  } catch {
+    return value;
+  }
+}
+
 export function normalizeStrictJsonSchema(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalizeStrictJsonSchema);

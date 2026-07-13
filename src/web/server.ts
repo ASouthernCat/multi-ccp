@@ -55,6 +55,7 @@ import {
   resolveGatewayBaseUrl,
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
+import { sanitizeEndpointUrlForLog } from "../gateway/utils.js";
 
 export interface UiServerOptions {
   host?: string;
@@ -363,7 +364,7 @@ function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
         completedAt: typeof value.completedAt === "string" ? value.completedAt : undefined,
         profileName: typeof value.profileName === "string" ? value.profileName : undefined,
         model: typeof value.model === "string" ? value.model : undefined,
-        endpointUrl: typeof value.endpointUrl === "string" ? value.endpointUrl : undefined,
+        endpointUrl: typeof value.endpointUrl === "string" ? sanitizeEndpointUrlForLog(value.endpointUrl) : undefined,
         stream: typeof value.stream === "boolean" ? value.stream : undefined,
         effort: typeof value.effort === "string" ? value.effort : undefined,
         effortMapping: typeof value.effortMapping === "string" ? value.effortMapping : undefined,

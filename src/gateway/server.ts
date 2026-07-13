@@ -29,7 +29,8 @@ import {
   serializeOpenAIResponsesRequest
 } from "./openai-responses-target.js";
 import {
-  canonicalResponseToAnthropic
+  canonicalResponseToAnthropic,
+  sanitizeEndpointUrlForLog
 } from "./utils.js";
 import {
   parseOpenAIChatResponse,
@@ -833,7 +834,7 @@ function emitRequestLog(
       ...(state.clientModel ? { clientModel: state.clientModel } : {}),
       ...(state.protocol ? { protocol: state.protocol } : {}),
       ...(state.endpointHost ? { endpointHost: state.endpointHost } : {}),
-      ...(state.endpointUrl ? { endpointUrl: state.endpointUrl } : {}),
+      ...(state.endpointUrl ? { endpointUrl: sanitizeEndpointUrlForLog(state.endpointUrl) } : {}),
       ...(state.stream === undefined ? {} : { stream: state.stream }),
       ...(state.effort ? { effort: state.effort } : {}),
       ...(state.effortMapping ? { effortMapping: state.effortMapping } : {}),

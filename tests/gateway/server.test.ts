@@ -247,7 +247,7 @@ describe("gateway HTTP protocol", () => {
       name: "responses",
       provider: "openai-compatible",
       protocol: "openai_responses",
-      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      endpointUrl: `${upstream.endpoint}/v1/responses?trace=visible-in-upstream#fragment`,
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
       apiKey: "responses-key",
       model: "responses-model"
@@ -266,7 +266,7 @@ describe("gateway HTTP protocol", () => {
     expect(response.status).toBe(200);
     expect(body.content[0].text).toBe("responses-ok");
     expect(received).toMatchObject({
-      url: "/v1/responses",
+      url: "/v1/responses?trace=visible-in-upstream",
       authorization: "Bearer responses-key",
       body: { model: "responses-model", store: false, stream: false }
     });
