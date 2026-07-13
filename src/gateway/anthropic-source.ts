@@ -6,7 +6,8 @@ import type {
   CanonicalReasoningEffort,
   CanonicalRequest,
   CanonicalTool,
-  CanonicalToolChoice
+  CanonicalToolChoice,
+  CanonicalToolResultContent
 } from "./canonical.js";
 import { invalidRequest } from "./errors.js";
 
@@ -120,26 +121,60 @@ function parseToolUseBlock(block: JsonObject, path: string): CanonicalContent {
   };
 }
 
-function parseToolResultContent(value: unknown, path: string): string {
+function parseToolResultImageSource(value: unknown, path: string): Extract<
+  Exclude<CanonicalToolResultContent, string>[number],
+  { type: "image" }
+>["source"] {
+  const source = requireObject(value, path);
+  rejectExtraFields(source, new Set(["type", "media_type", "data", "url"]), `${path}.`);
+  const type = requireString(source.type, `${path}.type`);
+  if (type === "base64") {
+    return {
+      type,
+      mediaType: requireString(source.media_type, `${path}.media_type`),
+      data: requireString(source.data, `${path}.data`)
+    };
+  }
+  if (type === "url") {
+    return {
+      type,
+      url: requireString(source.url, `${path}.url`)
+    };
+  }
+  throw invalidRequest(`${path}.type: Unsupported image source '${type}'.`);
+}
+
+function parseToolResultContent(value: unknown, path: string): CanonicalToolResultContent {
   if (typeof value === "string") {
     return value;
   }
   if (!Array.isArray(value)) {
-    throw invalidRequest(`${path}: Expected a string or an array of text blocks.`);
+    throw invalidRequest(`${path}: Expected a string or an array of content blocks.`);
   }
 
-  return value.map((entry, index) => {
+  const content: Exclude<CanonicalToolResultContent, string> = value.map((entry, index) => {
     const blockPath = `${path}[${index}]`;
     const block = requireObject(entry, blockPath);
-    rejectExtraFields(block, new Set(["type", "text", "cache_control"]), `${blockPath}.`);
-    if (block.type !== "text") {
-      throw invalidRequest(`${blockPath}.type: Only text tool_result content is supported.`);
+    const type = requireString(block.type, `${blockPath}.type`);
+    if (type === "text") {
+      rejectExtraFields(block, new Set(["type", "text", "cache_control"]), `${blockPath}.`);
+      if (block.cache_control !== undefined) {
+        validateCacheControl(block.cache_control, `${blockPath}.cache_control`);
+      }
+      return { type, text: requireString(block.text, `${blockPath}.text`, true) };
     }
-    if (block.cache_control !== undefined) {
-      validateCacheControl(block.cache_control, `${blockPath}.cache_control`);
+    if (type === "image") {
+      rejectExtraFields(block, new Set(["type", "source", "cache_control"]), `${blockPath}.`);
+      if (block.cache_control !== undefined) {
+        validateCacheControl(block.cache_control, `${blockPath}.cache_control`);
+      }
+      return { type, source: parseToolResultImageSource(block.source, `${blockPath}.source`) };
     }
-    return requireString(block.text, `${blockPath}.text`, true);
-  }).join("");
+    throw invalidRequest(`${blockPath}.type: ${type} tool_result content blocks are not supported.`);
+  });
+  return content.every((part) => part.type === "text")
+    ? content.map((part) => part.text).join("")
+    : content;
 }
 
 function parseToolResultBlock(block: JsonObject, path: string): CanonicalContent {
@@ -258,7 +293,10 @@ function parseTools(value: unknown): CanonicalTool[] | undefined {
   return value.map((entry, index) => {
     const path = `tools[${index}]`;
     const tool = requireObject(entry, path);
-    rejectExtraFields(tool, new Set(["name", "description", "input_schema", "cache_control"]), `${path}.`);
+    rejectExtraFields(tool, new Set(["type", "name", "description", "input_schema", "cache_control"]), `${path}.`);
+    if (tool.type !== undefined && tool.type !== "custom") {
+      throw invalidRequest(`${path}.type: Only custom tools are supported.`);
+    }
     if (tool.cache_control !== undefined) {
       validateCacheControl(tool.cache_control, `${path}.cache_control`);
     }

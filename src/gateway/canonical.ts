@@ -1,9 +1,21 @@
 import type { GatewayError } from "./errors.js";
 
+export type CanonicalToolResultContent =
+  | string
+  | Array<
+    | { type: "text"; text: string }
+    | {
+      type: "image";
+      source:
+        | { type: "base64"; mediaType: string; data: string }
+        | { type: "url"; url: string };
+    }
+  >;
+
 export type CanonicalContent =
   | { type: "text"; text: string }
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
-  | { type: "tool_result"; toolUseId: string; content: string; isError?: boolean };
+  | { type: "tool_result"; toolUseId: string; content: CanonicalToolResultContent; isError?: boolean };
 
 export interface CanonicalTool {
   name: string;

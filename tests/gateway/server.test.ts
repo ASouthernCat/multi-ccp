@@ -21,10 +21,16 @@ interface LoopbackHandle {
 }
 
 const cleanups: Array<() => Promise<void>> = [];
+const FETCH_BLOCKED_TEST_PORTS = new Set([6000, 6665, 6666, 6667, 6668, 6669, 10080]);
+const MAX_LOOPBACK_PORT_ATTEMPTS = 20;
 
 afterEach(async () => {
   await Promise.allSettled(cleanups.splice(0).reverse().map((cleanup) => cleanup()));
 });
+
+function isFetchBlockedEndpoint(endpoint: string): boolean {
+  return FETCH_BLOCKED_TEST_PORTS.has(Number(new URL(endpoint).port));
+}
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-gateway-test-"));
@@ -62,21 +68,28 @@ async function createTestGatewayProfile(
 async function listenLoopback(
   handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>
 ): Promise<LoopbackHandle> {
-  const server = createServer((req, res) => void handler(req, res));
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const port = (server.address() as AddressInfo).port;
-  const handle = {
-    endpoint: `http://127.0.0.1:${port}`,
-    close: () => new Promise<void>((resolve, reject) => {
-      server.close((error) => error ? reject(error) : resolve());
-      server.closeAllConnections();
-    })
-  };
-  cleanups.push(handle.close);
-  return handle;
+  for (let attempt = 0; attempt < MAX_LOOPBACK_PORT_ATTEMPTS; attempt += 1) {
+    const server = createServer((req, res) => void handler(req, res));
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const port = (server.address() as AddressInfo).port;
+    const handle = {
+      endpoint: `http://127.0.0.1:${port}`,
+      close: () => new Promise<void>((resolve, reject) => {
+        server.close((error) => error ? reject(error) : resolve());
+        server.closeAllConnections();
+      })
+    };
+    if (isFetchBlockedEndpoint(handle.endpoint)) {
+      await handle.close();
+      continue;
+    }
+    cleanups.push(handle.close);
+    return handle;
+  }
+  throw new Error("Could not allocate a fetch-compatible loopback port.");
 }
 
 async function readRequestJson(req: IncomingMessage): Promise<Record<string, unknown>> {
@@ -86,10 +99,17 @@ async function readRequestJson(req: IncomingMessage): Promise<Record<string, unk
 }
 
 async function startGateway(context: { homeDir: string }, options: Parameters<typeof createGatewayServer>[0] = {}) {
-  const handle = createGatewayServer({ context, ...options });
-  const listening = await handle.listen({ host: "127.0.0.1", port: 0 });
-  cleanups.push(handle.close);
-  return { handle, endpoint: listening.endpoint };
+  for (let attempt = 0; attempt < MAX_LOOPBACK_PORT_ATTEMPTS; attempt += 1) {
+    const handle = createGatewayServer({ context, ...options });
+    const listening = await handle.listen({ host: "127.0.0.1", port: 0 });
+    if (isFetchBlockedEndpoint(listening.endpoint)) {
+      await handle.close();
+      continue;
+    }
+    cleanups.push(handle.close);
+    return { handle, endpoint: listening.endpoint };
+  }
+  throw new Error("Could not allocate a fetch-compatible gateway port.");
 }
 
 function anthropicRequest(stream = false, overrides: Record<string, unknown> = {}) {

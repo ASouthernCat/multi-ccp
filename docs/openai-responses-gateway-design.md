@@ -256,7 +256,7 @@ Anthropic tool_use.id
 
 必须使用请求局部映射，不能使用全局 Map。若供应商对 `call_id` 字符集有限制，复用 `normalizeToolCallId` 并保存双向映射；否则优先保留原 Anthropic ID，避免后续 tool result 无法关联。
 
-`function_call_output.output` 第一阶段使用字符串。`is_error: true` 可继续编码为带明确前缀的文本，保持当前 Chat 行为；不得伪造供应商未定义的错误字段。
+`function_call_output.output` 使用字符串，保持当前 Chat 行为。当 Claude Code 返回多模态 tool result（例如 `Read` 图片文件得到 `image` content block）时，Responses 路径先降级为带媒体类型的文本占位，避免 OpenAI-compatible 上游拒绝 tool-output 内容数组。`is_error: true` 可继续编码为带明确前缀的文本；不得伪造供应商未定义的错误字段。
 
 ### 6.3 工具定义
 

@@ -90,6 +90,66 @@ describe("Anthropic Messages source parser", () => {
     });
   });
 
+  it("accepts Claude Code tool types and multimodal tool_result content", () => {
+    const request = parseAnthropicMessagesRequest(baseRequest({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_image", name: "Read", input: { file_path: "asset.png" } }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_image",
+              content: [
+                { type: "text", text: "Preview:" },
+                {
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: "image/png",
+                    data: "iVBORw0KGgo="
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      tools: [{
+        type: "custom",
+        name: "Read",
+        description: "Read a file",
+        input_schema: { type: "object", properties: { file_path: { type: "string" } } }
+      }]
+    }));
+
+    expect(request.tools?.[0]).toEqual({
+      name: "Read",
+      description: "Read a file",
+      inputSchema: { type: "object", properties: { file_path: { type: "string" } } }
+    });
+    expect(request.messages[1].content).toEqual([{
+      type: "tool_result",
+      toolUseId: "toolu_image",
+      content: [
+        { type: "text", text: "Preview:" },
+        {
+          type: "image",
+          source: {
+            type: "base64",
+            mediaType: "image/png",
+            data: "iVBORw0KGgo="
+          }
+        }
+      ]
+    }]);
+  });
+
   it.each([
     ["tool_result after text", baseRequest({ messages: [{ role: "user", content: [
       { type: "text", text: "before" },
@@ -102,6 +162,12 @@ describe("Anthropic Messages source parser", () => {
     ["unsupported content", baseRequest({ messages: [{ role: "user", content: [
       { type: "image", source: { type: "base64", data: "x" } }
     ] }] }), "image content blocks are not supported"],
+    ["unsupported tool result image source", baseRequest({ messages: [{ role: "user", content: [
+      { type: "tool_result", tool_use_id: "toolu_1", content: [
+        { type: "image", source: { type: "file", file_id: "file_1" } }
+      ] }
+    ] }] }), "source.file_id"],
+    ["unsupported tool type", baseRequest({ tools: [{ type: "server", name: "x", input_schema: {} }] }), "Only custom tools are supported"],
     ["unknown top field", baseRequest({ surprise: true }), "surprise: Extra inputs are not permitted"],
     ["tool schema extension", baseRequest({ tools: [{ name: "x", input_schema: {}, strict: true }] }), "tools[0].strict"],
     ["unknown named tool", baseRequest({
@@ -198,6 +264,54 @@ describe("OpenAI Chat target serializer", () => {
       parameters: { type: "object" }
     } }]);
     expect(converted.toolNames.targetToSource.get("mcp_tool")).toBe("mcp.tool");
+  });
+
+  it("degrades multimodal tool_result content for Chat Completions tool messages", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_image", name: "Read", input: { file_path: "asset.png" } }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_image",
+              content: [
+                { type: "text", text: "Preview:" },
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      tools: [{ name: "Read", input_schema: { type: "object" } }]
+    }));
+    const converted = serializeOpenAIChatRequest(canonical, { model: "gpt-5" });
+
+    expect(converted.body.messages).toEqual([
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: "toolu_image",
+          type: "function",
+          function: { name: "Read", arguments: "{\"file_path\":\"asset.png\"}" }
+        }]
+      },
+      {
+        role: "tool",
+        tool_call_id: "toolu_image",
+        content: "Preview:[Image: image/png]"
+      }
+    ]);
   });
 
   it("omits optional sampling/stop/stream usage fields for incompatible providers", () => {
@@ -462,6 +576,46 @@ describe("OpenAI Responses target", () => {
       parameters: { type: "object", properties: { value: { type: "number" } } }
     }]);
     expect(converted.body.stop).toBeUndefined();
+  });
+
+  it("degrades multimodal tool_result content for Responses function_call_output", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "tool_use", id: "toolu_image", name: "Read", input: { file_path: "asset.png" } }
+          ]
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_image",
+              content: [
+                { type: "text", text: "Preview:" },
+                {
+                  type: "image",
+                  source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      tools: [{ name: "Read", input_schema: { type: "object" } }]
+    }));
+    const converted = serializeOpenAIResponsesRequest(canonical, { model: "gpt-5" });
+
+    expect(converted.body.input).toEqual([
+      { type: "function_call", call_id: "toolu_image", name: "Read", arguments: "{\"file_path\":\"asset.png\"}" },
+      {
+        type: "function_call_output",
+        call_id: "toolu_image",
+        output: "Preview:[Image: image/png]"
+      }
+    ]);
   });
 
   it("only expands tool schemas when toolStrict is strict", () => {

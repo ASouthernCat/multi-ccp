@@ -7,6 +7,7 @@ import type {
   CanonicalResponse,
   CanonicalResponseContent,
   CanonicalToolChoice,
+  CanonicalToolResultContent,
   ToolNameMapping
 } from "./canonical.js";
 import { MODERN_OPENAI_COMPATIBILITY } from "./config.js";
@@ -78,6 +79,15 @@ function requireTargetToolName(mapping: ToolNameMapping, sourceName: string): st
   return targetName;
 }
 
+function toolResultContentToText(content: CanonicalToolResultContent): string {
+  if (typeof content === "string") return content;
+  return content.map((part) => {
+    if (part.type === "text") return part.text;
+    if (part.source.type === "base64") return `[Image: ${part.source.mediaType}]`;
+    return `[Image: ${part.source.url}]`;
+  }).join("");
+}
+
 function serializeUserMessage(message: CanonicalMessage): Array<Record<string, unknown>> {
   const result: Array<Record<string, unknown>> = [];
   const text: string[] = [];
@@ -91,7 +101,9 @@ function serializeUserMessage(message: CanonicalMessage): Array<Record<string, u
       result.push({
         role: "tool",
         tool_call_id: block.toolUseId,
-        content: block.isError ? `Tool execution failed:\n${block.content}` : block.content
+        content: block.isError
+          ? `Tool execution failed:\n${toolResultContentToText(block.content)}`
+          : toolResultContentToText(block.content)
       });
     } else if (block.type === "text") {
       textSeen = true;
