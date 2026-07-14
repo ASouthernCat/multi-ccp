@@ -18,12 +18,14 @@ import {
   invalidRequest,
   toAnthropicErrorEnvelope,
   type GatewayError,
+  type GatewayFailureCode,
   type GatewayErrorType
 } from "./errors.js";
 import {
   OpenAIResponsesAnthropicStreamBridge,
   type AnthropicStreamBridge
 } from "./openai-responses-streaming.js";
+import { GeneratedImageStore, type PreparedGeneratedImage } from "./generated-image.js";
 import {
   parseOpenAIResponsesResponseWithMetadata,
   serializeOpenAIResponsesRequest
@@ -52,6 +54,17 @@ interface RegistryLike {
   countProfiles(): Promise<number>;
 }
 
+export type GatewayFailureStage =
+  | "request_validation"
+  | "upstream_connect"
+  | "upstream_http"
+  | "upstream_response"
+  | "stream_protocol"
+  | "stream_eof"
+  | "gateway_timeout"
+  | "client_disconnect"
+  | "gateway_internal";
+
 export interface GatewayRequestLog {
   requestId: string;
   completedAt: string;
@@ -71,6 +84,14 @@ export interface GatewayRequestLog {
   upstreamItemTypes?: string[];
   inputTokens?: number;
   outputTokens?: number;
+  failureStage?: GatewayFailureStage;
+  failureCode?: GatewayFailureCode;
+  errorType?: GatewayErrorType;
+  upstreamStatus?: number;
+  upstreamRequestId?: string;
+  firstEventMs?: number;
+  lastEventType?: string;
+  terminalEventReceived?: boolean;
   sessionId?: string;
   agentId?: string;
   parentAgentId?: string;
@@ -122,6 +143,15 @@ interface RequestState {
   upstreamItemTypes?: string[];
   inputTokens?: number;
   outputTokens?: number;
+  failureStage?: GatewayFailureStage;
+  failureCode?: GatewayFailureCode;
+  errorType?: GatewayErrorType;
+  upstreamStatus?: number;
+  upstreamRequestId?: string;
+  firstEventMs?: number;
+  lastEventType?: string;
+  terminalEventReceived?: boolean;
+  activeStage?: GatewayFailureStage;
   status: number;
   clientDisconnected: boolean;
   timedOut: boolean;
@@ -132,6 +162,9 @@ interface GatewayStreamResult {
   error?: GatewayError;
   upstreamEventTypes?: string[];
   upstreamItemTypes?: string[];
+  firstEventMs?: number;
+  lastEventType?: string;
+  terminalEventReceived?: boolean;
 }
 
 class ClientDisconnectedError extends Error {
@@ -324,6 +357,7 @@ async function handleRequest(
       return;
     }
 
+    state.activeStage = "request_validation";
     validateAnthropicVersion(req);
     validateJsonContentType(req);
     const input = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
@@ -338,6 +372,11 @@ async function handleRequest(
     state.effortMapping = snapshot.config.compatibility.reasoningEffort;
 
     if (snapshot.config.protocol === "openai_responses") {
+      const imageStore = new GeneratedImageStore({
+        context: deps.context,
+        requestId: state.requestId,
+        sessionId: readHeader(req.headers["x-claude-code-session-id"])
+      });
       const converted = serializeOpenAIResponsesRequest(canonical, {
         model: snapshot.config.model,
         compatibility: snapshot.config.compatibility
@@ -352,6 +391,7 @@ async function handleRequest(
           state
         );
         state.status = mapped.status;
+        setFailure(state, "upstream_http", "upstream_http_error", mapped.error);
         sendError(res, mapped.status, mapped.error);
         return;
       }
@@ -362,12 +402,22 @@ async function handleRequest(
           snapshot.config.protocol,
           converted.toolNames,
           snapshot.config.model,
-          controller.signal
+          controller.signal,
+          state.startedAt,
+          deps.now,
+          (firstEventMs) => { state.firstEventMs ??= firstEventMs; },
+          imageStore
         );
         state.upstreamEventTypes = result.upstreamEventTypes;
         state.upstreamItemTypes = result.upstreamItemTypes;
         state.inputTokens = result.usage.inputTokens;
         state.outputTokens = result.usage.outputTokens;
+        state.firstEventMs = result.firstEventMs;
+        state.lastEventType = result.lastEventType;
+        state.terminalEventReceived = result.terminalEventReceived;
+        if (result.error) {
+          setFailure(state, classifyResponsesStreamFailure(result), result.error.code ?? "upstream_response_error", result.error);
+        }
         state.status = result.error ? 502 : 200;
         return;
       }
@@ -377,12 +427,15 @@ async function handleRequest(
       );
       const convertedResponse = parseOpenAIResponsesResponseWithMetadata(parsed, {
         toolNames: converted.toolNames,
-        modelFallback: snapshot.config.model
+        modelFallback: snapshot.config.model,
+        imageStore
       });
+      await persistGeneratedImages(imageStore, convertedResponse.generatedImages);
       state.upstreamItemTypes = convertedResponse.upstreamItemTypes;
       state.inputTokens = convertedResponse.response.usage.inputTokens;
       state.outputTokens = convertedResponse.response.usage.outputTokens;
       state.status = 200;
+      state.activeStage = undefined;
       sendJson(res, 200, canonicalResponseToAnthropic(convertedResponse.response));
       return;
     }
@@ -402,6 +455,7 @@ async function handleRequest(
         state
       );
       state.status = mapped.status;
+      setFailure(state, "upstream_http", "upstream_http_error", mapped.error);
       sendError(res, mapped.status, mapped.error);
       return;
     }
@@ -413,10 +467,17 @@ async function handleRequest(
         snapshot.config.protocol,
         converted.toolNames,
         snapshot.config.model,
-        controller.signal
+        controller.signal,
+        state.startedAt,
+        deps.now,
+        (firstEventMs) => { state.firstEventMs ??= firstEventMs; }
       );
       state.inputTokens = result.usage.inputTokens;
       state.outputTokens = result.usage.outputTokens;
+      state.firstEventMs = result.firstEventMs;
+      if (result.error) {
+        setFailure(state, "stream_protocol", result.error.code ?? "upstream_response_error", result.error);
+      }
       state.status = result.error ? 502 : 200;
       return;
     }
@@ -432,14 +493,28 @@ async function handleRequest(
     state.inputTokens = response.usage.inputTokens;
     state.outputTokens = response.usage.outputTokens;
     state.status = 200;
+    state.activeStage = undefined;
     sendJson(res, 200, canonicalResponseToAnthropic(response));
   } catch (error) {
     if (state.clientDisconnected || error instanceof ClientDisconnectedError) {
       state.status = 499;
+      setFailure(state, "client_disconnect", "client_disconnected", {
+        type: "api_error",
+        message: "Client disconnected."
+      });
       return;
     }
     const mapped = mapGatewayFailure(error, state.timedOut);
     state.status = mapped.status;
+    if (state.timedOut) {
+      setFailure(state, "gateway_timeout", "gateway_timeout", mapped.error);
+    } else if (!state.failureStage) {
+      const code = error instanceof GatewayProtocolError
+        ? error.error.code ?? (state.activeStage === "request_validation" ? "local_validation_error" : "upstream_response_error")
+        : "gateway_internal_error";
+      const stage = code === "gateway_internal_error" ? "gateway_internal" : state.activeStage ?? "gateway_internal";
+      setFailure(state, stage, code, mapped.error);
+    }
     if (!res.headersSent) {
       sendError(res, mapped.status, mapped.error);
     } else if (!res.writableEnded) {
@@ -558,8 +633,9 @@ async function fetchUpstream(
   fetchImpl: typeof fetch,
   state: RequestState
 ): Promise<Response> {
+  state.activeStage = "upstream_connect";
   try {
-    return await fetchImpl(snapshot.config.endpointUrl, {
+    const response = await fetchImpl(snapshot.config.endpointUrl, {
       method: "POST",
       headers: {
         authorization: `Bearer ${snapshot.secret.apiKey}`,
@@ -570,6 +646,10 @@ async function fetchUpstream(
       redirect: "manual",
       signal
     });
+    state.upstreamStatus = response.status;
+    state.upstreamRequestId = readUpstreamRequestId(response.headers);
+    state.activeStage = response.ok ? "upstream_response" : "upstream_http";
+    return response;
   } catch (error) {
     if (signal.aborted) {
       if (state.clientDisconnected) throw new ClientDisconnectedError();
@@ -577,7 +657,11 @@ async function fetchUpstream(
         throw new GatewayProtocolError({ type: "api_error", message: "Upstream request timed out." }, 504, { cause: error });
       }
     }
-    throw new GatewayProtocolError({ type: "api_error", message: "Unable to connect to the upstream provider." }, 502, { cause: error });
+    throw new GatewayProtocolError({
+      type: "api_error",
+      message: "Unable to connect to the upstream provider.",
+      code: "upstream_connect_error"
+    }, 502, { cause: error });
   }
 }
 
@@ -587,26 +671,34 @@ async function pipeStreamingResponse(
   protocol: GatewayUpstreamProtocol,
   toolNames: ToolNameMapping,
   model: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  startedAt: number,
+  now: () => number,
+  onFirstEvent: (firstEventMs: number) => void,
+  imageStore?: GeneratedImageStore
 ): Promise<GatewayStreamResult> {
   if (!upstream.body) {
     throw new GatewayProtocolError({ type: "api_error", message: "Upstream streaming response has no body." }, 502);
   }
   const bridge: AnthropicStreamBridge = protocol === "openai_responses"
-    ? new OpenAIResponsesAnthropicStreamBridge({ model, toolNames })
+    ? new OpenAIResponsesAnthropicStreamBridge({ model, toolNames, imageStore })
     : new OpenAIAnthropicStreamBridge({
         messageId: `msg_${randomUUID().replace(/-/g, "")}`,
         model,
         toolNames
       });
+  let firstEventMs: number | undefined;
   const toResult = (): GatewayStreamResult => {
     const metadata = bridge.metadata;
     return {
       usage: bridge.usage,
+      ...(firstEventMs === undefined ? {} : { firstEventMs }),
       ...(bridge.error ? { error: bridge.error } : {}),
       ...(metadata ? {
         upstreamEventTypes: metadata.upstreamEventTypes,
-        upstreamItemTypes: metadata.upstreamItemTypes
+        upstreamItemTypes: metadata.upstreamItemTypes,
+        ...(metadata.lastEventType ? { lastEventType: metadata.lastEventType } : {}),
+        terminalEventReceived: metadata.terminalEventReceived
       } : {})
     };
   };
@@ -622,7 +714,15 @@ async function pipeStreamingResponse(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      for (const output of bridge.push(value)) {
+      if (firstEventMs === undefined) {
+        firstEventMs = Math.max(0, now() - startedAt);
+        onFirstEvent(firstEventMs);
+      }
+      const outputChunks = bridge.push(value);
+      if (imageStore && bridge.takePreparedImages) {
+        await persistGeneratedImages(imageStore, bridge.takePreparedImages());
+      }
+      for (const output of outputChunks) {
         await writeWithBackpressure(res, output, signal);
       }
       if (bridge.isTerminal) {
@@ -631,7 +731,11 @@ async function pipeStreamingResponse(
         return toResult();
       }
     }
-    for (const output of bridge.finish()) {
+    const outputChunks = bridge.finish();
+    if (imageStore && bridge.takePreparedImages) {
+      await persistGeneratedImages(imageStore, bridge.takePreparedImages());
+    }
+    for (const output of outputChunks) {
       await writeWithBackpressure(res, output, signal);
     }
     res.end();
@@ -813,6 +917,46 @@ function readHeader(value: string | string[] | undefined): string | undefined {
   return normalized?.trim() || undefined;
 }
 
+async function persistGeneratedImages(
+  store: GeneratedImageStore,
+  images: PreparedGeneratedImage[]
+): Promise<void> {
+  try {
+    for (const image of images) await store.persist(image);
+  } catch (error) {
+    throw new GatewayProtocolError({
+      type: "api_error",
+      message: "The gateway could not save the generated image.",
+      code: "gateway_internal_error"
+    }, 502, { cause: error });
+  }
+}
+
+function readUpstreamRequestId(headers: Headers): string | undefined {
+  for (const name of ["x-request-id", "request-id", "x-correlation-id", "cf-ray"]) {
+    const value = headers.get(name)?.trim();
+    if (value && value.length <= 256 && !/[\r\n\0]/.test(value)) return value;
+  }
+  return undefined;
+}
+
+function setFailure(
+  state: RequestState,
+  stage: GatewayFailureStage,
+  code: GatewayFailureCode,
+  error: GatewayError
+): void {
+  state.failureStage = stage;
+  state.failureCode = code;
+  state.errorType = error.type;
+}
+
+function classifyResponsesStreamFailure(result: GatewayStreamResult): GatewayFailureStage {
+  if (result.error?.code === "missing_terminal_event") return "stream_eof";
+  if (result.terminalEventReceived) return "upstream_response";
+  return "stream_protocol";
+}
+
 function emitRequestLog(
   deps: Pick<GatewayServerOptions, "onRequestComplete"> & { now: () => number },
   req: IncomingMessage,
@@ -843,6 +987,16 @@ function emitRequestLog(
       ...(state.upstreamItemTypes ? { upstreamItemTypes: [...state.upstreamItemTypes] } : {}),
       ...(state.inputTokens === undefined ? {} : { inputTokens: state.inputTokens }),
       ...(state.outputTokens === undefined ? {} : { outputTokens: state.outputTokens }),
+      ...(state.failureStage ? { failureStage: state.failureStage } : {}),
+      ...(state.failureCode ? { failureCode: state.failureCode } : {}),
+      ...(state.errorType ? { errorType: state.errorType } : {}),
+      ...(state.upstreamStatus === undefined ? {} : { upstreamStatus: state.upstreamStatus }),
+      ...(state.upstreamRequestId ? { upstreamRequestId: state.upstreamRequestId } : {}),
+      ...(state.firstEventMs === undefined ? {} : { firstEventMs: state.firstEventMs }),
+      ...(state.lastEventType ? { lastEventType: state.lastEventType } : {}),
+      ...(state.terminalEventReceived === undefined ? {} : {
+        terminalEventReceived: state.terminalEventReceived
+      }),
       ...(sessionId ? { sessionId } : {}),
       ...(agentId ? { agentId } : {}),
       ...(parentAgentId ? { parentAgentId } : {}),

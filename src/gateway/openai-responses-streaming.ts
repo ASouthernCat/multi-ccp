@@ -6,6 +6,7 @@ import type {
 } from "./canonical.js";
 import { EMPTY_TOOL_NAME_MAPPING } from "./canonical.js";
 import { asGatewayError, type GatewayError, type GatewayErrorType, upstreamProtocolError } from "./errors.js";
+import type { GeneratedImageStore, PreparedGeneratedImage } from "./generated-image.js";
 import { normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
 import { AnthropicSseEmitter, SseParser, type SseEvent } from "./streaming.js";
 
@@ -31,7 +32,7 @@ interface ItemState {
   key: string;
   outputIndex: number;
   id?: string;
-  type?: "message" | "function_call" | "reasoning";
+  type?: "message" | "function_call" | "reasoning" | "image_generation_call";
   textParts: Map<number, TextState>;
   callId?: string;
   name?: string;
@@ -39,16 +40,21 @@ interface ItemState {
   emittedArgumentsLength: number;
   started: boolean;
   stopped: boolean;
+  imagePath?: string;
+  imageEmitted?: boolean;
 }
 
 export interface OpenAIResponsesStreamConverterOptions {
   model: string;
   toolNames?: ToolNameMapping;
+  imageStore?: GeneratedImageStore;
 }
 
 export interface OpenAIResponsesStreamMetadata {
   upstreamEventTypes: string[];
   upstreamItemTypes: string[];
+  lastEventType?: string;
+  terminalEventReceived: boolean;
 }
 
 export interface AnthropicStreamBridge {
@@ -58,6 +64,7 @@ export interface AnthropicStreamBridge {
   readonly metadata?: OpenAIResponsesStreamMetadata;
   push(chunk: string | Uint8Array): string[];
   finish(): string[];
+  takePreparedImages?(): PreparedGeneratedImage[];
 }
 
 function isObject(value: unknown): value is JsonObject {
@@ -132,6 +139,7 @@ function isIgnorableResponsesStreamEvent(type: string): boolean {
     type === "heartbeat" ||
     type === "message" ||
     type === "codex.rate_limits" ||
+    type === "codex.response.metadata" ||
     type === "response.metadata"
   ) {
     return true;
@@ -147,6 +155,7 @@ function isIgnorableResponsesStreamEvent(type: string): boolean {
 export class OpenAIResponsesStreamConverter {
   private readonly model: string;
   private readonly toolNames: ToolNameMapping;
+  private readonly imageStore: GeneratedImageStore | undefined;
   private readonly itemsByIndex = new Map<number, ItemState>();
   private readonly itemsById = new Map<string, ItemState>();
   private readonly blockOrder: string[] = [];
@@ -157,12 +166,17 @@ export class OpenAIResponsesStreamConverter {
   private messageStarted = false;
   private usageValue: CanonicalUsage = { inputTokens: 0, outputTokens: 0 };
   private terminal = false;
+  private lastEventTypeValue: string | undefined;
+  private terminalEventReceivedValue = false;
   private terminalError: GatewayError | undefined;
   private functionCallsSeen = false;
+  private preparedImages: PreparedGeneratedImage[] = [];
+  private readonly preparedImagePaths = new Set<string>();
 
   constructor(options: OpenAIResponsesStreamConverterOptions) {
     this.model = options.model;
     this.toolNames = options.toolNames ?? EMPTY_TOOL_NAME_MAPPING;
+    this.imageStore = options.imageStore;
   }
 
   get isTerminal(): boolean {
@@ -180,8 +194,16 @@ export class OpenAIResponsesStreamConverter {
   get metadata(): OpenAIResponsesStreamMetadata {
     return {
       upstreamEventTypes: [...this.eventTypes],
-      upstreamItemTypes: [...this.itemTypes]
+      upstreamItemTypes: [...this.itemTypes],
+      ...(this.lastEventTypeValue ? { lastEventType: this.lastEventTypeValue } : {}),
+      terminalEventReceived: this.terminalEventReceivedValue
     };
+  }
+
+  takePreparedImages(): PreparedGeneratedImage[] {
+    const images = this.preparedImages;
+    this.preparedImages = [];
+    return images;
   }
 
   processSseEvent(event: SseEvent): CanonicalStreamEvent[] {
@@ -200,10 +222,18 @@ export class OpenAIResponsesStreamConverter {
     try {
       payload = JSON.parse(event.data);
     } catch {
-      return this.fail({ type: "api_error", message: "Upstream Responses SSE data is not valid JSON." });
+      return this.fail({
+        type: "api_error",
+        message: "Upstream Responses SSE data is not valid JSON.",
+        code: "invalid_stream_data"
+      });
     }
     if (!isObject(payload)) {
-      return this.fail({ type: "api_error", message: "Upstream Responses SSE payload must be an object." });
+      return this.fail({
+        type: "api_error",
+        message: "Upstream Responses SSE payload must be an object.",
+        code: "invalid_stream_data"
+      });
     }
 
     try {
@@ -221,6 +251,7 @@ export class OpenAIResponsesStreamConverter {
         return [];
       }
       this.recordType(type, this.eventTypeSet, this.eventTypes);
+      this.lastEventTypeValue = type;
       if (event.event === "error" || type === "error" || type === "response.error") {
         return this.fail(extractError(payload, "The upstream Responses stream returned an error."));
       }
@@ -237,7 +268,8 @@ export class OpenAIResponsesStreamConverter {
     if (this.terminal) return [];
     return this.fail({
       type: "api_error",
-      message: "Upstream Responses stream ended before a terminal response event was received."
+      message: "Upstream Responses stream ended before a terminal response event was received.",
+      code: "missing_terminal_event"
     });
   }
 
@@ -290,6 +322,7 @@ export class OpenAIResponsesStreamConverter {
       case "response.incomplete":
         return this.completeResponse(payload, "incomplete");
       case "response.failed":
+        this.terminalEventReceivedValue = true;
         return this.fail(extractError(payload, "The upstream Responses request failed."));
       default:
         // Unknown semantic events: ignore transport/noise; fail only if processOutputItem
@@ -297,7 +330,11 @@ export class OpenAIResponsesStreamConverter {
         if (isIgnorableResponsesStreamEvent(type)) {
           return output;
         }
-        throw upstreamProtocolError(`Unsupported Responses stream event type '${type}'.`);
+        throw upstreamProtocolError(
+          `Unsupported Responses stream event type '${type}'.`,
+          undefined,
+          "unsupported_stream_event"
+        );
     }
   }
 
@@ -325,6 +362,10 @@ export class OpenAIResponsesStreamConverter {
     this.setItemType(state, type);
 
     if (type === "reasoning") return;
+    if (type === "image_generation_call") {
+      this.processImage(state, item, done, output);
+      return;
+    }
     if (type === "message") {
       this.processFullMessage(state, item, done, output);
       if (done) this.stopAllTextParts(state, output);
@@ -344,7 +385,11 @@ export class OpenAIResponsesStreamConverter {
       if (done) this.finishTool(state, output);
       return;
     }
-    throw upstreamProtocolError(`stream.item.type: Unsupported output item type '${type}'.`);
+    throw upstreamProtocolError(
+      `stream.item.type: Unsupported output item type '${type}'.`,
+      undefined,
+      "unsupported_output_item"
+    );
   }
 
   private processContentPart(payload: JsonObject, done: boolean, output: CanonicalStreamEvent[]): void {
@@ -408,6 +453,7 @@ export class OpenAIResponsesStreamConverter {
   }
 
   private completeResponse(payload: JsonObject, kind: "completed" | "incomplete"): CanonicalStreamEvent[] {
+    this.terminalEventReceivedValue = true;
     const response = requireObject(payload.response, `${kind}.response`);
     const output: CanonicalStreamEvent[] = [];
     this.startMessage(response, output);
@@ -422,6 +468,14 @@ export class OpenAIResponsesStreamConverter {
     if (usage) {
       this.usageValue = usage;
       output.push({ type: "usage", usage });
+    }
+
+    if (Array.isArray(response.output)) {
+      response.output.forEach((item, outputIndex) => {
+        if (isObject(item) && item.type === "image_generation_call") {
+          this.processOutputItem({ output_index: outputIndex, item }, true, output);
+        }
+      });
     }
 
     if (kind === "incomplete") {
@@ -483,6 +537,39 @@ export class OpenAIResponsesStreamConverter {
     });
   }
 
+  private processImage(
+    state: ItemState,
+    item: JsonObject,
+    done: boolean,
+    output: CanonicalStreamEvent[]
+  ): void {
+    const status = optionalString(item.status, "stream.item.status");
+    const result = optionalString(item.result, "stream.item.result");
+    if (!done && !result) return;
+    if (status !== "completed") {
+      throw upstreamProtocolError("stream.item.status: Expected 'completed' for an image generation result.");
+    }
+    if (!result) {
+      throw upstreamProtocolError("stream.item.result: Expected a non-empty string in the upstream stream.");
+    }
+    if (!this.imageStore) {
+      throw upstreamProtocolError("Image generation output cannot be handled without an image store.");
+    }
+    const image = this.imageStore.prepare(result, state.id ?? `output-${state.outputIndex}`);
+    if (state.imagePath && state.imagePath !== image.path) {
+      throw upstreamProtocolError(`${state.key}.result changed during the stream.`);
+    }
+    state.imagePath = image.path;
+    if (!this.preparedImagePaths.has(image.path)) {
+      this.preparedImagePaths.add(image.path);
+      this.preparedImages.push(image);
+    }
+    if (!state.imageEmitted) {
+      state.imageEmitted = true;
+      output.push({ type: "generated_image", blockKey: `${state.key}:image`, path: image.path });
+    }
+  }
+
   private resolveItem(index: number, id?: string): ItemState {
     const indexed = this.itemsByIndex.get(index);
     const identified = id ? this.itemsById.get(id) : undefined;
@@ -533,8 +620,12 @@ export class OpenAIResponsesStreamConverter {
   }
 
   private setItemType(state: ItemState, type: string): void {
-    if (type !== "message" && type !== "function_call" && type !== "reasoning") {
-      throw upstreamProtocolError(`Unsupported output item type '${type}'.`);
+    if (type !== "message" && type !== "function_call" && type !== "reasoning" && type !== "image_generation_call") {
+      throw upstreamProtocolError(
+        `Unsupported output item type '${type}'.`,
+        undefined,
+        "unsupported_output_item"
+      );
     }
     if (state.type && state.type !== type) {
       throw upstreamProtocolError(`Output item ${state.key} changed type from '${state.type}' to '${type}'.`);
@@ -715,6 +806,10 @@ export class OpenAIResponsesAnthropicStreamBridge implements AnthropicStreamBrid
     const output = this.convert(this.parser.finish());
     if (!this.converter.isTerminal) output.push(...this.emit(this.converter.finish()));
     return output;
+  }
+
+  takePreparedImages(): PreparedGeneratedImage[] {
+    return this.converter.takePreparedImages();
   }
 
   private convert(events: SseEvent[]): string[] {

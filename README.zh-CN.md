@@ -230,13 +230,13 @@ Responses 上游提供 OpenAI-compatible 和高级 Responses 映射；Chat Compl
 
 已有 Chat Completions 上游会继续工作，不会被静默迁移到 Responses。旧版 v1 上游配置会按 Chat Completions 读取，只有在编辑后才会保存为 v2。升级后的 CLI 首次启动时，可能会替换由 multi-ccp 管理的 protocol-v1 网关进程，以便后续请求使用 v2 runtime。
 
-Responses reasoning summary 当前会被省略，不会映射为 Anthropic thinking；Anthropic extended-thinking 请求仍会被拒绝。带图片的 tool result 会被接受，但会为 OpenAI 格式上游降级为文本占位符，而不是以二进制/图片内容发送。
+Responses reasoning summary 当前会被省略，不会映射为 Anthropic thinking；Anthropic extended-thinking 请求仍会被拒绝。带图片的 tool result 会被接受，但会为 OpenAI 格式上游降级为文本占位符，而不是以二进制/图片内容发送。Responses `image_generation_call` 的最终结果会先校验为 PNG、JPEG 或 WebP（最大 32 MiB），再原子保存到 `~/.claude-profiles/.gateway/generated/<session-or-request>/`，并把绝对本地路径返回给 Claude Code。partial image 会被忽略，重复的最终载荷会按 SHA-256 去重，图片 base64 不会进入 Anthropic SSE 或网关日志。
 
 所有 gateway profile 共用一个仅监听 loopback 的服务：`http://127.0.0.1:3921`。每个 Claude Code 进程使用独立的 profile path 和本地 token，因此不同供应商 profile 可以安全并发运行。启动第二个 gateway profile 时会复用现有服务，不会重启或中断正在执行的流。
 
 本地 Web UI 默认遮罩 API Key。打开 API Profile 或 Upstream 编辑器时，会通过受 UI Token 保护且禁止缓存的 POST 接口读取已保存密钥；普通 Profile 和 Upstream GET 响应不会暴露密钥明文。
 
-网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
+网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。失败请求还会记录稳定的 `failureStage` / `failureCode`、可用的上游 HTTP 状态和受长度限制的 request ID，以及 SSE 首事件耗时和终止事件元数据，用于区分上游 HTTP 错误、流转换错误和缺少终止事件的上游断流。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
 
 网关支持 Messages 请求、非流式和 SSE 响应、文本与工具调用、多模态 tool result 降级、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。可选的 token count 和模型发现端点会明确返回 `404`，由 Claude Code 使用自身 fallback。
 

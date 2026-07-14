@@ -92,6 +92,7 @@ export type CanonicalStreamEvent =
   | { type: "tool_arguments_delta"; blockKey: string; partialJson: string }
   | { type: "block_stop"; blockKey: string }
   | { type: "usage"; usage: CanonicalUsage }
+  | { type: "generated_image"; blockKey: string; path: string }
   | { type: "finish"; reason: CanonicalFinishReason }
   | { type: "error"; error: GatewayError };
 

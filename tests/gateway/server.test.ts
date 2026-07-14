@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ import type {
 } from "../../src/core/types.js";
 import { readGatewayProfileSecret } from "../../src/core/gateway-profile.js";
 import { createGatewayServer, type GatewayRequestLog } from "../../src/gateway/server.js";
+import { getGatewayGeneratedDir } from "../../src/core/paths.js";
 
 interface LoopbackHandle {
   endpoint: string;
@@ -23,6 +24,7 @@ interface LoopbackHandle {
 const cleanups: Array<() => Promise<void>> = [];
 const FETCH_BLOCKED_TEST_PORTS = new Set([6000, 6665, 6666, 6667, 6668, 6669, 10080]);
 const MAX_LOOPBACK_PORT_ATTEMPTS = 20;
+const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
 
 afterEach(async () => {
   await Promise.allSettled(cleanups.splice(0).reverse().map((cleanup) => cleanup()));
@@ -342,12 +344,13 @@ describe("gateway HTTP protocol", () => {
       `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
     const upstream = await listenLoopback(async (req, res) => {
       received = { url: req.url ?? "", authorization: req.headers.authorization, body: await readRequestJson(req) };
-      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "upstream-responses-1" });
       const created = sse("response.created", {
         response: { id: "resp_stream", model: "responses-model", status: "in_progress" }
       });
       res.write(created.slice(0, 37));
       res.write(created.slice(37));
+      res.write(sse("codex.response.metadata", { provider: "aicodemirror" }));
       res.write(sse("response.output_item.added", {
         output_index: 0, item: { id: "msg_1", type: "message", content: [] }
       }));
@@ -402,12 +405,143 @@ describe("gateway HTTP protocol", () => {
       upstreamItemTypes: ["message"],
       inputTokens: 9,
       outputTokens: 3,
+      upstreamStatus: 200,
+      upstreamRequestId: "upstream-responses-1",
+      lastEventType: "response.completed",
+      terminalEventReceived: true,
       status: 200
     });
     expect(logs[0].upstreamEventTypes).toEqual(expect.arrayContaining([
       "response.created", "response.output_item.added", "response.content_part.added",
-      "response.output_text.delta", "response.completed"
+      "response.output_text.delta", "codex.response.metadata", "response.completed"
     ]));
+  });
+
+  it("saves streamed Responses image output before returning its absolute path", async () => {
+    const context = await createContext();
+    const sse = (type: string, payload: Record<string, unknown>) =>
+      `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
+    const upstream = await listenLoopback((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "upstream-image-1" });
+      res.write(sse("response.created", {
+        response: { id: "resp_image", model: "responses-model", status: "in_progress" }
+      }));
+      res.write(sse("response.output_item.added", {
+        output_index: 0,
+        item: { id: "image_1", type: "image_generation_call", status: "in_progress" }
+      }));
+      res.write(sse("response.image_generation_call.partial_image", {
+        output_index: 0, item_id: "image_1", partial_image_index: 0, partial_image_b64: ONE_PIXEL_PNG
+      }));
+      res.write(sse("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_1", type: "image_generation_call", status: "completed", result: ONE_PIXEL_PNG }
+      }));
+      res.end(sse("response.completed", {
+        response: {
+          id: "resp_image",
+          model: "responses-model",
+          status: "completed",
+          output: [{ id: "image_1", type: "image_generation_call", status: "completed", result: ONE_PIXEL_PNG }],
+          usage: { input_tokens: 4, output_tokens: 1 }
+        }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses-image",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/responses-image/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": secret!.localToken,
+        "x-claude-code-session-id": "session-image-test"
+      },
+      body: JSON.stringify(anthropicRequest(true))
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    const imageDir = path.join(getGatewayGeneratedDir(context), "session-image-test");
+    const files = await readdir(imageDir);
+    expect(files).toHaveLength(1);
+    const imagePath = path.join(imageDir, files[0]);
+    expect(path.isAbsolute(imagePath)).toBe(true);
+    expect(await readFile(imagePath)).toEqual(Buffer.from(ONE_PIXEL_PNG, "base64"));
+    expect(body).toContain("Generated image saved to:");
+    expect(body).toContain(JSON.stringify(imagePath).slice(1, -1));
+    expect(body).not.toContain(ONE_PIXEL_PNG);
+    expect(body).not.toContain("event: error");
+    expect(body).toContain("event: message_stop");
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      status: 200,
+      upstreamStatus: 200,
+      upstreamRequestId: "upstream-image-1",
+      upstreamItemTypes: ["image_generation_call"],
+      lastEventType: "response.completed",
+      terminalEventReceived: true,
+      sessionId: "session-image-test"
+    });
+  });
+
+  it("returns an SSE error without exposing a path when generated image persistence fails", async () => {
+    const context = await createContext();
+    await mkdir(path.dirname(getGatewayGeneratedDir(context)), { recursive: true });
+    await writeFile(getGatewayGeneratedDir(context), "blocks generated image directory creation");
+    const sse = (type: string, payload: Record<string, unknown>) =>
+      `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
+    const upstream = await listenLoopback((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write(sse("response.created", {
+        response: { id: "resp_image_failure", model: "responses-model", status: "in_progress" }
+      }));
+      res.end(sse("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_failure", type: "image_generation_call", status: "completed", result: ONE_PIXEL_PNG }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses-image-failure",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/responses-image-failure/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(true))
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("event: error");
+    expect(body).toContain("could not save the generated image");
+    expect(body).not.toContain("Generated image saved to:");
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      status: 502,
+      failureStage: "gateway_internal",
+      failureCode: "gateway_internal_error",
+      errorType: "api_error"
+    });
   });
 
   it("maps Claude output_config effort without forwarding the Anthropic field", async () => {
@@ -507,10 +641,47 @@ describe("gateway HTTP protocol", () => {
     expect(oversized.status).toBe(413);
   });
 
+  it("classifies local request validation failures before contacting upstream", async () => {
+    const context = await createContext();
+    let upstreamRequests = 0;
+    const upstream = await listenLoopback((_req, res) => {
+      upstreamRequests += 1;
+      res.writeHead(500);
+      res.end();
+    });
+    const profile = await createTestGatewayProfile({
+      name: "local-validation",
+      provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "key",
+      model: "model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/local-validation/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: "{bad"
+    });
+
+    expect(response.status).toBe(400);
+    expect(upstreamRequests).toBe(0);
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      status: 400,
+      failureStage: "request_validation",
+      failureCode: "local_validation_error",
+      errorType: "invalid_request_error"
+    });
+    expect(logs[0].upstreamStatus).toBeUndefined();
+  });
+
   it("preserves upstream 400 messages while redacting exact configured secrets", async () => {
     const context = await createContext();
     const upstream = await listenLoopback((_req, res) => {
-      res.writeHead(400, { "content-type": "application/json" });
+      res.writeHead(400, { "content-type": "application/json", "x-request-id": "upstream-invalid-1" });
       res.end(JSON.stringify({
         error: {
           type: "invalid_request_error",
@@ -526,7 +697,8 @@ describe("gateway HTTP protocol", () => {
       model: "model"
     }, context);
     const secret = await readGatewayProfileSecret(profile.dir);
-    const { endpoint } = await startGateway(context);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
     const response = await fetch(`${endpoint}/p/errors/v1/messages`, {
       method: "POST",
       headers: {
@@ -544,6 +716,15 @@ describe("gateway HTTP protocol", () => {
         type: "invalid_request_error",
         message: "thinking.type: Extra inputs are not permitted; [redacted] must not leak"
       }
+    });
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      status: 400,
+      upstreamStatus: 400,
+      upstreamRequestId: "upstream-invalid-1",
+      failureStage: "upstream_http",
+      failureCode: "upstream_http_error",
+      errorType: "invalid_request_error"
     });
   });
 

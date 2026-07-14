@@ -10,6 +10,7 @@ import type {
 } from "./canonical.js";
 import { OPENAI_RESPONSES_COMPATIBILITY } from "./config.js";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
+import type { GeneratedImageStore, PreparedGeneratedImage } from "./generated-image.js";
 import {
   canonicalResponseToAnthropic,
   createToolNameMapping,
@@ -36,12 +37,16 @@ export interface OpenAIResponsesRequestConversion {
 export interface OpenAIResponsesResponseOptions {
   toolNames?: ToolNameMapping;
   modelFallback?: string;
+  imageStore?: GeneratedImageStore;
 }
 
 export interface OpenAIResponsesParsedResponse {
   response: CanonicalResponse;
   upstreamItemTypes: string[];
+  generatedImages: PreparedGeneratedImage[];
 }
+
+const GENERATED_IMAGE_TEXT_PREFIX = "Generated image saved to:\n";
 
 function collectToolNames(request: CanonicalRequest): string[] {
   const names = request.tools?.map((tool) => tool.name) ?? [];
@@ -269,6 +274,8 @@ function parseResponseInternal(
   }
   const content: CanonicalResponseContent[] = [];
   const upstreamItemTypes: string[] = [];
+  const generatedImages: PreparedGeneratedImage[] = [];
+  const generatedImagePaths = new Set<string>();
   const seenTypes = new Set<string>();
   const mapping = options.toolNames ?? { sourceToTarget: new Map(), targetToSource: new Map() };
 
@@ -295,6 +302,24 @@ function parseResponseInternal(
       return;
     }
     if (type === "reasoning") return;
+    if (type === "image_generation_call") {
+      const status = requireString(item.status, `${path}.status`);
+      if (status !== "completed") {
+        throw upstreamProtocolError(`${path}.status: Expected 'completed' for an image generation result.`);
+      }
+      const result = requireString(item.result, `${path}.result`);
+      const itemId = requireString(item.id, `${path}.id`);
+      if (!options.imageStore) {
+        throw upstreamProtocolError("Image generation output cannot be handled without an image store.");
+      }
+      const image = options.imageStore.prepare(result, itemId);
+      if (!generatedImagePaths.has(image.path)) {
+        generatedImagePaths.add(image.path);
+        generatedImages.push(image);
+        content.push({ type: "text", text: `${GENERATED_IMAGE_TEXT_PREFIX}${image.path}` });
+      }
+      return;
+    }
     throw upstreamProtocolError(`${path}.type: Unsupported output item type '${type}'.`);
   });
 
@@ -338,7 +363,8 @@ function parseResponseInternal(
       finishReason,
       usage: parseUsage(response.usage)
     },
-    upstreamItemTypes
+    upstreamItemTypes,
+    generatedImages
   };
 }
 

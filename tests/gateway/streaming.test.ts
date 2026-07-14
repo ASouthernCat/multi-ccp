@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GeneratedImageStore } from "../../src/gateway/generated-image.js";
 import { createToolNameMapping } from "../../src/gateway/utils.js";
 import {
   OpenAIResponsesAnthropicStreamBridge,
@@ -27,6 +28,8 @@ function parseOutput(output: string[]): ParsedOutputEvent[] {
 function openAIEvent(payload: unknown, newline = "\n"): string {
   return `data: ${JSON.stringify(payload)}${newline}${newline}`;
 }
+
+const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
 
 describe("SSE parser", () => {
   it("frames split CRLF events, multiple events, multiline data, comments, and DONE", () => {
@@ -525,6 +528,11 @@ describe("OpenAI Responses stream conversion", () => {
     ]);
     expect(events.at(-1)).toMatchObject({ event: "error", data: { error: { message: expect.stringContaining("terminal") } } });
     expect(events.some((event) => event.event === "message_stop")).toBe(false);
+    expect(bridge.error?.code).toBe("missing_terminal_event");
+    expect(bridge.metadata).toMatchObject({
+      lastEventType: "response.created",
+      terminalEventReceived: false
+    });
   });
 
   it("records and ignores provider metadata events", () => {
@@ -537,15 +545,102 @@ describe("OpenAI Responses stream conversion", () => {
       type: "response.created", response: responseEnvelope()
     }) });
     expect(converter.processSseEvent({
-      event: "response.metadata",
-      data: JSON.stringify({ type: "response.metadata", provider: "aicodemirror" })
+      event: "codex.response.metadata",
+      data: JSON.stringify({ type: "codex.response.metadata", provider: "aicodemirror" })
     })).toEqual([]);
-    converter.processSseEvent({ event: "response.created", data: JSON.stringify({
-      type: "response.created", response: responseEnvelope()
-    }) });
     expect(converter.metadata.upstreamEventTypes).toEqual([
-      "codex.rate_limits", "response.created", "response.metadata"
+      "codex.rate_limits", "response.created", "codex.response.metadata"
     ]);
+    expect(converter.metadata.lastEventType).toBe("codex.response.metadata");
+  });
+
+  it("converts a completed image generation item to one saved-image path", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" }, requestId: "request-1", sessionId: "session-1"
+    });
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt", imageStore });
+    const output = bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0,
+        item: { id: "image_1", type: "image_generation_call", status: "in_progress" }
+      }),
+      responsesEvent("response.image_generation_call.partial_image", {
+        output_index: 0, item_id: "image_1", partial_image_index: 0, partial_image_b64: ONE_PIXEL_PNG
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_1", type: "image_generation_call", status: "completed", result: ONE_PIXEL_PNG }
+      }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({
+          status: "completed",
+          output: [{ id: "image_1", type: "image_generation_call", status: "completed", result: ONE_PIXEL_PNG }]
+        })
+      })
+    ].join(""));
+
+    expect(bridge.error).toBeUndefined();
+    expect(bridge.isTerminal).toBe(true);
+    expect(bridge.takePreparedImages?.()).toHaveLength(1);
+    expect(output.join("")).toContain("Generated image saved to:");
+    expect(output.join("").match(/Generated image saved to:/g)).toHaveLength(1);
+    expect(output.join("")).not.toContain(ONE_PIXEL_PNG);
+    expect(bridge.metadata).toMatchObject({
+      upstreamItemTypes: ["image_generation_call"],
+      lastEventType: "response.completed",
+      terminalEventReceived: true
+    });
+  });
+
+  it("recovers a final image carried only by response.completed output", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" }, requestId: "request-completed-only"
+    });
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt", imageStore });
+    const output = bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({
+          status: "completed",
+          output: [{
+            id: "image_completed_only",
+            type: "image_generation_call",
+            status: "completed",
+            result: ONE_PIXEL_PNG
+          }]
+        })
+      })
+    ].join(""));
+
+    expect(bridge.error).toBeUndefined();
+    expect(bridge.takePreparedImages?.()).toHaveLength(1);
+    expect(output.join("")).toContain("Generated image saved to:");
+    expect(output.join("")).not.toContain(ONE_PIXEL_PNG);
+  });
+
+  it("does not replay completed function calls from response.completed output", () => {
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt" });
+    const call = {
+      id: "fc_1",
+      type: "function_call",
+      call_id: "call_1",
+      name: "image_generation",
+      arguments: "{\"prompt\":\"space\"}"
+    };
+    const output = bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", { output_index: 0, item: call }),
+      responsesEvent("response.output_item.done", { output_index: 0, item: call }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({ status: "completed", output: [call] })
+      })
+    ].join(""));
+
+    expect(bridge.error).toBeUndefined();
+    expect(bridge.isTerminal).toBe(true);
+    expect(parseOutput(output).filter((event) => event.event === "content_block_start")).toHaveLength(1);
+    expect(output.join("")).toContain('"stop_reason":"tool_use"');
   });
 
   it("tolerates keepalive/heartbeat and reasoning stream noise without failing", () => {

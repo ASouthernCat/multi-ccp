@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 import { parseAnthropicMessagesRequest } from "../../src/gateway/anthropic-source.js";
 import { GatewayProtocolError } from "../../src/gateway/errors.js";
+import { GeneratedImageStore } from "../../src/gateway/generated-image.js";
 import {
   parseOpenAIResponsesResponse,
   parseOpenAIResponsesResponseWithMetadata,
@@ -196,6 +198,8 @@ describe("Anthropic Messages source parser", () => {
     }
   });
 });
+
+const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";
 
 describe("OpenAI Chat target serializer", () => {
   it("expands tool messages and maps tool choice, parallel intent, and compatibility fields", () => {
@@ -729,6 +733,50 @@ describe("OpenAI Responses target", () => {
       ]
     });
     expect(canonicalResponseToAnthropic(parsed.response)).toMatchObject({ stop_reason: "tool_use" });
+  });
+
+  it("prepares completed image generation output as an absolute saved-image path", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" },
+      requestId: "request-1",
+      sessionId: "session-1"
+    });
+    const parsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_image",
+      model: "gpt-image",
+      status: "completed",
+      output: [{
+        id: "image_1",
+        type: "image_generation_call",
+        status: "completed",
+        result: ONE_PIXEL_PNG
+      }]
+    }, { imageStore });
+
+    expect(parsed.upstreamItemTypes).toEqual(["image_generation_call"]);
+    expect(parsed.generatedImages).toHaveLength(1);
+    expect(path.isAbsolute(parsed.generatedImages[0].path)).toBe(true);
+    expect(parsed.response.content).toEqual([{
+      type: "text",
+      text: `Generated image saved to:\n${parsed.generatedImages[0].path}`
+    }]);
+  });
+
+  it.each([
+    ["incomplete", ONE_PIXEL_PNG, "Expected 'completed'"],
+    ["completed", "not base64!", "valid base64"],
+    ["completed", Buffer.from("not an image").toString("base64"), "Unsupported image format"]
+  ])("rejects invalid image generation results", (status, result, expected) => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" },
+      requestId: "request-1"
+    });
+    expect(() => parseOpenAIResponsesResponse({
+      id: "resp_image",
+      model: "gpt-image",
+      status: "completed",
+      output: [{ id: "image_1", type: "image_generation_call", status, result }]
+    }, { imageStore })).toThrow(expected);
   });
 
   it.each([

@@ -566,6 +566,27 @@ export class AnthropicSseEmitter {
       this.usage = event.usage;
       return [];
     }
+    if (event.type === "generated_image") {
+      if (this.blocks.has(event.blockKey)) {
+        throw new Error(`Canonical stream reused block key '${event.blockKey}'.`);
+      }
+      const block = { index: this.nextBlockIndex++, kind: "text" as const, stopped: true };
+      this.blocks.set(event.blockKey, block);
+      const text = `Generated image saved to:\n${event.path}`;
+      return [
+        formatSse("content_block_start", {
+          type: "content_block_start",
+          index: block.index,
+          content_block: { type: "text", text: "" }
+        }),
+        formatSse("content_block_delta", {
+          type: "content_block_delta",
+          index: block.index,
+          delta: { type: "text_delta", text }
+        }),
+        formatSse("content_block_stop", { type: "content_block_stop", index: block.index })
+      ];
+    }
 
     this.terminal = true;
     return [

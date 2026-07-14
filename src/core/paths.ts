@@ -46,6 +46,10 @@ export function getGatewayLogPath(context: PathContext = {}): string {
   return path.join(getGatewayDir(context), "gateway.log");
 }
 
+export function getGatewayGeneratedDir(context: PathContext = {}): string {
+  return path.join(getGatewayDir(context), "generated");
+}
+
 export function getGatewayStartupLockPath(context: PathContext = {}): string {
   return path.join(getGatewayDir(context), "startup.lock");
 }
