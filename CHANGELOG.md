@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.1
 
 - Gateway 兼容 AICodeMirror Responses 流中的 `codex.response.metadata` 事件，并按 OpenAI Responses 契约消费 `image_generation_call`：校验并原子保存最终 PNG/JPEG/WebP、按 SHA-256 去重，再向 Claude Code 返回绝对路径；partial/base64 不会写入 Anthropic SSE 或日志。
 - Gateway 脱敏请求日志新增失败阶段/错误码、上游 HTTP 状态与 request ID、SSE 首事件耗时、最后事件和终止事件状态，用于区分本地校验、上游 HTTP 错误、协议转换错误与提前断流；Web UI 可打开请求详情查看安全诊断，并将 `count_tokens`/`models` 404 标记为预期兼容回退。
