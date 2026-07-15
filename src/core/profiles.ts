@@ -44,9 +44,27 @@ export function getProfileDir(name: string, context: PathContext = {}): string {
   return path.join(getProfilesRoot(context), name);
 }
 
+async function hasProfileSettings(profileDir: string): Promise<boolean> {
+  return exists(getSettingsPath(profileDir));
+}
+
+async function isEmptyDirectory(dir: string): Promise<boolean> {
+  try {
+    return (await readdir(dir)).length === 0;
+  } catch {
+    return false;
+  }
+}
+
+function createInvalidProfileDirError(name: string, dir: string): CcpError {
+  return new CcpError(
+    `Profile '${name}' is not a valid profile: ${getSettingsPath(dir)} is missing. Remove the stale directory with 'ccp remove ${name}' or create the profile again.`
+  );
+}
+
 export async function profileExists(name: string, context: PathContext = {}): Promise<boolean> {
   assertProfileName(name);
-  return exists(getProfileDir(name, context));
+  return hasProfileSettings(getProfileDir(name, context));
 }
 
 export async function resolveConfigDir(
@@ -68,6 +86,26 @@ export async function resolveConfigDir(
     return { name: "main", dir, isMain: true };
   }
 
+  assertProfileName(name);
+  const dir = getProfileDir(name, context);
+  if (!(await exists(dir))) {
+    throw new CcpError(`Profile '${name}' does not exist: ${dir}`);
+  }
+  if (!(await hasProfileSettings(dir))) {
+    throw createInvalidProfileDirError(name, dir);
+  }
+  return { name, dir, isMain: false };
+}
+
+export async function resolveProfileDirForRemoval(
+  name: string,
+  options: { context?: PathContext } = {}
+): Promise<{ name: string; dir: string; isMain: false }> {
+  if (!name.trim()) {
+    throw new CcpError("Missing profile name. Run 'ccp list' to see available profiles.");
+  }
+
+  const context = options.context ?? {};
   assertProfileName(name);
   const dir = getProfileDir(name, context);
   if (!(await exists(dir))) {
@@ -157,10 +195,17 @@ export async function listProfiles(context: PathContext = {}): Promise<ProfileSu
 async function assertNewProfile(name: string, context: PathContext): Promise<string> {
   assertProfileName(name);
   const profileDir = getProfileDir(name, context);
-  if (await exists(profileDir)) {
+  if (!(await exists(profileDir))) {
+    return profileDir;
+  }
+  if (await hasProfileSettings(profileDir)) {
     throw new CcpError(`Profile '${name}' already exists: ${profileDir}`);
   }
-  return profileDir;
+  if (await isEmptyDirectory(profileDir)) {
+    await removeProfileDir(profileDir);
+    return profileDir;
+  }
+  throw createInvalidProfileDirError(name, profileDir);
 }
 
 export async function createApiProfile(input: CreateApiProfileInput, context: PathContext = {}): Promise<ProfileSummary> {
@@ -252,8 +297,7 @@ export async function createGatewayProfile(
   input: CreateGatewayProfileInput,
   context: PathContext = {}
 ): Promise<ProfileSummary> {
-  assertProfileName(input.name);
-  const profileDir = getProfileDir(input.name, context);
+  const profileDir = await assertNewProfile(input.name, context);
   const upstreamId = input.upstreamId.trim();
   const model = input.model.trim();
   if (!upstreamId) {

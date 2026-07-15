@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CcpError } from "./errors.js";
 import type { ClaudeSettings, ProfileMeta } from "./types.js";
@@ -64,34 +64,56 @@ function isTransientRemoveError(error: unknown): boolean {
   return code === "EBUSY" || code === "EACCES" || code === "ENOTEMPTY" || code === "EPERM";
 }
 
+async function pathExists(target: string): Promise<boolean> {
+  try {
+    await access(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createIncompleteRemoveError(profileDir: string): NodeJS.ErrnoException {
+  const error = new Error(`Profile directory still exists after deletion: ${profileDir}`) as NodeJS.ErrnoException;
+  error.code = "ENOTEMPTY";
+  error.path = profileDir;
+  return error;
+}
+
 interface RemoveProfileDirOptions {
   remove?: typeof rm;
+  pathExists?: (target: string) => Promise<boolean>;
   sleep?: (ms: number) => Promise<void>;
   maxAttempts?: number;
 }
 
 export async function removeProfileDir(profileDir: string, options: RemoveProfileDirOptions = {}): Promise<void> {
   const remove = options.remove ?? rm;
+  const exists = options.pathExists ?? pathExists;
   const sleep = options.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
   const maxAttempts = options.maxAttempts ?? (process.platform === "win32" ? 8 : 3);
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       await remove(profileDir, { recursive: true, force: true });
-      return;
+      if (!(await exists(profileDir))) {
+        return;
+      }
+      lastError = createIncompleteRemoveError(profileDir);
     } catch (error) {
       lastError = error;
-      if (!isTransientRemoveError(error) || attempt === maxAttempts) {
-        break;
-      }
-      await sleep(attempt * 250);
     }
+
+    if (!isTransientRemoveError(lastError) || attempt === maxAttempts) {
+      break;
+    }
+    await sleep(attempt * 250);
   }
 
   const error = lastError as NodeJS.ErrnoException;
   if (isTransientRemoveError(error)) {
     throw new CcpError(
-      `Failed to delete profile because a file is still in use: ${error.path ?? profileDir}. Close any Claude Code, git, or plugin processes using this profile and try again.`,
+      `Failed to delete profile completely: ${error.path ?? profileDir}. Close any Claude Code, git, or plugin processes using this profile and try again.`,
       { cause: error }
     );
   }

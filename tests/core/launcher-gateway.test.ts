@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { prepareClaudeLaunch } from "../../src/core/launcher.js";
 import { createApiProfile, createGatewayProfile } from "../../src/core/profiles.js";
 import { createGatewayUpstream } from "../../src/core/gateway-upstreams.js";
+import { getProfilesRoot } from "../../src/core/paths.js";
 
 const homes: string[] = [];
 
@@ -79,5 +80,16 @@ describe("launcher runtime dispatch", () => {
 
     expect(ensureGateway).not.toHaveBeenCalled();
     expect(ensureCcr).not.toHaveBeenCalled();
+  });
+
+  it("rejects stale empty profile directories instead of launching Claude Code", async () => {
+    const context = await createContext();
+    await mkdir(path.join(getProfilesRoot(context), "empty-launch"), { recursive: true });
+
+    await expect(prepareClaudeLaunch({
+      name: "empty-launch",
+      context,
+      cwd: context.cwd
+    })).rejects.toThrow("is not a valid profile");
   });
 });

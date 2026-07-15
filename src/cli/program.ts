@@ -11,6 +11,7 @@ import {
   listProfiles,
   profileExists,
   removeProfile,
+  resolveProfileDirForRemoval,
   summarizeProfile
 } from "../core/profiles.js";
 import { getMetaPath, getSettingsPath, readMeta } from "../core/settings.js";
@@ -956,7 +957,7 @@ export function createProgram(): Command {
     .argument("<profile>")
     .description("Delete a profile")
     .action(async (profile: string) => {
-      const config = await resolveConfigDir(profile, { allowMain: false });
+      const config = await resolveProfileDirForRemoval(profile);
       console.log(`This will permanently delete Claude profile '${profile}':`);
       console.log(config.dir);
       console.log("This cannot be undone. No backup will be created.");

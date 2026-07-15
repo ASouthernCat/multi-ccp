@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
+import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, profileExists, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, parseSelectionText, scanSessionProject, syncSessionProject, syncSessions } from "../../src/core/sessions.js";
 import { removeProfileDir } from "../../src/core/settings.js";
@@ -238,7 +238,36 @@ describe("profiles", () => {
     expect(profiles.map((item) => item.name)).toEqual(["alpha", "zeta"]);
   });
 
+  it("does not treat empty profile directories as valid profiles", async () => {
+    const context = await createContext();
+    const dir = path.join(getProfilesRoot(context), "emptyProfile");
+    await mkdir(dir, { recursive: true });
 
+    expect(await profileExists("emptyProfile", context)).toBe(false);
+    await expect(resolveConfigDir("emptyProfile", { allowMain: false, context }))
+      .rejects.toThrow("is not a valid profile");
+  });
+
+  it("cleans empty stale profile directories before creating a profile", async () => {
+    const context = await createContext();
+    const dir = path.join(getProfilesRoot(context), "staleEmpty");
+    await mkdir(dir, { recursive: true });
+
+    const profile = await createLoginProfile({ name: "staleEmpty" }, context);
+
+    expect(profile.dir).toBe(dir);
+    expect(JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8"))).toEqual({ theme: "dark" });
+  });
+
+  it("does not overwrite non-empty invalid profile directories when creating a profile", async () => {
+    const context = await createContext();
+    const dir = path.join(getProfilesRoot(context), "staleNonEmpty");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "note.txt"), "keep me", "utf8");
+
+    await expect(createLoginProfile({ name: "staleNonEmpty" }, context)).rejects.toThrow("is not a valid profile");
+    expect(await readFile(path.join(dir, "note.txt"), "utf8")).toBe("keep me");
+  });
 
   it("reads legacy PowerShell JSON files with a UTF-8 BOM", async () => {
     const context = await createContext();
@@ -460,6 +489,16 @@ describe("profiles", () => {
     await expect(resolveConfigDir("removeMe", { allowMain: false, context })).rejects.toThrow("does not exist");
   });
 
+  it("removes stale profile directories even when settings are missing", async () => {
+    const context = await createContext();
+    const staleDir = path.join(getProfilesRoot(context), "staleRemove");
+    await mkdir(staleDir, { recursive: true });
+
+    await removeProfile("staleRemove", context);
+
+    expect(await pathExists(staleDir)).toBe(false);
+  });
+
   it("retries transient Windows delete locks when removing profile directories", async () => {
     const busy = Object.assign(new Error("busy"), { code: "EBUSY", path: "locked-file" });
     const remove = vi.fn()
@@ -470,6 +509,20 @@ describe("profiles", () => {
     await removeProfileDir("locked-profile", { remove, sleep, maxAttempts: 2 });
 
     expect(remove).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(250);
+  });
+
+  it("retries when a recursive delete reports success but leaves the directory behind", async () => {
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const exists = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await removeProfileDir("left-behind-profile", { remove, pathExists: exists, sleep, maxAttempts: 2 });
+
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(exists).toHaveBeenCalledWith("left-behind-profile");
     expect(sleep).toHaveBeenCalledWith(250);
   });
 
