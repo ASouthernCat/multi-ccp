@@ -9,7 +9,7 @@ English | [简体中文](README.zh-CN.md)
 `multi-ccp` is a profile and session manager for Claude Code. It installs the `ccp` command and helps you run multiple Claude Code windows with fully isolated configuration directories, model providers, login state, and history.
 
 Use it when you want separate Claude Code sessions for work, personal projects, different API providers, or different model routes without manually switching environment variables or editing config files.
-
+![multi-ccp](docs/images/cli-ui.png)
 ![multi-ccp](docs/images/image.png)
 
 ## Features
@@ -23,7 +23,6 @@ Use it when you want separate Claude Code sessions for work, personal projects, 
 - Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Responses and Chat Completions providers.
 - Run multiple gateway profiles concurrently through one local process while keeping upstream URLs, models, credentials, tools, streams, and cancellation state isolated per request.
 - Sync historical Claude Code sessions between profiles or between `main` and a profile.
-- Open and inspect profile settings quickly from the terminal.
 
 ## Install
 
@@ -41,7 +40,7 @@ ccp help
 Update `multi-ccp`:
 
 ```bash
-npm update -g multi-ccp
+npm install -g multi-ccp@latest
 ```
 
 ## Quick Start
@@ -49,7 +48,7 @@ npm update -g multi-ccp
 Want the shortest path? Ask your AI assistant how to use `multi-ccp`. Copy this prompt:
 
 ```text
-How do I use multi-ccp to manage multiple Claude Code profiles?
+How do I use multi-ccp to manage multiple Claude Code profiles? Refer to the README: https://github.com/ASouthernCat/multi-ccp.
 ```
 
 Then continue with the examples below when you want the full command reference.
@@ -61,8 +60,6 @@ ccp ui
 ```
 
 The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, inspect redacted request logs, and open CCR management shortcuts.
-
-![multi-ccp](docs/images/cli-ui.png)
 
 Create a profile interactively:
 

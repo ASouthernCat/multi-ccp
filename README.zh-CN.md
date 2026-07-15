@@ -9,7 +9,7 @@
 `multi-ccp` 是一个 Claude Code profile 和历史会话管理工具。它会安装 `ccp` 命令，帮助你运行多个 Claude Code 会话窗口，并让每个窗口拥有独立隔离的配置目录、模型 provider、登录状态和历史记录。
 
 当你希望为工作、个人项目、不同 API provider、不同模型路由分别使用独立 Claude Code 会话时，可以使用 `multi-ccp`，无需手动切换环境变量或反复编辑配置文件。
-
+![multi-ccp](docs/images/cli-ui.png)
 ![multi-ccp](docs/images/image.png)
 
 ## 功能特性
@@ -23,7 +23,6 @@
 - 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Responses / Chat Completions provider。
 - 多个 gateway profile 可以并发复用一个本地进程，同时按请求隔离上游 URL、模型、凭据、工具映射、流状态和取消信号。
 - 在不同 profile 之间，或在 `main` 与 profile 之间同步 Claude Code 历史会话。
-- 快速查看、打开和编辑 profile 配置。
 
 ## 安装
 
@@ -41,7 +40,7 @@ ccp help
 更新 `multi-ccp`：
 
 ```bash
-npm update -g multi-ccp
+npm install -g multi-ccp@latest
 ```
 
 ## 快速开始
@@ -49,7 +48,7 @@ npm update -g multi-ccp
 想走最短路径？可以先问 AI 如何使用 `multi-ccp`。复制这句提示词：
 
 ```text
-How do I use multi-ccp to manage multiple Claude Code profiles?
+How do I use multi-ccp to manage multiple Claude Code profiles? Refer to the README: https://github.com/ASouthernCat/multi-ccp.
 ```
 
 如果你想查看完整命令说明，可以继续阅读下面的示例。
@@ -61,8 +60,6 @@ ccp ui
 ```
 
 Web UI 是 CLI 的本地辅助界面，可用于查看 Profile、基于预设创建 Profile、编辑配置、管理共享网关服务与可复用 Upstream、实时切换模型、查看脱敏请求日志，以及打开 CCR 管理入口。
-
-![multi-ccp](docs/images/cli-ui.png)
 
 交互式创建一个 profile：
 
