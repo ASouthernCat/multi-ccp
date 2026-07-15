@@ -1,6 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, openSync, renameSync, rmSync, statSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { mkdir, open, readFile, unlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -187,7 +187,8 @@ export async function startGateway(
     const processSpec = (deps.processArgs ?? resolveGatewayProcessArgs)();
     const logPath = getGatewayLogPath(context);
     rotateGatewayLog(logPath, deps.maxLogBytes ?? DEFAULT_GATEWAY_LOG_MAX_BYTES);
-    const logFd = openSync(logPath, "a");
+    const logFd = openSync(logPath, "a", 0o600);
+    if (process.platform !== "win32") chmodSync(logPath, 0o600);
     let child: ChildProcess;
     try {
       child = (deps.spawnProcess ?? spawn)(processSpec.command, processSpec.args, {
@@ -242,6 +243,7 @@ function rotateGatewayLog(logPath: string, maxBytes: number): void {
     const backupPath = `${logPath}.1`;
     rmSync(backupPath, { force: true });
     renameSync(logPath, backupPath);
+    if (process.platform !== "win32") chmodSync(backupPath, 0o600);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }

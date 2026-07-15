@@ -1,5 +1,5 @@
 const token = document.querySelector('meta[name="ccp-ui-token"]').content;
-const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', ccr: null, gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], ccrRoutes: [], ccrRoutesReason: '', ccrRoutesMessage: '', presets: [], selectedPreset: 'custom-api', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
+const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', ccr: null, gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayLogEntriesById: new Map(), gatewayLogFocus: null, gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], ccrRoutes: [], ccrRoutesReason: '', ccrRoutesMessage: '', presets: [], selectedPreset: 'custom-api', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
 const $ = (id) => document.getElementById(id);
 const primaryModalHistory = [];
 const primaryModalSuppressedCloseCounts = new Map();
@@ -398,17 +398,36 @@ async function openCcrPanel() { const data = await api('/api/ccr/status'); state
     gateway.onclick = () => { $('ccrDialog').close(); void openGatewayPanel(); }; $('ccrRestart').onclick = restartCcrFromUi; $('ccrStop').onclick = stopCcrFromUi; }
 function gatewayLogTime(value) { if (!value)
     return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+function gatewayLogIsExpected(entry) { return entry.kind === 'request' && entry.outcome === 'expected_unsupported'; }
+function gatewayLogIsFailure(entry) { return entry.kind === 'request' && !gatewayLogIsExpected(entry) && (entry.outcome === 'failure' || Number(entry.status || 0) >= 400); }
 function gatewayFilteredLogEntries(log) {
     const entries = log?.entries || [];
     if (state.gatewayLogFilter === 'errors')
-        return entries.filter(entry => entry.kind === 'request' && Number(entry.status || 0) >= 400);
+        return entries.filter(gatewayLogIsFailure);
     if (state.gatewayLogFilter === 'success')
-        return entries.filter(entry => entry.kind === 'request' && Number(entry.status || 0) >= 200 && Number(entry.status || 0) < 400);
+        return entries.filter(entry => entry.kind === 'request' && !gatewayLogIsExpected(entry) && Number(entry.status || 0) >= 200 && Number(entry.status || 0) < 400);
     return entries;
 }
-function gatewayLogRows(log) { const entries = gatewayFilteredLogEntries(log); if (!entries.length)
-    return '<div class="gateway-log-empty">No matching request events</div>'; return `<div class="gateway-log-scroll"><table class="gateway-log-table"><thead><tr><th>Time</th><th>Profile</th><th>Model</th><th>Endpoint URL</th><th>Mode</th><th>Effort</th><th>Status</th><th>Latency</th><th>Tokens</th></tr></thead><tbody>${entries.map(entry => { if (entry.kind === 'system')
-    return `<tr class="system"><td>${gatewayLogTime(entry.completedAt)}</td><td colspan="8">${escapeHtml(entry.message || 'Gateway event')}</td></tr>`; const status = Number(entry.status || 0); const statusClass = status >= 500 ? 'bad' : status >= 400 ? 'warn' : 'ok'; const tokens = entry.inputTokens === undefined && entry.outputTokens === undefined ? '&mdash;' : `${entry.inputTokens ?? 0} / ${entry.outputTokens ?? 0}`; const endpointUrl = entry.endpointUrl || '-'; return `<tr><td>${gatewayLogTime(entry.completedAt)}</td><td><strong>${escapeHtml(entry.profileName || '-')}</strong></td><td>${escapeHtml(entry.model || '-')}</td><td class="gateway-log-endpoint" title="${escapeHtml(endpointUrl)}">${escapeHtml(endpointUrl)}</td><td>${entry.stream ? 'Stream' : 'JSON'}</td><td>${escapeHtml(entry.effort || '-')}</td><td><span class="gateway-http ${statusClass}">${status || '-'}</span></td><td>${entry.durationMs === undefined ? '&mdash;' : `${Math.round(entry.durationMs)} ms`}</td><td>${tokens}</td></tr>`; }).join('')}</tbody></table></div>`; }
+function gatewayLogRows(log) { const entries = gatewayFilteredLogEntries(log); state.gatewayLogEntriesById = new Map(entries.filter(entry => entry.kind === 'request').map((entry, index) => [entry.requestId || `log-${index}`, entry])); if (!entries.length)
+    return '<div class="gateway-log-empty">No matching request events</div>'; return `<div class="gateway-log-scroll"><table class="gateway-log-table"><thead><tr><th>Time</th><th>Profile</th><th>Model</th><th>Endpoint URL</th><th>Mode</th><th>Effort</th><th>Status</th><th>Latency</th><th>Tokens</th></tr></thead><tbody>${entries.map((entry, index) => { if (entry.kind === 'system')
+    return `<tr class="system"><td>${gatewayLogTime(entry.completedAt)}</td><td colspan="8">${escapeHtml(entry.message || 'Gateway event')}</td></tr>`; const status = Number(entry.status || 0); const expected = gatewayLogIsExpected(entry); const statusClass = expected ? 'expected' : status >= 500 ? 'bad' : status >= 400 ? 'warn' : 'ok'; const tokens = entry.inputTokens === undefined && entry.outputTokens === undefined ? '&mdash;' : `${entry.inputTokens ?? 0} / ${entry.outputTokens ?? 0}`; const endpointUrl = entry.endpointUrl || '-'; const rowId = entry.requestId || `log-${index}`; const statusLabel = expected ? `${status || '-'} expected` : status || '-'; return `<tr class="gateway-log-request-row" tabindex="0" role="button" aria-haspopup="dialog" data-log-request-id="${escapeHtml(rowId)}"><td>${gatewayLogTime(entry.completedAt)}</td><td><strong>${escapeHtml(entry.profileName || '-')}</strong></td><td>${escapeHtml(entry.model || '-')}</td><td class="gateway-log-endpoint" title="${escapeHtml(endpointUrl)}">${escapeHtml(endpointUrl)}</td><td>${entry.stream ? 'Stream' : 'JSON'}</td><td>${escapeHtml(entry.effort || '-')}</td><td><span class="gateway-http ${statusClass}">${escapeHtml(statusLabel)}</span></td><td>${entry.durationMs === undefined ? '&mdash;' : `${Math.round(entry.durationMs)} ms`}</td><td>${tokens}</td></tr>`; }).join('')}</tbody></table></div>`; }
+function gatewayLogDetailValue(value) { return value === undefined || value === null || value === '' ? 'Not available' : String(value); }
+function gatewayLogDetailRow(label, value, mono = false) { return `<div class="gateway-log-detail-row"><span>${escapeHtml(label)}</span><strong class="${mono ? 'mono' : ''}">${escapeHtml(gatewayLogDetailValue(value))}</strong></div>`; }
+function gatewayLogDetailList(label, values) { return !Array.isArray(values) || !values.length ? gatewayLogDetailRow(label, undefined) : `<div class="gateway-log-detail-row gateway-log-detail-list"><span>${escapeHtml(label)}</span><div>${values.map(value => `<code>${escapeHtml(value)}</code>`).join('')}</div></div>`; }
+function closeGatewayLogDetail() { $('gatewayLogDetailDialog').close(); const focus = state.gatewayLogFocus; state.gatewayLogFocus = null; if (focus?.isConnected)
+    focus.focus(); }
+function openGatewayLogDetail(entry, trigger) {
+    if (!entry)
+        return;
+    state.gatewayLogFocus = trigger || document.activeElement;
+    const expected = gatewayLogIsExpected(entry);
+    const title = expected ? 'Expected compatibility fallback' : gatewayLogIsFailure(entry) ? 'Gateway request failure' : 'Gateway request details';
+    $('gatewayLogDetailPanel').innerHTML = `<div class="modal-head"><div><p class="eyebrow">request detail</p><h2>${escapeHtml(title)}</h2></div><button class="icon-btn" id="gatewayLogDetailClose" type="button" aria-label="Close request details">×</button></div><div class="gateway-log-detail-summary ${expected ? 'expected' : gatewayLogIsFailure(entry) ? 'failure' : 'success'}"><span class="gateway-http ${expected ? 'expected' : Number(entry.status || 0) >= 500 ? 'bad' : Number(entry.status || 0) >= 400 ? 'warn' : 'ok'}">${escapeHtml(entry.status || '-')}</span><div><strong>${escapeHtml(entry.errorSummary || (expected ? 'Claude Code will use its compatibility fallback.' : 'Request completed.'))}</strong><small>${escapeHtml(entry.failureStage || entry.outcome || 'success')}</small></div></div><section class="gateway-log-detail-grid"><div><h3>Outcome</h3>${gatewayLogDetailRow('Outcome', entry.outcome)}${gatewayLogDetailRow('Error type', entry.errorType)}${gatewayLogDetailRow('Failure code', entry.failureCode)}${gatewayLogDetailRow('Validation field', entry.validationField, true)}${gatewayLogDetailRow('Validation rule', entry.validationRule)}</div><div><h3>Request</h3>${gatewayLogDetailRow('Time', entry.completedAt)}${gatewayLogDetailRow('Duration', entry.durationMs === undefined ? undefined : `${Math.round(entry.durationMs)} ms`)}${gatewayLogDetailRow('Kind', entry.requestKind)}${gatewayLogDetailRow('Method / path', [entry.method, entry.pathname].filter(Boolean).join(' '), true)}${gatewayLogDetailRow('Request ID', entry.requestId, true)}</div><div><h3>Routing</h3>${gatewayLogDetailRow('Profile', entry.profileName)}${gatewayLogDetailRow('Client model', entry.clientModel)}${gatewayLogDetailRow('Upstream model', entry.model)}${gatewayLogDetailRow('Protocol', entry.protocol)}${gatewayLogDetailRow('Endpoint', entry.endpointUrl, true)}${gatewayLogDetailRow('Mode / effort', `${entry.stream ? 'Stream' : 'JSON'} / ${entry.effort || '-'}`)}</div><div><h3>Upstream & stream</h3>${gatewayLogDetailRow('HTTP status', entry.upstreamStatus)}${gatewayLogDetailRow('Request ID', entry.upstreamRequestId, true)}${gatewayLogDetailRow('Error code / param', [entry.upstreamErrorCode, entry.upstreamErrorParam].filter(Boolean).join(' / '), true)}${gatewayLogDetailRow('First event', entry.firstEventMs === undefined ? undefined : `${Math.round(entry.firstEventMs)} ms`)}${gatewayLogDetailRow('Last event', entry.lastEventType, true)}${gatewayLogDetailRow('Terminal received', entry.terminalEventReceived)}</div><div><h3>Usage</h3>${gatewayLogDetailRow('Input tokens', entry.inputTokens)}${gatewayLogDetailRow('Output tokens', entry.outputTokens)}${gatewayLogDetailList('Converted fields', entry.upstreamFields)}</div><div><h3>Correlation</h3>${gatewayLogDetailRow('Session ID', entry.sessionId, true)}${gatewayLogDetailRow('Agent ID', entry.agentId, true)}${gatewayLogDetailRow('Parent agent ID', entry.parentAgentId, true)}${gatewayLogDetailList('Event types', entry.upstreamEventTypes)}${gatewayLogDetailList('Item types', entry.upstreamItemTypes)}</div></section><p class="gateway-log-privacy">Exact request, prompt, response, tool arguments, images, and provider error text are intentionally not stored.</p>`;
+    $('gatewayLogDetailClose').onclick = closeGatewayLogDetail;
+    const dialog = $('gatewayLogDetailDialog');
+    dialog.oncancel = event => { event.preventDefault(); closeGatewayLogDetail(); };
+    dialog.showModal();
+}
 function gatewayModelChips(models = []) {
     const visible = models.slice(0, 5);
     const overflow = models.length > visible.length;
@@ -429,7 +448,7 @@ function gatewayUpstreamsView(upstreams) {
 }
 function gatewayLogView(log, status) {
     const entries = log?.entries || [];
-    const errorCount = entries.filter(entry => entry.kind === 'request' && Number(entry.status || 0) >= 400).length;
+    const errorCount = entries.filter(gatewayLogIsFailure).length;
     const successCount = entries.filter(entry => entry.kind === 'request' && Number(entry.status || 0) >= 200 && Number(entry.status || 0) < 400).length;
     const filterCount = state.gatewayLogFilter === 'errors'
         ? `<span class="gateway-error-count">${errorCount} errors</span>`
@@ -442,6 +461,10 @@ function bindGatewayPanel(status, log, upstreams) {
     $('gatewayClose').onclick = () => closePrimaryModal('gatewayDialog');
     document.querySelectorAll('[data-gateway-tab]').forEach(button => button.onclick = () => { state.gatewayTab = button.dataset.gatewayTab; renderGatewayPanel(status, log, upstreams); });
     document.querySelectorAll('[data-log-filter]').forEach(button => button.onclick = () => { state.gatewayLogFilter = button.dataset.logFilter; renderGatewayPanel(status, log, upstreams); });
+    document.querySelectorAll('[data-log-request-id]').forEach(row => { const open = () => openGatewayLogDetail(state.gatewayLogEntriesById.get(row.dataset.logRequestId), row); row.onclick = open; row.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            open();
+        } }; });
     const add = $('gatewayAddUpstream'); if (add)
         add.onclick = () => openUpstreamEditor();
     const createProfile = $('gatewayCreateProfile'); if (createProfile)

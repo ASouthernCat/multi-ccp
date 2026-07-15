@@ -65,6 +65,19 @@ export type GatewayFailureStage =
   | "client_disconnect"
   | "gateway_internal";
 
+export type GatewayRequestKind = "messages" | "count_tokens" | "models";
+export type GatewayRequestOutcome = "success" | "expected_unsupported" | "failure";
+export type GatewayValidationRule =
+  | "invalid_json"
+  | "invalid_content_type"
+  | "required"
+  | "invalid_type"
+  | "unsupported_field"
+  | "unsupported_value"
+  | "extra_field"
+  | "invalid_order"
+  | "size_limit";
+
 export interface GatewayRequestLog {
   requestId: string;
   completedAt: string;
@@ -79,6 +92,13 @@ export interface GatewayRequestLog {
   endpointUrl?: string;
   effort?: CanonicalReasoningEffort;
   effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
+  requestKind?: GatewayRequestKind;
+  outcome?: GatewayRequestOutcome;
+  errorSummary?: string;
+  validationField?: string;
+  validationRule?: GatewayValidationRule;
+  upstreamErrorCode?: string;
+  upstreamErrorParam?: string;
   upstreamFields?: string[];
   upstreamEventTypes?: string[];
   upstreamItemTypes?: string[];
@@ -138,6 +158,13 @@ interface RequestState {
   endpointUrl?: string;
   effort?: CanonicalReasoningEffort;
   effortMapping?: GatewayProtocolCompatibility["reasoningEffort"];
+  requestKind?: GatewayRequestKind;
+  outcome?: GatewayRequestOutcome;
+  errorSummary?: string;
+  validationField?: string;
+  validationRule?: GatewayValidationRule;
+  upstreamErrorCode?: string;
+  upstreamErrorParam?: string;
   upstreamFields?: string[];
   upstreamEventTypes?: string[];
   upstreamItemTypes?: string[];
@@ -331,9 +358,11 @@ async function handleRequest(
       return;
     }
     state.profileName = route.profileName;
+    state.requestKind = route.kind;
 
     if (route.kind === "count_tokens" || route.kind === "models") {
       state.status = 404;
+      state.outcome = "expected_unsupported";
       sendError(res, 404, { type: "not_found_error", message: "Not found." });
       return;
     }
@@ -391,7 +420,7 @@ async function handleRequest(
           state
         );
         state.status = mapped.status;
-        setFailure(state, "upstream_http", "upstream_http_error", mapped.error);
+        setFailure(state, "upstream_http", "upstream_http_error", mapped.error, mapped.diagnostics);
         sendError(res, mapped.status, mapped.error);
         return;
       }
@@ -455,7 +484,7 @@ async function handleRequest(
         state
       );
       state.status = mapped.status;
-      setFailure(state, "upstream_http", "upstream_http_error", mapped.error);
+      setFailure(state, "upstream_http", "upstream_http_error", mapped.error, mapped.diagnostics);
       sendError(res, mapped.status, mapped.error);
       return;
     }
@@ -812,12 +841,20 @@ async function readResponseTextLimited(response: Response, maxBytes: number): Pr
   return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
 }
 
+interface GatewayFailureDiagnostics {
+  errorSummary?: string;
+  validationField?: string;
+  validationRule?: GatewayValidationRule;
+  upstreamErrorCode?: string;
+  upstreamErrorParam?: string;
+}
+
 async function mapUpstreamError(
   response: Response,
   snapshot: GatewayRouteSnapshot,
   maxBytes: number,
   state: RequestState
-): Promise<{ status: number; error: GatewayError }> {
+): Promise<{ status: number; error: GatewayError; diagnostics: GatewayFailureDiagnostics }> {
   let raw = "";
   try {
     raw = await readResponseTextLimited(response, maxBytes);
@@ -831,6 +868,7 @@ async function mapUpstreamError(
     parsed = undefined;
   }
   const message = redactKnownSecrets(extractErrorMessage(parsed) ?? defaultUpstreamErrorMessage(response.status), snapshot);
+  const diagnostics = extractSafeUpstreamDiagnostics(parsed, response.status);
 
   if (isAnthropicErrorEnvelope(parsed) && response.status === 400) {
     return {
@@ -838,11 +876,12 @@ async function mapUpstreamError(
       error: {
         type: normalizeGatewayErrorType(parsed.error.type, mapUpstreamStatus(response.status).error.type),
         message
-      }
+      },
+      diagnostics
     };
   }
   const mapped = mapUpstreamStatus(response.status);
-  return { status: mapped.status, error: { type: mapped.error.type, message } };
+  return { status: mapped.status, error: { type: mapped.error.type, message }, diagnostics };
 }
 
 function mapUpstreamStatus(status: number): { status: number; error: GatewayError } {
@@ -867,6 +906,31 @@ function extractErrorMessage(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   const error = isRecord(value.error) ? value.error : value;
   return typeof error.message === "string" && error.message.length > 0 ? error.message : undefined;
+}
+
+function extractSafeUpstreamDiagnostics(value: unknown, status: number): GatewayFailureDiagnostics {
+  const error = isRecord(value) && isRecord(value.error) ? value.error : isRecord(value) ? value : undefined;
+  return {
+    errorSummary: safeFailureSummary("upstream_http", status),
+    ...(safeDiagnosticToken(error?.code) ? { upstreamErrorCode: safeDiagnosticToken(error?.code) } : {}),
+    ...(safeDiagnosticPath(error?.param) ? { upstreamErrorParam: safeDiagnosticPath(error?.param) } : {})
+  };
+}
+
+function safeDiagnosticToken(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 128 && /^[A-Za-z0-9_.:/-]+$/.test(trimmed)
+    ? trimmed
+    : undefined;
+}
+
+function safeDiagnosticPath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= 256 && /^[A-Za-z0-9_.\[\]-]+$/.test(trimmed)
+    ? trimmed
+    : undefined;
 }
 
 function isAnthropicErrorEnvelope(value: unknown): value is { type: "error"; error: { type?: unknown; message: string } } {
@@ -917,6 +981,13 @@ function readHeader(value: string | string[] | undefined): string | undefined {
   return normalized?.trim() || undefined;
 }
 
+function safeCorrelationId(value: string | string[] | undefined): string | undefined {
+  const normalized = readHeader(value);
+  return normalized && normalized.length <= 256 && /^[A-Za-z0-9_.:@/-]+$/.test(normalized)
+    ? normalized
+    : undefined;
+}
+
 async function persistGeneratedImages(
   store: GeneratedImageStore,
   images: PreparedGeneratedImage[]
@@ -944,11 +1015,76 @@ function setFailure(
   state: RequestState,
   stage: GatewayFailureStage,
   code: GatewayFailureCode,
-  error: GatewayError
+  error: GatewayError,
+  diagnostics: GatewayFailureDiagnostics = {}
 ): void {
   state.failureStage = stage;
   state.failureCode = code;
   state.errorType = error.type;
+  state.outcome = "failure";
+  state.errorSummary = diagnostics.errorSummary ?? safeFailureSummary(stage, state.status);
+  state.upstreamErrorCode = diagnostics.upstreamErrorCode;
+  state.upstreamErrorParam = diagnostics.upstreamErrorParam;
+  if (stage === "request_validation") {
+    const validation = classifyValidationError(error.message);
+    state.validationField = validation.field;
+    state.validationRule = validation.rule;
+  }
+}
+
+function safeFailureSummary(stage: GatewayFailureStage, status: number): string {
+  switch (stage) {
+    case "request_validation":
+      return "The request failed local Anthropic-format validation.";
+    case "upstream_connect":
+      return "The gateway could not connect to the selected upstream.";
+    case "upstream_http":
+      return `The selected upstream rejected the converted request with HTTP ${status}.`;
+    case "upstream_response":
+      return "The upstream response could not be converted to Anthropic Messages format.";
+    case "stream_protocol":
+      return "The upstream stream contained invalid or unsupported protocol data.";
+    case "stream_eof":
+      return "The upstream stream ended without a terminal response event.";
+    case "gateway_timeout":
+      return "The upstream request exceeded the gateway timeout.";
+    case "client_disconnect":
+      return "The client disconnected before the gateway request completed.";
+    case "gateway_internal":
+      return "The gateway encountered an internal processing error.";
+  }
+}
+
+function classifyValidationError(message: string): { field?: string; rule: GatewayValidationRule } {
+  if (message === "Request body is not valid JSON.") return { rule: "invalid_json" };
+  if (message === "Content-Type must be application/json.") return { rule: "invalid_content_type" };
+  if (message.includes("exceeds the") && message.includes("byte limit")) return { rule: "size_limit" };
+
+  const separator = message.indexOf(":");
+  const rawField = separator > 0 ? message.slice(0, separator) : undefined;
+  const field = normalizeValidationField(rawField);
+  if (message.includes("Field required")) return { ...(field ? { field } : {}), rule: "required" };
+  if (message.includes("Extra inputs are not permitted")) return { ...(field ? { field } : {}), rule: "extra_field" };
+  if (message.includes("must appear before") || message.includes("cannot be represented")) {
+    return { ...(field ? { field } : {}), rule: "invalid_order" };
+  }
+  if (message.includes("not supported") || message.includes("Unsupported")) {
+    return { ...(field ? { field } : {}), rule: "unsupported_value" };
+  }
+  return { ...(field ? { field } : {}), rule: "invalid_type" };
+}
+
+function normalizeValidationField(value: string | undefined): string | undefined {
+  if (!value || value.length > 256) return undefined;
+  const segments = value.split(".");
+  const normalized = segments.map((segment) => {
+    const match = segment.match(/^([A-Za-z0-9_\[\]-]+)$/);
+    if (match) return match[1];
+    return "<unknown-field>";
+  }).join(".");
+  return safeDiagnosticPath(normalized.replaceAll("<unknown-field>", "unknown_field"))
+    ? normalized
+    : undefined;
 }
 
 function classifyResponsesStreamFailure(result: GatewayStreamResult): GatewayFailureStage {
@@ -963,10 +1099,11 @@ function emitRequestLog(
   state: RequestState
 ): void {
   if (!deps.onRequestComplete) return;
-  const sessionId = readHeader(req.headers["x-claude-code-session-id"]);
-  const agentId = readHeader(req.headers["x-claude-code-agent-id"]);
-  const parentAgentId = readHeader(req.headers["x-claude-code-parent-agent-id"]);
+  const sessionId = safeCorrelationId(req.headers["x-claude-code-session-id"]);
+  const agentId = safeCorrelationId(req.headers["x-claude-code-agent-id"]);
+  const parentAgentId = safeCorrelationId(req.headers["x-claude-code-parent-agent-id"]);
   const completedAt = deps.now();
+  const outcome = state.outcome ?? (state.status >= 200 && state.status < 400 ? "success" : "failure");
   try {
     deps.onRequestComplete({
       requestId: state.requestId,
@@ -982,6 +1119,13 @@ function emitRequestLog(
       ...(state.stream === undefined ? {} : { stream: state.stream }),
       ...(state.effort ? { effort: state.effort } : {}),
       ...(state.effortMapping ? { effortMapping: state.effortMapping } : {}),
+      ...(state.requestKind ? { requestKind: state.requestKind } : {}),
+      outcome,
+      ...(state.errorSummary ? { errorSummary: state.errorSummary } : {}),
+      ...(state.validationField ? { validationField: state.validationField } : {}),
+      ...(state.validationRule ? { validationRule: state.validationRule } : {}),
+      ...(state.upstreamErrorCode ? { upstreamErrorCode: state.upstreamErrorCode } : {}),
+      ...(state.upstreamErrorParam ? { upstreamErrorParam: state.upstreamErrorParam } : {}),
       ...(state.upstreamFields ? { upstreamFields: [...state.upstreamFields] } : {}),
       ...(state.upstreamEventTypes ? { upstreamEventTypes: [...state.upstreamEventTypes] } : {}),
       ...(state.upstreamItemTypes ? { upstreamItemTypes: [...state.upstreamItemTypes] } : {}),

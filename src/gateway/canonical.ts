@@ -1,19 +1,19 @@
 import type { GatewayError } from "./errors.js";
 
-export type CanonicalToolResultContent =
-  | string
-  | Array<
-    | { type: "text"; text: string }
-    | {
-      type: "image";
-      source:
-        | { type: "base64"; mediaType: string; data: string }
-        | { type: "url"; url: string };
-    }
-  >;
+export type CanonicalImageMediaType = "image/png" | "image/jpeg" | "image/webp" | "image/gif";
+
+export type CanonicalImageSource =
+  | { type: "base64"; mediaType: CanonicalImageMediaType; data: string }
+  | { type: "url"; url: string };
+
+export type CanonicalInputPart =
+  | { type: "text"; text: string }
+  | { type: "image"; source: CanonicalImageSource };
+
+export type CanonicalToolResultContent = string | CanonicalInputPart[];
 
 export type CanonicalContent =
-  | { type: "text"; text: string }
+  | CanonicalInputPart
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; toolUseId: string; content: CanonicalToolResultContent; isError?: boolean };
 

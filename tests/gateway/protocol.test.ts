@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { parseAnthropicMessagesRequest } from "../../src/gateway/anthropic-source.js";
 import { GatewayProtocolError } from "../../src/gateway/errors.js";
@@ -27,6 +28,44 @@ function baseRequest(overrides: Record<string, unknown> = {}) {
     ...overrides
   };
 }
+
+function claudeCodeFixture(name: string): { request: Record<string, unknown> } {
+  return JSON.parse(readFileSync(
+    path.resolve(`tests/fixtures/claude-code/2.1.209/${name}.request.json`),
+    "utf8"
+  )) as { request: Record<string, unknown> };
+}
+
+describe("Claude Code request contract fixtures", () => {
+  it("preserves ordinary image structure across Responses and Chat targets", () => {
+    const source = claudeCodeFixture("ordinary-image").request;
+    const canonical = parseAnthropicMessagesRequest(source);
+    const responses = serializeOpenAIResponsesRequest(canonical, { model: "responses-model" }).body;
+    const chat = serializeOpenAIChatRequest(canonical, { model: "chat-model" }).body;
+    const responsesText = JSON.stringify(responses);
+    const chatText = JSON.stringify(chat);
+
+    expect(responsesText).toContain("input_image");
+    expect(responsesText).toContain("data:image/png;base64,");
+    expect(chatText).toContain("image_url");
+    expect(chatText).toContain("data:image/png;base64,");
+    expect(responsesText).not.toContain("[Image:");
+    expect(chatText).not.toContain("[Image:");
+  });
+
+  it("preserves parallel image tool results without placeholder degradation", () => {
+    const source = claudeCodeFixture("image-tool-result").request;
+    const canonical = parseAnthropicMessagesRequest(source);
+    const responses = serializeOpenAIResponsesRequest(canonical, { model: "responses-model" }).body;
+    const chat = serializeOpenAIChatRequest(canonical, { model: "chat-model" }).body;
+
+    expect(JSON.stringify(responses)).toContain("function_call_output");
+    expect(JSON.stringify(responses)).toContain("input_image");
+    expect(JSON.stringify(chat)).toContain("Tool result toolu_image:");
+    expect(JSON.stringify(chat)).toContain("image_url");
+    expect(JSON.stringify({ responses, chat })).not.toContain("[Image:");
+  });
+});
 
 describe("Anthropic Messages source parser", () => {
   it("parses supported fields into canonical IR without forwarding cache metadata", () => {
@@ -92,7 +131,7 @@ describe("Anthropic Messages source parser", () => {
     });
   });
 
-  it("accepts Claude Code tool types and multimodal tool_result content", () => {
+  it("parses ordinary and tool-result images into shared canonical input parts", () => {
     const request = parseAnthropicMessagesRequest(baseRequest({
       messages: [
         {
@@ -118,7 +157,13 @@ describe("Anthropic Messages source parser", () => {
                   }
                 }
               ]
-            }
+            },
+            { type: "text", text: "Compare " },
+            {
+              type: "image",
+              source: { type: "url", url: "https://example.com/original.webp" }
+            },
+            { type: "text", text: " carefully." }
           ]
         }
       ],
@@ -135,40 +180,64 @@ describe("Anthropic Messages source parser", () => {
       description: "Read a file",
       inputSchema: { type: "object", properties: { file_path: { type: "string" } } }
     });
-    expect(request.messages[1].content).toEqual([{
-      type: "tool_result",
-      toolUseId: "toolu_image",
-      content: [
-        { type: "text", text: "Preview:" },
-        {
-          type: "image",
-          source: {
-            type: "base64",
-            mediaType: "image/png",
-            data: "iVBORw0KGgo="
+    expect(request.messages[1].content).toEqual([
+      {
+        type: "tool_result",
+        toolUseId: "toolu_image",
+        content: [
+          { type: "text", text: "Preview:" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              mediaType: "image/png",
+              data: "iVBORw0KGgo="
+            }
           }
-        }
-      ]
-    }]);
+        ]
+      },
+      { type: "text", text: "Compare " },
+      {
+        type: "image",
+        source: { type: "url", url: "https://example.com/original.webp" }
+      },
+      { type: "text", text: " carefully." }
+    ]);
   });
 
   it.each([
-    ["tool_result after text", baseRequest({ messages: [{ role: "user", content: [
+    ["tool_result after ordinary text", baseRequest({ messages: [{ role: "user", content: [
       { type: "text", text: "before" },
       { type: "tool_result", tool_use_id: "toolu_1", content: "result" }
-    ] }] }), "tool_result blocks must appear before text"],
+    ] }] }), "tool_result blocks must appear before ordinary content"],
+    ["tool_result after ordinary image", baseRequest({ messages: [{ role: "user", content: [
+      { type: "image", source: { type: "url", url: "https://example.com/before.png" } },
+      { type: "tool_result", tool_use_id: "toolu_1", content: "result" }
+    ] }] }), "tool_result blocks must appear before ordinary content"],
     ["text after tool_use", baseRequest({ messages: [{ role: "assistant", content: [
       { type: "tool_use", id: "toolu_1", name: "Bash", input: {} },
       { type: "text", text: "after" }
     ] }] }), "text blocks after tool_use"],
-    ["unsupported content", baseRequest({ messages: [{ role: "user", content: [
-      { type: "image", source: { type: "base64", data: "x" } }
-    ] }] }), "image content blocks are not supported"],
+    ["image in assistant message", baseRequest({ messages: [{ role: "assistant", content: [
+      { type: "image", source: { type: "url", url: "https://example.com/image.png" } }
+    ] }] }), "image is only valid in user messages"],
+    ["base64 source with url field", baseRequest({ messages: [{ role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: "image/png", data: "x", url: "https://example.com/x" } }
+    ] }] }), "source.url: Extra inputs are not permitted"],
+    ["url source with base64 field", baseRequest({ messages: [{ role: "user", content: [
+      { type: "image", source: { type: "url", url: "https://example.com/x", data: "x" } }
+    ] }] }), "source.data: Extra inputs are not permitted"],
+    ["unsupported image media type", baseRequest({ messages: [{ role: "user", content: [
+      { type: "image", source: { type: "base64", media_type: "image/svg+xml", data: "x" } }
+    ] }] }), "Unsupported image media type 'image/svg+xml'"],
+    ["non-http image url", baseRequest({ messages: [{ role: "user", content: [
+      { type: "image", source: { type: "url", url: "data:image/png;base64,x" } }
+    ] }] }), "Expected a valid HTTP(S) URL"],
     ["unsupported tool result image source", baseRequest({ messages: [{ role: "user", content: [
       { type: "tool_result", tool_use_id: "toolu_1", content: [
         { type: "image", source: { type: "file", file_id: "file_1" } }
       ] }
-    ] }] }), "source.file_id"],
+    ] }] }), "Unsupported image source 'file'"],
     ["unsupported tool type", baseRequest({ tools: [{ type: "server", name: "x", input_schema: {} }] }), "Only custom tools are supported"],
     ["unknown top field", baseRequest({ surprise: true }), "surprise: Extra inputs are not permitted"],
     ["tool schema extension", baseRequest({ tools: [{ name: "x", input_schema: {}, strict: true }] }), "tools[0].strict"],
@@ -270,13 +339,14 @@ describe("OpenAI Chat target serializer", () => {
     expect(converted.toolNames.targetToSource.get("mcp_tool")).toBe("mcp.tool");
   });
 
-  it("degrades multimodal tool_result content for Chat Completions tool messages", () => {
+  it("keeps tool messages textual and emits one attributed multimodal user message", () => {
     const canonical = parseAnthropicMessagesRequest(baseRequest({
       messages: [
         {
           role: "assistant",
           content: [
-            { type: "tool_use", id: "toolu_image", name: "Read", input: { file_path: "asset.png" } }
+            { type: "tool_use", id: "toolu_one", name: "Read", input: { file_path: "one.png" } },
+            { type: "tool_use", id: "toolu_two", name: "Read", input: { file_path: "two.webp" } }
           ]
         },
         {
@@ -284,15 +354,24 @@ describe("OpenAI Chat target serializer", () => {
           content: [
             {
               type: "tool_result",
-              tool_use_id: "toolu_image",
+              tool_use_id: "toolu_one",
               content: [
-                { type: "text", text: "Preview:" },
-                {
-                  type: "image",
-                  source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" }
-                }
+                { type: "text", text: "First preview" },
+                { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } }
               ]
-            }
+            },
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_two",
+              content: [
+                { type: "text", text: "Second preview" },
+                { type: "image", source: { type: "url", url: "https://example.com/tool.webp" } }
+              ],
+              is_error: true
+            },
+            { type: "text", text: "Compare " },
+            { type: "image", source: { type: "url", url: "https://example.com/original.jpg" } },
+            { type: "text", text: "to both." }
           ]
         }
       ],
@@ -304,18 +383,68 @@ describe("OpenAI Chat target serializer", () => {
       {
         role: "assistant",
         content: null,
-        tool_calls: [{
-          id: "toolu_image",
-          type: "function",
-          function: { name: "Read", arguments: "{\"file_path\":\"asset.png\"}" }
-        }]
+        tool_calls: [
+          {
+            id: "toolu_one",
+            type: "function",
+            function: { name: "Read", arguments: "{\"file_path\":\"one.png\"}" }
+          },
+          {
+            id: "toolu_two",
+            type: "function",
+            function: { name: "Read", arguments: "{\"file_path\":\"two.webp\"}" }
+          }
+        ]
       },
+      { role: "tool", tool_call_id: "toolu_one", content: "First preview" },
+      { role: "tool", tool_call_id: "toolu_two", content: "Tool execution failed:\nSecond preview" },
       {
-        role: "tool",
-        tool_call_id: "toolu_image",
-        content: "Preview:[Image: image/png]"
+        role: "user",
+        content: [
+          { type: "text", text: "Tool result toolu_one:" },
+          {
+            type: "image_url",
+            image_url: { url: "data:image/png;base64,AAAA", detail: "auto" }
+          },
+          { type: "text", text: "Tool result toolu_two:" },
+          {
+            type: "image_url",
+            image_url: { url: "https://example.com/tool.webp", detail: "auto" }
+          },
+          { type: "text", text: "Compare " },
+          {
+            type: "image_url",
+            image_url: { url: "https://example.com/original.jpg", detail: "auto" }
+          },
+          { type: "text", text: "to both." }
+        ]
       }
     ]);
+  });
+
+  it("maps an ordinary user image to nested image_url while preserving order", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "Before" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "BBBB" } },
+          { type: "text", text: "After" }
+        ]
+      }]
+    }));
+
+    expect(serializeOpenAIChatRequest(canonical, { model: "gpt-5" }).body.messages).toEqual([{
+      role: "user",
+      content: [
+        { type: "text", text: "Before" },
+        {
+          type: "image_url",
+          image_url: { url: "data:image/jpeg;base64,BBBB", detail: "auto" }
+        },
+        { type: "text", text: "After" }
+      ]
+    }]);
   });
 
   it("omits optional sampling/stop/stream usage fields for incompatible providers", () => {
@@ -582,7 +711,7 @@ describe("OpenAI Responses target", () => {
     expect(converted.body.stop).toBeUndefined();
   });
 
-  it("degrades multimodal tool_result content for Responses function_call_output", () => {
+  it("uses native input_image parts for ordinary and function-call-output images", () => {
     const canonical = parseAnthropicMessagesRequest(baseRequest({
       messages: [
         {
@@ -599,12 +728,14 @@ describe("OpenAI Responses target", () => {
               tool_use_id: "toolu_image",
               content: [
                 { type: "text", text: "Preview:" },
-                {
-                  type: "image",
-                  source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" }
-                }
-              ]
-            }
+                { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } },
+                { type: "text", text: " done" }
+              ],
+              is_error: true
+            },
+            { type: "text", text: "Compare " },
+            { type: "image", source: { type: "url", url: "https://example.com/original.webp" } },
+            { type: "text", text: "now." }
           ]
         }
       ],
@@ -617,9 +748,43 @@ describe("OpenAI Responses target", () => {
       {
         type: "function_call_output",
         call_id: "toolu_image",
-        output: "Preview:[Image: image/png]"
+        output: [
+          { type: "input_text", text: "Tool execution failed:\n" },
+          { type: "input_text", text: "Preview:" },
+          { type: "input_image", image_url: "data:image/png;base64,AAAA", detail: "auto" },
+          { type: "input_text", text: " done" }
+        ]
+      },
+      {
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "Compare " },
+          { type: "input_image", image_url: "https://example.com/original.webp", detail: "auto" },
+          { type: "input_text", text: "now." }
+        ]
       }
     ]);
+  });
+
+  it("keeps text-only function_call_output as a string", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      messages: [{
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "toolu_text",
+          content: [{ type: "text", text: "one" }, { type: "text", text: "two" }],
+          is_error: true
+        }]
+      }]
+    }));
+
+    expect(serializeOpenAIResponsesRequest(canonical, { model: "gpt-5" }).body.input).toEqual([{
+      type: "function_call_output",
+      call_id: "toolu_text",
+      output: "Tool execution failed:\nonetwo"
+    }]);
   });
 
   it("only expands tool schemas when toolStrict is strict", () => {

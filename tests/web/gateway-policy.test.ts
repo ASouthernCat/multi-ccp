@@ -269,13 +269,33 @@ describe("gateway Web UI policy", () => {
       "startup apiKey=top-secret-provider-key",
       JSON.stringify({
         event: "gateway_request",
+        requestId: "request-safe-1",
         completedAt: "2026-07-11T00:00:00.000Z",
+        method: "POST",
+        pathname: "/p/gpt-5.6/v1/messages",
         profileName: "gpt-5.6",
+        clientModel: "claude-opus-4-8",
         model: "gpt-5.6-sol",
+        protocol: "openai_responses",
         endpointUrl: "https://user:pass@provider.test/v1/responses?credential=must-not-leak#fragment",
         stream: true,
         effort: "high",
-        status: 200,
+        requestKind: "messages",
+        outcome: "failure",
+        errorSummary: "The selected upstream rejected the converted request with HTTP 400.",
+        failureStage: "upstream_http",
+        failureCode: "upstream_http_error",
+        errorType: "invalid_request_error",
+        upstreamStatus: 400,
+        upstreamRequestId: "upstream-safe-1",
+        upstreamErrorCode: "unsupported_value",
+        upstreamErrorParam: "input[0].content[1].image_url",
+        upstreamFields: ["input", "model"],
+        sessionId: "fixture-session",
+        agentId: "fixture-agent",
+        parentAgentId: "bad id with spaces",
+        rawProviderBody: "prompt sentinel must-not-leak",
+        status: 400,
         durationMs: 321,
         authorization: "Bearer must-not-leak"
       })
@@ -285,14 +305,32 @@ describe("gateway Web UI policy", () => {
     expect(result.path).toBe(logPath);
     expect(result.entries[0]).toMatchObject({
       kind: "request",
+      requestId: "request-safe-1",
+      method: "POST",
+      pathname: "/p/gpt-5.6/v1/messages",
       profileName: "gpt-5.6",
+      clientModel: "claude-opus-4-8",
       model: "gpt-5.6-sol",
+      protocol: "openai_responses",
       endpointUrl: "https://provider.test/v1/responses",
       stream: true,
       effort: "high",
-      status: 200,
+      requestKind: "messages",
+      outcome: "failure",
+      failureStage: "upstream_http",
+      failureCode: "upstream_http_error",
+      errorType: "invalid_request_error",
+      upstreamStatus: 400,
+      upstreamRequestId: "upstream-safe-1",
+      upstreamErrorCode: "unsupported_value",
+      upstreamErrorParam: "input[0].content[1].image_url",
+      upstreamFields: ["input", "model"],
+      sessionId: "fixture-session",
+      agentId: "fixture-agent",
+      status: 400,
       durationMs: 321
     });
+    expect(result.entries[0]?.parentAgentId).toBeUndefined();
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
     expect(JSON.stringify(result)).not.toContain("credential=must-not-leak");
     expect(JSON.stringify(result)).not.toContain("user:pass");

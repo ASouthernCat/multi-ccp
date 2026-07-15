@@ -1,5 +1,7 @@
 import type {
   CanonicalContent,
+  CanonicalImageMediaType,
+  CanonicalImageSource,
   CanonicalMessage,
   CanonicalOutputConfig,
   CanonicalOutputFormat,
@@ -121,27 +123,67 @@ function parseToolUseBlock(block: JsonObject, path: string): CanonicalContent {
   };
 }
 
-function parseToolResultImageSource(value: unknown, path: string): Extract<
-  Exclude<CanonicalToolResultContent, string>[number],
-  { type: "image" }
->["source"] {
+const OPENAI_VISION_IMAGE_MEDIA_TYPES = new Set<CanonicalImageMediaType>([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif"
+]);
+
+function parseImageMediaType(value: unknown, path: string): CanonicalImageMediaType {
+  const mediaType = requireString(value, path) as CanonicalImageMediaType;
+  if (!OPENAI_VISION_IMAGE_MEDIA_TYPES.has(mediaType)) {
+    throw invalidRequest(
+      `${path}: Unsupported image media type '${mediaType}'. Expected image/png, image/jpeg, image/webp, or image/gif.`
+    );
+  }
+  return mediaType;
+}
+
+function parseHttpImageUrl(value: unknown, path: string): string {
+  const url = requireString(value, path);
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw invalidRequest(`${path}: Expected a valid HTTP(S) URL.`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw invalidRequest(`${path}: Expected a valid HTTP(S) URL.`);
+  }
+  return url;
+}
+
+function parseImageSource(value: unknown, path: string): CanonicalImageSource {
   const source = requireObject(value, path);
-  rejectExtraFields(source, new Set(["type", "media_type", "data", "url"]), `${path}.`);
   const type = requireString(source.type, `${path}.type`);
   if (type === "base64") {
+    rejectExtraFields(source, new Set(["type", "media_type", "data"]), `${path}.`);
     return {
       type,
-      mediaType: requireString(source.media_type, `${path}.media_type`),
+      mediaType: parseImageMediaType(source.media_type, `${path}.media_type`),
       data: requireString(source.data, `${path}.data`)
     };
   }
   if (type === "url") {
+    rejectExtraFields(source, new Set(["type", "url"]), `${path}.`);
     return {
       type,
-      url: requireString(source.url, `${path}.url`)
+      url: parseHttpImageUrl(source.url, `${path}.url`)
     };
   }
   throw invalidRequest(`${path}.type: Unsupported image source '${type}'.`);
+}
+
+function parseImageBlock(
+  block: JsonObject,
+  path: string
+): Extract<CanonicalContent, { type: "image" }> {
+  rejectExtraFields(block, new Set(["type", "source", "cache_control"]), `${path}.`);
+  if (block.cache_control !== undefined) {
+    validateCacheControl(block.cache_control, `${path}.cache_control`);
+  }
+  return { type: "image", source: parseImageSource(block.source, `${path}.source`) };
 }
 
 function parseToolResultContent(value: unknown, path: string): CanonicalToolResultContent {
@@ -164,11 +206,7 @@ function parseToolResultContent(value: unknown, path: string): CanonicalToolResu
       return { type, text: requireString(block.text, `${blockPath}.text`, true) };
     }
     if (type === "image") {
-      rejectExtraFields(block, new Set(["type", "source", "cache_control"]), `${blockPath}.`);
-      if (block.cache_control !== undefined) {
-        validateCacheControl(block.cache_control, `${blockPath}.cache_control`);
-      }
-      return { type, source: parseToolResultImageSource(block.source, `${blockPath}.source`) };
+      return parseImageBlock(block, blockPath);
     }
     throw invalidRequest(`${blockPath}.type: ${type} tool_result content blocks are not supported.`);
   });
@@ -206,7 +244,7 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
   }
 
   const result: CanonicalContent[] = [];
-  let textSeen = false;
+  let ordinaryContentSeen = false;
   let toolUseSeen = false;
 
   for (let index = 0; index < value.length; index += 1) {
@@ -218,8 +256,17 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
       if (role === "assistant" && toolUseSeen) {
         throw invalidRequest(`${blockPath}: text blocks after tool_use cannot be represented by OpenAI Chat Completions.`);
       }
-      textSeen = true;
+      ordinaryContentSeen = true;
       result.push(parseTextBlock(block, blockPath));
+      continue;
+    }
+
+    if (type === "image") {
+      if (role !== "user") {
+        throw invalidRequest(`${blockPath}.type: image is only valid in user messages.`);
+      }
+      ordinaryContentSeen = true;
+      result.push(parseImageBlock(block, blockPath));
       continue;
     }
 
@@ -236,8 +283,8 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
       if (role !== "user") {
         throw invalidRequest(`${blockPath}.type: tool_result is only valid in user messages.`);
       }
-      if (textSeen) {
-        throw invalidRequest(`${blockPath}: tool_result blocks must appear before text blocks.`);
+      if (ordinaryContentSeen) {
+        throw invalidRequest(`${blockPath}: tool_result blocks must appear before ordinary content blocks.`);
       }
       result.push(parseToolResultBlock(block, blockPath));
       continue;

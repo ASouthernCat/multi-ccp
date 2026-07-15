@@ -1,6 +1,8 @@
 import type { GatewayCompatibility } from "../core/types.js";
 import type {
   CanonicalFinishReason,
+  CanonicalImageSource,
+  CanonicalInputPart,
   CanonicalMessage,
   CanonicalOutputFormat,
   CanonicalRequest,
@@ -79,44 +81,94 @@ function requireTargetToolName(mapping: ToolNameMapping, sourceName: string): st
   return targetName;
 }
 
+function imageSourceToUrl(source: CanonicalImageSource): string {
+  return source.type === "base64"
+    ? `data:${source.mediaType};base64,${source.data}`
+    : source.url;
+}
+
+function inputPartToChatContent(part: CanonicalInputPart): Record<string, unknown> {
+  if (part.type === "text") {
+    return { type: "text", text: part.text };
+  }
+  return {
+    type: "image_url",
+    image_url: {
+      url: imageSourceToUrl(part.source),
+      detail: "auto"
+    }
+  };
+}
+
 function toolResultContentToText(content: CanonicalToolResultContent): string {
   if (typeof content === "string") return content;
-  return content.map((part) => {
-    if (part.type === "text") return part.text;
-    if (part.source.type === "base64") return `[Image: ${part.source.mediaType}]`;
-    return `[Image: ${part.source.url}]`;
-  }).join("");
+  return content
+    .filter((part): part is Extract<CanonicalInputPart, { type: "text" }> => part.type === "text")
+    .map((part) => part.text)
+    .join("");
+}
+
+function toolImageAttribution(toolUseId: string): Record<string, unknown> {
+  return { type: "text", text: `Tool result ${toolUseId}:` };
 }
 
 function serializeUserMessage(message: CanonicalMessage): Array<Record<string, unknown>> {
-  const result: Array<Record<string, unknown>> = [];
-  const text: string[] = [];
-  let textSeen = false;
+  const toolMessages: Array<Record<string, unknown>> = [];
+  const toolImageContent: Array<Record<string, unknown>> = [];
+  const ordinaryContent: CanonicalInputPart[] = [];
 
   for (const block of message.content) {
     if (block.type === "tool_result") {
-      if (textSeen) {
-        throw invalidRequest("tool_result blocks must appear before text blocks.");
-      }
-      result.push({
+      const text = toolResultContentToText(block.content);
+      toolMessages.push({
         role: "tool",
         tool_call_id: block.toolUseId,
-        content: block.isError
-          ? `Tool execution failed:\n${toolResultContentToText(block.content)}`
-          : toolResultContentToText(block.content)
+        content: block.isError ? `Tool execution failed:\n${text}` : text
       });
-    } else if (block.type === "text") {
-      textSeen = true;
-      text.push(block.text);
+      if (Array.isArray(block.content)) {
+        const images = block.content.filter(
+          (part): part is Extract<CanonicalInputPart, { type: "image" }> => part.type === "image"
+        );
+        if (images.length > 0) {
+          toolImageContent.push(toolImageAttribution(block.toolUseId));
+          toolImageContent.push(...images.map(inputPartToChatContent));
+        }
+      }
+    } else if (block.type === "text" || block.type === "image") {
+      ordinaryContent.push(block);
     } else {
       throw invalidRequest("tool_use is only valid in assistant messages.");
     }
   }
 
-  if (text.length > 0 || result.length === 0) {
-    result.push({ role: "user", content: text.join("") });
+  if (toolImageContent.length > 0) {
+    return [
+      ...toolMessages,
+      {
+        role: "user",
+        content: [...toolImageContent, ...ordinaryContent.map(inputPartToChatContent)]
+      }
+    ];
   }
-  return result;
+  if (ordinaryContent.some((part) => part.type === "image")) {
+    return [
+      ...toolMessages,
+      { role: "user", content: ordinaryContent.map(inputPartToChatContent) }
+    ];
+  }
+  if (ordinaryContent.length > 0 || toolMessages.length === 0) {
+    return [
+      ...toolMessages,
+      {
+        role: "user",
+        content: ordinaryContent
+          .filter((part): part is Extract<CanonicalInputPart, { type: "text" }> => part.type === "text")
+          .map((part) => part.text)
+          .join("")
+      }
+    ];
+  }
+  return toolMessages;
 }
 
 function serializeAssistantMessage(message: CanonicalMessage, mapping: ToolNameMapping): Record<string, unknown> {

@@ -156,8 +156,10 @@ describe("gateway HTTP protocol", () => {
   it("returns 404 for optional endpoints without loading profile secrets", async () => {
     const context = await createContext();
     const resolve = vi.fn().mockRejectedValue(new Error("must not resolve"));
+    const logs: GatewayRequestLog[] = [];
     const { endpoint } = await startGateway(context, {
-      registry: { resolve, countProfiles: vi.fn().mockResolvedValue(0) }
+      registry: { resolve, countProfiles: vi.fn().mockResolvedValue(0) },
+      onRequestComplete: (entry) => logs.push(entry)
     });
 
     const count = await fetch(`${endpoint}/p/example/v1/messages/count_tokens`, { method: "POST" });
@@ -166,6 +168,11 @@ describe("gateway HTTP protocol", () => {
     expect(count.status).toBe(404);
     expect(models.status).toBe(404);
     expect(resolve).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(logs).toHaveLength(2));
+    expect(logs.map((entry) => ({ kind: entry.requestKind, outcome: entry.outcome, status: entry.status }))).toEqual([
+      { kind: "count_tokens", outcome: "expected_unsupported", status: 404 },
+      { kind: "models", outcome: "expected_unsupported", status: 404 }
+    ]);
   });
 
   it("isolates concurrent profiles, upstream credentials, models, and local tokens", async () => {
@@ -670,10 +677,14 @@ describe("gateway HTTP protocol", () => {
     expect(upstreamRequests).toBe(0);
     await vi.waitFor(() => expect(logs).toHaveLength(1));
     expect(logs[0]).toMatchObject({
+      requestKind: "messages",
+      outcome: "failure",
       status: 400,
       failureStage: "request_validation",
       failureCode: "local_validation_error",
-      errorType: "invalid_request_error"
+      errorType: "invalid_request_error",
+      errorSummary: "The request failed local Anthropic-format validation.",
+      validationRule: "invalid_json"
     });
     expect(logs[0].upstreamStatus).toBeUndefined();
   });
@@ -685,6 +696,8 @@ describe("gateway HTTP protocol", () => {
       res.end(JSON.stringify({
         error: {
           type: "invalid_request_error",
+          code: "unsupported_value",
+          param: "input[0].content[1].image_url",
           message: "thinking.type: Extra inputs are not permitted; upstream-secret must not leak"
         }
       }));
@@ -719,13 +732,19 @@ describe("gateway HTTP protocol", () => {
     });
     await vi.waitFor(() => expect(logs).toHaveLength(1));
     expect(logs[0]).toMatchObject({
+      requestKind: "messages",
+      outcome: "failure",
       status: 400,
       upstreamStatus: 400,
       upstreamRequestId: "upstream-invalid-1",
+      upstreamErrorCode: "unsupported_value",
+      upstreamErrorParam: "input[0].content[1].image_url",
       failureStage: "upstream_http",
       failureCode: "upstream_http_error",
-      errorType: "invalid_request_error"
+      errorType: "invalid_request_error",
+      errorSummary: "The selected upstream rejected the converted request with HTTP 400."
     });
+    expect(JSON.stringify(logs[0])).not.toContain("must not leak");
   });
 
   it("does not follow upstream redirects with provider credentials", async () => {

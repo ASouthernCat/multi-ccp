@@ -3,7 +3,9 @@
 ## Unreleased
 
 - Gateway 兼容 AICodeMirror Responses 流中的 `codex.response.metadata` 事件，并按 OpenAI Responses 契约消费 `image_generation_call`：校验并原子保存最终 PNG/JPEG/WebP、按 SHA-256 去重，再向 Claude Code 返回绝对路径；partial/base64 不会写入 Anthropic SSE 或日志。
-- Gateway 脱敏请求日志新增失败阶段/错误码、上游 HTTP 状态与 request ID、SSE 首事件耗时、最后事件和终止事件状态，用于区分本地校验、上游 HTTP 错误、协议转换错误与提前断流。
+- Gateway 脱敏请求日志新增失败阶段/错误码、上游 HTTP 状态与 request ID、SSE 首事件耗时、最后事件和终止事件状态，用于区分本地校验、上游 HTTP 错误、协议转换错误与提前断流；Web UI 可打开请求详情查看安全诊断，并将 `count_tokens`/`models` 404 标记为预期兼容回退。
+- Claude Code 普通图片输入和图片型 `tool_result` 现在会原生转换为 Responses `input_image` 或 Chat `image_url`，保留内容顺序且不再使用文本占位符；不支持 vision 的上游错误会直接返回，不会删图重试。
+- 增加 Claude Code 2.1.209 脱敏图片请求契约 fixtures，用于检测客户端 request shape 漂移。
 
 ## 0.3.0
 

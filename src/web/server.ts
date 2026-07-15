@@ -101,6 +101,8 @@ function redact(value: string): string {
     .replace(/(ANTHROPIC_AUTH_TOKEN\s*[=:]\s*)[^\s,}]+/gi, "$1[redacted]")
     .replace(/(authorization\s*[:=]\s*bearer\s+)[^\s,}]+/gi, "$1[redacted]")
     .replace(/(api[_-]?key\s*[=:]\s*)[^\s,}]+/gi, "$1[redacted]")
+    .replace(/data:image\/[A-Za-z0-9.+-]+;base64,[A-Za-z0-9+/=_-]+/gi, "data:image/[redacted]")
+    .replace(/[A-Za-z0-9+/]{256,}={0,2}/g, "[redacted-base64]")
     .replace(/sk-[A-Za-z0-9._-]{8,}/g, "sk-****");
 }
 
@@ -339,18 +341,50 @@ async function countGatewayProfiles(): Promise<number> {
 
 export interface WebGatewayLogEntry {
   kind: "request" | "system";
+  requestId?: string;
   completedAt?: string;
+  method?: string;
+  pathname?: string;
   profileName?: string;
+  clientModel?: string;
   model?: string;
+  protocol?: string;
   endpointUrl?: string;
   stream?: boolean;
   effort?: string;
   effortMapping?: string;
+  requestKind?: string;
+  outcome?: string;
+  errorSummary?: string;
+  validationField?: string;
+  validationRule?: string;
+  failureStage?: string;
+  failureCode?: string;
+  errorType?: string;
+  upstreamStatus?: number;
+  upstreamRequestId?: string;
+  upstreamErrorCode?: string;
+  upstreamErrorParam?: string;
+  firstEventMs?: number;
+  lastEventType?: string;
+  terminalEventReceived?: boolean;
+  upstreamFields?: string[];
+  upstreamEventTypes?: string[];
+  upstreamItemTypes?: string[];
+  sessionId?: string;
+  agentId?: string;
+  parentAgentId?: string;
   status?: number;
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
   message?: string;
+}
+
+function safeWebLogIdentifier(value: unknown): string | undefined {
+  return typeof value === "string" && value.length <= 256 && /^[A-Za-z0-9_.:@/-]+$/.test(value)
+    ? value
+    : undefined;
 }
 
 function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
@@ -359,19 +393,51 @@ function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
   try {
     const value = JSON.parse(clean) as Record<string, unknown>;
     if (value.event === "gateway_request") {
+      const strings = (name: string) => typeof value[name] === "string" ? value[name] as string : undefined;
+      const numbers = (name: string) => typeof value[name] === "number" ? value[name] as number : undefined;
+      const booleans = (name: string) => typeof value[name] === "boolean" ? value[name] as boolean : undefined;
+      const stringArrays = (name: string) => Array.isArray(value[name]) && value[name].every((item) => typeof item === "string")
+        ? value[name] as string[]
+        : undefined;
       return {
         kind: "request",
-        completedAt: typeof value.completedAt === "string" ? value.completedAt : undefined,
-        profileName: typeof value.profileName === "string" ? value.profileName : undefined,
-        model: typeof value.model === "string" ? value.model : undefined,
+        requestId: strings("requestId"),
+        completedAt: strings("completedAt"),
+        method: strings("method"),
+        pathname: strings("pathname"),
+        profileName: strings("profileName"),
+        clientModel: strings("clientModel"),
+        model: strings("model"),
+        protocol: strings("protocol"),
         endpointUrl: typeof value.endpointUrl === "string" ? sanitizeEndpointUrlForLog(value.endpointUrl) : undefined,
-        stream: typeof value.stream === "boolean" ? value.stream : undefined,
-        effort: typeof value.effort === "string" ? value.effort : undefined,
-        effortMapping: typeof value.effortMapping === "string" ? value.effortMapping : undefined,
-        status: typeof value.status === "number" ? value.status : undefined,
-        durationMs: typeof value.durationMs === "number" ? value.durationMs : undefined,
-        inputTokens: typeof value.inputTokens === "number" ? value.inputTokens : undefined,
-        outputTokens: typeof value.outputTokens === "number" ? value.outputTokens : undefined
+        stream: booleans("stream"),
+        effort: strings("effort"),
+        effortMapping: strings("effortMapping"),
+        requestKind: strings("requestKind"),
+        outcome: strings("outcome"),
+        errorSummary: strings("errorSummary"),
+        validationField: strings("validationField"),
+        validationRule: strings("validationRule"),
+        failureStage: strings("failureStage"),
+        failureCode: strings("failureCode"),
+        errorType: strings("errorType"),
+        upstreamStatus: numbers("upstreamStatus"),
+        upstreamRequestId: strings("upstreamRequestId"),
+        upstreamErrorCode: strings("upstreamErrorCode"),
+        upstreamErrorParam: strings("upstreamErrorParam"),
+        firstEventMs: numbers("firstEventMs"),
+        lastEventType: strings("lastEventType"),
+        terminalEventReceived: booleans("terminalEventReceived"),
+        upstreamFields: stringArrays("upstreamFields"),
+        upstreamEventTypes: stringArrays("upstreamEventTypes"),
+        upstreamItemTypes: stringArrays("upstreamItemTypes"),
+        sessionId: safeWebLogIdentifier(value.sessionId),
+        agentId: safeWebLogIdentifier(value.agentId),
+        parentAgentId: safeWebLogIdentifier(value.parentAgentId),
+        status: numbers("status"),
+        durationMs: numbers("durationMs"),
+        inputTokens: numbers("inputTokens"),
+        outputTokens: numbers("outputTokens")
       };
     }
   } catch {
@@ -921,6 +987,7 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
 
     if (pathname === "/api/gateway/log") {
       if (req.method !== "GET") return methodNotAllowed(res);
+      requireToken(req, token);
       return json(res, 200, await readGatewayLogTail());
     }
 

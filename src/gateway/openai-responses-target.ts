@@ -1,5 +1,7 @@
 import type { GatewayResponsesCompatibility } from "../core/types.js";
 import type {
+  CanonicalImageSource,
+  CanonicalInputPart,
   CanonicalMessage,
   CanonicalRequest,
   CanonicalResponse,
@@ -66,31 +68,58 @@ function requireTargetToolName(mapping: ToolNameMapping, sourceName: string): st
   return targetName;
 }
 
-function toolResultContentToText(content: CanonicalToolResultContent): string {
-  if (typeof content === "string") return content;
-  return content.map((part) => {
-    if (part.type === "text") return part.text;
-    if (part.source.type === "base64") return `[Image: ${part.source.mediaType}]`;
-    return `[Image: ${part.source.url}]`;
-  }).join("");
+function imageSourceToUrl(source: CanonicalImageSource): string {
+  return source.type === "base64"
+    ? `data:${source.mediaType};base64,${source.data}`
+    : source.url;
+}
+
+function inputPartToResponsesContent(part: CanonicalInputPart): Record<string, unknown> {
+  if (part.type === "text") {
+    return { type: "input_text", text: part.text };
+  }
+  return {
+    type: "input_image",
+    image_url: imageSourceToUrl(part.source),
+    detail: "auto"
+  };
+}
+
+function serializeToolResultOutput(
+  content: CanonicalToolResultContent,
+  isError: boolean | undefined
+): string | Array<Record<string, unknown>> {
+  if (typeof content === "string") {
+    return isError ? `Tool execution failed:\n${content}` : content;
+  }
+  const hasImage = content.some((part) => part.type === "image");
+  if (!hasImage) {
+    const text = content
+      .filter((part): part is Extract<CanonicalInputPart, { type: "text" }> => part.type === "text")
+      .map((part) => part.text)
+      .join("");
+    return isError ? `Tool execution failed:\n${text}` : text;
+  }
+  const output = content.map(inputPartToResponsesContent);
+  return isError
+    ? [{ type: "input_text", text: "Tool execution failed:\n" }, ...output]
+    : output;
 }
 
 function serializeMessage(message: CanonicalMessage, mapping: ToolNameMapping): Array<Record<string, unknown>> {
-  const text: string[] = [];
+  const ordinaryContent: CanonicalInputPart[] = [];
   const result: Array<Record<string, unknown>> = [];
 
   for (const block of message.content) {
-    if (block.type === "text") {
-      text.push(block.text);
+    if (block.type === "text" || block.type === "image") {
+      ordinaryContent.push(block);
       continue;
     }
     if (block.type === "tool_result") {
       result.push({
         type: "function_call_output",
         call_id: normalizeToolCallId(block.toolUseId),
-        output: block.isError
-          ? `Tool execution failed:\n${toolResultContentToText(block.content)}`
-          : toolResultContentToText(block.content)
+        output: serializeToolResultOutput(block.content, block.isError)
       });
       continue;
     }
@@ -105,17 +134,20 @@ function serializeMessage(message: CanonicalMessage, mapping: ToolNameMapping): 
     }
   }
 
-  if (text.length > 0) {
-    const textMessage = {
-      type: "message",
-      role: message.role,
-      content: [{
+  if (ordinaryContent.length > 0) {
+    const hasImage = ordinaryContent.some((part) => part.type === "image");
+    const content = hasImage
+      ? ordinaryContent.map(inputPartToResponsesContent)
+      : [{
         type: message.role === "user" ? "input_text" : "output_text",
-        text: text.join("")
-      }]
-    };
-    if (message.role === "assistant") result.unshift(textMessage);
-    else result.push(textMessage);
+        text: ordinaryContent
+          .filter((part): part is Extract<CanonicalInputPart, { type: "text" }> => part.type === "text")
+          .map((part) => part.text)
+          .join("")
+      }];
+    const contentMessage = { type: "message", role: message.role, content };
+    if (message.role === "assistant") result.unshift(contentMessage);
+    else result.push(contentMessage);
   }
   return result;
 }

@@ -1,0 +1,63 @@
+{
+  "capture": {
+    "claudeCodeVersion": "2.1.209",
+    "capturedAt": "2026-07-14",
+    "sanitized": true,
+    "scenario": "image-bearing tool result with parallel tool history"
+  },
+  "headers": {
+    "x-claude-code-session-id": "fixture-session",
+    "x-claude-code-agent-id": "fixture-agent",
+    "x-claude-code-parent-agent-id": "fixture-parent"
+  },
+  "request": {
+    "model": "claude-opus-4-8",
+    "messages": [
+      { "role": "user", "content": "Inspect the generated fixture." },
+      {
+        "role": "assistant",
+        "content": [
+          { "type": "text", "text": "I will read both artifacts." },
+          { "type": "tool_use", "id": "toolu_image", "name": "Read", "input": { "file_path": "fixture.png" } },
+          { "type": "tool_use", "id": "toolu_text", "name": "Read", "input": { "file_path": "fixture.txt" } }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "tool_result",
+            "tool_use_id": "toolu_image",
+            "content": [
+              { "type": "text", "text": "Fixture preview:" },
+              {
+                "type": "image",
+                "source": {
+                  "type": "base64",
+                  "media_type": "image/png",
+                  "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+                }
+              }
+            ]
+          },
+          { "type": "tool_result", "tool_use_id": "toolu_text", "content": "sanitized text result" },
+          { "type": "text", "text": "Summarize the artifacts." }
+        ]
+      }
+    ],
+    "max_tokens": 512,
+    "stream": true,
+    "tools": [
+      {
+        "name": "Read",
+        "description": "Read a local fixture.",
+        "input_schema": {
+          "type": "object",
+          "properties": { "file_path": { "type": "string" } },
+          "required": ["file_path"]
+        }
+      }
+    ],
+    "tool_choice": { "type": "auto" }
+  }
+}
