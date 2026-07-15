@@ -144,6 +144,15 @@ describe("gateway Web UI policy", () => {
     expect(app).toContain('Full Endpoint URL');
     expect(app).toContain('id="upstreamCommonModel"');
     expect(app).toContain('class="gateway-log-endpoint" title=');
+    expect(app).toContain('function gatewayLogDetailHasValue');
+    expect(app).toContain('function gatewayLogDetailSection');
+    expect(app).toContain('values.slice(0, limit)');
+    expect(app).toContain('class="gateway-log-diagnostics"');
+    expect(app).not.toContain("gatewayLogDetailValue(value)");
+    expect(css).toContain('width: min(820px, calc(100vw - 32px))');
+    expect(css).toContain('.gateway-log-detail-facts');
+    expect(css).toContain('.gateway-log-detail-list-more');
+    expect(css).toContain('.gateway-log-diagnostics-body');
     expect(app).toContain('Responses (recommended)');
     expect(app).toContain('Chat Completions (legacy)');
     expect(app).toContain("protocol,");

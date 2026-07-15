@@ -546,11 +546,14 @@ export class OpenAIResponsesStreamConverter {
     const status = optionalString(item.status, "stream.item.status");
     const result = optionalString(item.result, "stream.item.result");
     if (!done && !result) return;
-    if (status !== "completed") {
-      throw upstreamProtocolError("stream.item.status: Expected 'completed' for an image generation result.");
-    }
     if (!result) {
       throw upstreamProtocolError("stream.item.result: Expected a non-empty string in the upstream stream.");
+    }
+    // Some Responses-compatible proxies emit a final result from a done/terminal
+    // event but leave the item status at "generating". The enclosing event is
+    // authoritative once a complete image payload is present and validates.
+    if (status !== "completed" && !(done && status === "generating")) {
+      throw upstreamProtocolError("stream.item.status: Expected 'completed' for an image generation result.");
     }
     if (!this.imageStore) {
       throw upstreamProtocolError("Image generation output cannot be handled without an image store.");

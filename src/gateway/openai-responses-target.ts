@@ -12,7 +12,11 @@ import type {
 } from "./canonical.js";
 import { OPENAI_RESPONSES_COMPATIBILITY } from "./config.js";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
-import type { GeneratedImageStore, PreparedGeneratedImage } from "./generated-image.js";
+import {
+  formatGeneratedImageSavedText,
+  type GeneratedImageStore,
+  type PreparedGeneratedImage
+} from "./generated-image.js";
 import {
   canonicalResponseToAnthropic,
   createToolNameMapping,
@@ -47,8 +51,6 @@ export interface OpenAIResponsesParsedResponse {
   upstreamItemTypes: string[];
   generatedImages: PreparedGeneratedImage[];
 }
-
-const GENERATED_IMAGE_TEXT_PREFIX = "Generated image saved to:\n";
 
 function collectToolNames(request: CanonicalRequest): string[] {
   const names = request.tools?.map((tool) => tool.name) ?? [];
@@ -336,10 +338,12 @@ function parseResponseInternal(
     if (type === "reasoning") return;
     if (type === "image_generation_call") {
       const status = requireString(item.status, `${path}.status`);
-      if (status !== "completed") {
+      const result = requireString(item.result, `${path}.result`);
+      // Some Responses-compatible proxies return a valid final result from a
+      // completed response while retaining the stale status "generating".
+      if (status !== "completed" && status !== "generating") {
         throw upstreamProtocolError(`${path}.status: Expected 'completed' for an image generation result.`);
       }
-      const result = requireString(item.result, `${path}.result`);
       const itemId = requireString(item.id, `${path}.id`);
       if (!options.imageStore) {
         throw upstreamProtocolError("Image generation output cannot be handled without an image store.");
@@ -348,7 +352,7 @@ function parseResponseInternal(
       if (!generatedImagePaths.has(image.path)) {
         generatedImagePaths.add(image.path);
         generatedImages.push(image);
-        content.push({ type: "text", text: `${GENERATED_IMAGE_TEXT_PREFIX}${image.path}` });
+        content.push({ type: "text", text: formatGeneratedImageSavedText(image.path) });
       }
       return;
     }

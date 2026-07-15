@@ -923,8 +923,29 @@ describe("OpenAI Responses target", () => {
     expect(path.isAbsolute(parsed.generatedImages[0].path)).toBe(true);
     expect(parsed.response.content).toEqual([{
       type: "text",
-      text: `Generated image saved to:\n${parsed.generatedImages[0].path}`
+      text: `Generated image saved to:\n\`${parsed.generatedImages[0].path}\``
     }]);
+  });
+
+  it("accepts a final image result with a stale generating status from a compatible proxy", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" },
+      requestId: "request-stale-status"
+    });
+    const parsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_image",
+      model: "gpt-image",
+      status: "completed",
+      output: [{
+        id: "image_stale",
+        type: "image_generation_call",
+        status: "generating",
+        result: ONE_PIXEL_PNG
+      }]
+    }, { imageStore });
+
+    expect(parsed.generatedImages).toHaveLength(1);
+    expect(parsed.response.content[0]).toMatchObject({ type: "text" });
   });
 
   it.each([

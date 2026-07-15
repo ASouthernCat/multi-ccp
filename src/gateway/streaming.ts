@@ -7,6 +7,7 @@ import type {
 } from "./canonical.js";
 import { EMPTY_TOOL_NAME_MAPPING } from "./canonical.js";
 import { asGatewayError, type GatewayError, type GatewayErrorType, upstreamProtocolError } from "./errors.js";
+import { formatGeneratedImageSavedText } from "./generated-image.js";
 import { mapOpenAIFinishReason } from "./openai-chat-target.js";
 import { normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
 import type { AnthropicStreamBridge } from "./openai-responses-streaming.js";
@@ -572,7 +573,7 @@ export class AnthropicSseEmitter {
       }
       const block = { index: this.nextBlockIndex++, kind: "text" as const, stopped: true };
       this.blocks.set(event.blockKey, block);
-      const text = `Generated image saved to:\n${event.path}`;
+      const text = formatGeneratedImageSavedText(event.path);
       return [
         formatSse("content_block_start", {
           type: "content_block_start",

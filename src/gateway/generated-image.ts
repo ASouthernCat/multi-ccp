@@ -13,6 +13,10 @@ export interface PreparedGeneratedImage {
   format: "png" | "jpeg" | "webp";
 }
 
+export function formatGeneratedImageSavedText(imagePath: string): string {
+  return `Generated image saved to:\n\`${imagePath}\``;
+}
+
 export interface GeneratedImageStoreOptions {
   context?: PathContext;
   requestId: string;

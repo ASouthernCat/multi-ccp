@@ -486,7 +486,7 @@ describe("gateway HTTP protocol", () => {
     expect(path.isAbsolute(imagePath)).toBe(true);
     expect(await readFile(imagePath)).toEqual(Buffer.from(ONE_PIXEL_PNG, "base64"));
     expect(body).toContain("Generated image saved to:");
-    expect(body).toContain(JSON.stringify(imagePath).slice(1, -1));
+    expect(body).toContain(`\`${JSON.stringify(imagePath).slice(1, -1)}\``);
     expect(body).not.toContain(ONE_PIXEL_PNG);
     expect(body).not.toContain("event: error");
     expect(body).toContain("event: message_stop");
@@ -499,6 +499,73 @@ describe("gateway HTTP protocol", () => {
       lastEventType: "response.completed",
       terminalEventReceived: true,
       sessionId: "session-image-test"
+    });
+  });
+
+  it("saves a proxy image result whose done item retains generating status", async () => {
+    const context = await createContext();
+    const sse = (type: string, payload: Record<string, unknown>) =>
+      `event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`;
+    const upstream = await listenLoopback((_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream", "x-request-id": "upstream-stale-image" });
+      res.write(sse("response.created", {
+        response: { id: "resp_image", model: "responses-model", status: "in_progress" }
+      }));
+      res.write(sse("response.output_item.added", {
+        output_index: 0,
+        item: { id: "image_stale", type: "image_generation_call", status: "in_progress" }
+      }));
+      res.write(sse("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_stale", type: "image_generation_call", status: "generating", result: ONE_PIXEL_PNG }
+      }));
+      res.end(sse("response.completed", {
+        response: {
+          id: "resp_image",
+          model: "responses-model",
+          status: "completed",
+          output: [{
+            id: "image_stale", type: "image_generation_call", status: "generating", result: ONE_PIXEL_PNG
+          }],
+          usage: { input_tokens: 4, output_tokens: 1 }
+        }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses-stale-image",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/responses-stale-image/v1/messages`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": secret!.localToken,
+        "x-claude-code-session-id": "session-stale-image"
+      },
+      body: JSON.stringify(anthropicRequest(true))
+    });
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain("Generated image saved to:");
+    expect(body).not.toContain(ONE_PIXEL_PNG);
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      status: 200,
+      upstreamStatus: 200,
+      upstreamRequestId: "upstream-stale-image",
+      upstreamItemTypes: ["image_generation_call"],
+      lastEventType: "response.completed",
+      terminalEventReceived: true
     });
   });
 

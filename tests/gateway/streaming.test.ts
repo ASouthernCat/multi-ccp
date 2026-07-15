@@ -582,8 +582,13 @@ describe("OpenAI Responses stream conversion", () => {
 
     expect(bridge.error).toBeUndefined();
     expect(bridge.isTerminal).toBe(true);
-    expect(bridge.takePreparedImages?.()).toHaveLength(1);
-    expect(output.join("")).toContain("Generated image saved to:");
+    const images = bridge.takePreparedImages?.() ?? [];
+    expect(images).toHaveLength(1);
+    const text = parseOutput(output)
+      .filter((event) => event.event === "content_block_delta")
+      .map((event) => event.data.delta?.text ?? "")
+      .join("");
+    expect(text).toBe(`Generated image saved to:\n\`${images[0].path}\``);
     expect(output.join("").match(/Generated image saved to:/g)).toHaveLength(1);
     expect(output.join("")).not.toContain(ONE_PIXEL_PNG);
     expect(bridge.metadata).toMatchObject({
@@ -591,6 +596,60 @@ describe("OpenAI Responses stream conversion", () => {
       lastEventType: "response.completed",
       terminalEventReceived: true
     });
+  });
+
+  it("accepts a done image result when a compatible proxy leaves status at generating", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" }, requestId: "request-stale-status"
+    });
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt", imageStore });
+    const output = bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0,
+        item: { id: "image_stale", type: "image_generation_call", status: "in_progress" }
+      }),
+      responsesEvent("response.image_generation_call.partial_image", {
+        output_index: 0, item_id: "image_stale", partial_image_index: 0, partial_image_b64: ONE_PIXEL_PNG
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_stale", type: "image_generation_call", status: "generating", result: ONE_PIXEL_PNG }
+      }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({
+          status: "completed",
+          output: [{
+            id: "image_stale", type: "image_generation_call", status: "generating", result: ONE_PIXEL_PNG
+          }]
+        })
+      })
+    ].join(""));
+
+    expect(bridge.error).toBeUndefined();
+    expect(bridge.isTerminal).toBe(true);
+    expect(bridge.takePreparedImages?.()).toHaveLength(1);
+    expect(output.join("").match(/Generated image saved to:/g)).toHaveLength(1);
+  });
+
+  it("still rejects a done generating image item without a final result", () => {
+    const imageStore = new GeneratedImageStore({
+      context: { homeDir: "C:\\ccp-test-home" }, requestId: "request-missing-result"
+    });
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt", imageStore });
+    bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0,
+        item: { id: "image_missing", type: "image_generation_call", status: "in_progress" }
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "image_missing", type: "image_generation_call", status: "generating" }
+      })
+    ].join(""));
+
+    expect(bridge.error?.message).toContain("Expected a non-empty string");
   });
 
   it("recovers a final image carried only by response.completed output", () => {
