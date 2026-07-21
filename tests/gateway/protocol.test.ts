@@ -104,7 +104,8 @@ describe("Anthropic Messages source parser", () => {
         name: "mcp.tool",
         description: "A tool",
         input_schema: { type: "object", properties: { value: { type: "number" } } },
-        cache_control: { type: "ephemeral" }
+        cache_control: { type: "ephemeral" },
+        max_uses: 1
       }],
       tool_choice: { type: "tool", name: "mcp.tool", disable_parallel_tool_use: true }
     }));
@@ -129,6 +130,7 @@ describe("Anthropic Messages source parser", () => {
       description: "A tool",
       inputSchema: { type: "object", properties: { value: { type: "number" } } }
     });
+    expect(JSON.stringify(request)).not.toContain("max_uses");
   });
 
   it("parses ordinary and tool-result images into shared canonical input parts", () => {
@@ -205,6 +207,43 @@ describe("Anthropic Messages source parser", () => {
     ]);
   });
 
+  it("drops historical assistant thinking blocks while preserving visible content", () => {
+    const request = parseAnthropicMessagesRequest(baseRequest({
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "hidden reasoning", signature: "sig_1" },
+            { type: "redacted_thinking", data: "redacted" },
+            { type: "text", text: "Visible answer." },
+            { type: "tool_use", id: "toolu_1", name: "mcp.tool", input: { value: 1 } }
+          ]
+        },
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "thinking-only history", signature: "sig_2" }
+          ]
+        },
+        { role: "user", content: "Continue" }
+      ],
+      tools: [{ name: "mcp.tool", input_schema: { type: "object" } }]
+    }));
+
+    expect(request.messages).toEqual([
+      {
+        role: "assistant",
+        content: [
+          { type: "text", text: "Visible answer." },
+          { type: "tool_use", id: "toolu_1", name: "mcp.tool", input: { value: 1 } }
+        ]
+      },
+      { role: "user", content: [{ type: "text", text: "Continue" }] }
+    ]);
+    expect(JSON.stringify(request)).not.toContain("hidden reasoning");
+    expect(JSON.stringify(request)).not.toContain("thinking-only history");
+  });
+
   it.each([
     ["tool_result after ordinary text", baseRequest({ messages: [{ role: "user", content: [
       { type: "text", text: "before" },
@@ -238,9 +277,13 @@ describe("Anthropic Messages source parser", () => {
         { type: "image", source: { type: "file", file_id: "file_1" } }
       ] }
     ] }] }), "Unsupported image source 'file'"],
+    ["thinking in user message", baseRequest({ messages: [{ role: "user", content: [
+      { type: "thinking", thinking: "invalid" }
+    ] }] }), "thinking content blocks are not supported"],
     ["unsupported tool type", baseRequest({ tools: [{ type: "server", name: "x", input_schema: {} }] }), "Only custom tools are supported"],
     ["unknown top field", baseRequest({ surprise: true }), "surprise: Extra inputs are not permitted"],
     ["tool schema extension", baseRequest({ tools: [{ name: "x", input_schema: {}, strict: true }] }), "tools[0].strict"],
+    ["invalid tool max_uses", baseRequest({ tools: [{ name: "x", input_schema: {}, max_uses: 0 }] }), "tools[0].max_uses"],
     ["unknown named tool", baseRequest({
       tools: [{ name: "x", input_schema: {} }],
       tool_choice: { type: "tool", name: "y" }

@@ -77,6 +77,12 @@ function validateCacheControl(value: unknown, path: string): void {
   }
 }
 
+function validateToolMaxUses(value: unknown, path: string): void {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw invalidRequest(`${path}: Expected a positive integer.`);
+  }
+}
+
 function parseSystem(value: unknown): string[] {
   if (value === undefined) {
     return [];
@@ -235,15 +241,20 @@ function parseToolResultBlock(block: JsonObject, path: string): CanonicalContent
   };
 }
 
-function parseMessageContent(value: unknown, role: CanonicalMessage["role"], path: string): CanonicalContent[] {
+function parseMessageContent(
+  value: unknown,
+  role: CanonicalMessage["role"],
+  path: string
+): { content: CanonicalContent[]; ignoredAssistantThinkingBlocks: boolean } {
   if (typeof value === "string") {
-    return [{ type: "text", text: value }];
+    return { content: [{ type: "text", text: value }], ignoredAssistantThinkingBlocks: false };
   }
   if (!Array.isArray(value)) {
     throw invalidRequest(`${path}: Expected a string or an array of content blocks.`);
   }
 
   const result: CanonicalContent[] = [];
+  let ignoredAssistantThinkingBlocks = false;
   let ordinaryContentSeen = false;
   let toolUseSeen = false;
 
@@ -251,6 +262,13 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
     const blockPath = `${path}[${index}]`;
     const block = requireObject(value[index], blockPath);
     const type = requireString(block.type, `${blockPath}.type`);
+
+    if ((type === "thinking" || type === "redacted_thinking") && role === "assistant") {
+      // Historical thinking blocks can appear after compaction or profile switches.
+      // Non-Anthropic upstreams cannot consume or verify them, so keep only visible output.
+      ignoredAssistantThinkingBlocks = true;
+      continue;
+    }
 
     if (type === "text") {
       if (role === "assistant" && toolUseSeen) {
@@ -293,7 +311,7 @@ function parseMessageContent(value: unknown, role: CanonicalMessage["role"], pat
     throw invalidRequest(`${blockPath}.type: ${type} content blocks are not supported by this gateway profile.`);
   }
 
-  return result;
+  return { content: result, ignoredAssistantThinkingBlocks };
 }
 
 function parseMessages(value: unknown): { messages: CanonicalMessage[]; instructions: string[] } {
@@ -320,9 +338,13 @@ function parseMessages(value: unknown): { messages: CanonicalMessage[]; instruct
     if (!("content" in message)) {
       throw invalidRequest(`${path}.content: Field required.`);
     }
+    const parsedContent = parseMessageContent(message.content, message.role, `${path}.content`);
+    if (message.role === "assistant" && parsedContent.ignoredAssistantThinkingBlocks && parsedContent.content.length === 0) {
+      return;
+    }
     messages.push({
       role: message.role,
-      content: parseMessageContent(message.content, message.role, `${path}.content`)
+      content: parsedContent.content
     });
   });
   return { messages, instructions };
@@ -340,12 +362,15 @@ function parseTools(value: unknown): CanonicalTool[] | undefined {
   return value.map((entry, index) => {
     const path = `tools[${index}]`;
     const tool = requireObject(entry, path);
-    rejectExtraFields(tool, new Set(["type", "name", "description", "input_schema", "cache_control"]), `${path}.`);
+    rejectExtraFields(tool, new Set(["type", "name", "description", "input_schema", "cache_control", "max_uses"]), `${path}.`);
     if (tool.type !== undefined && tool.type !== "custom") {
       throw invalidRequest(`${path}.type: Only custom tools are supported.`);
     }
     if (tool.cache_control !== undefined) {
       validateCacheControl(tool.cache_control, `${path}.cache_control`);
+    }
+    if (tool.max_uses !== undefined) {
+      validateToolMaxUses(tool.max_uses, `${path}.max_uses`);
     }
     const name = requireString(tool.name, `${path}.name`);
     if (names.has(name)) {
