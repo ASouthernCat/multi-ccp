@@ -83,6 +83,13 @@ function validateToolMaxUses(value: unknown, path: string): void {
   }
 }
 
+function parseStringArray(value: unknown, path: string): string[] {
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw invalidRequest(`${path}: Expected an array of strings.`);
+  }
+  return [...value] as string[];
+}
+
 function parseSystem(value: unknown): string[] {
   if (value === undefined) {
     return [];
@@ -350,6 +357,80 @@ function parseMessages(value: unknown): { messages: CanonicalMessage[]; instruct
   return { messages, instructions };
 }
 
+const CUSTOM_TOOL_FIELDS = new Set(["type", "name", "description", "input_schema", "cache_control", "max_uses"]);
+const WEB_SEARCH_TOOL_FIELDS = new Set([
+  "type",
+  "name",
+  "description",
+  "input_schema",
+  "cache_control",
+  "max_uses",
+  "allowed_domains",
+  "blocked_domains",
+  "user_location"
+]);
+
+function isAnthropicWebSearchToolType(value: string): boolean {
+  return value === "web_search" || value.startsWith("web_search_");
+}
+
+function parseCustomTool(tool: JsonObject, path: string): CanonicalTool {
+  rejectExtraFields(tool, CUSTOM_TOOL_FIELDS, `${path}.`);
+  if (tool.type !== undefined && tool.type !== "custom") {
+    const type = requireString(tool.type, `${path}.type`);
+    throw invalidRequest(`${path}.type: Unsupported tool type '${type}'.`);
+  }
+  if (tool.cache_control !== undefined) {
+    validateCacheControl(tool.cache_control, `${path}.cache_control`);
+  }
+  if (tool.max_uses !== undefined) {
+    validateToolMaxUses(tool.max_uses, `${path}.max_uses`);
+  }
+  const name = requireString(tool.name, `${path}.name`);
+  const description = tool.description === undefined
+    ? undefined
+    : requireString(tool.description, `${path}.description`, true);
+  return {
+    name,
+    ...(description === undefined ? {} : { description }),
+    inputSchema: requireObject(tool.input_schema, `${path}.input_schema`)
+  };
+}
+
+function parseWebSearchTool(tool: JsonObject, path: string): CanonicalTool {
+  rejectExtraFields(tool, WEB_SEARCH_TOOL_FIELDS, `${path}.`);
+  const type = requireString(tool.type, `${path}.type`);
+  if (!isAnthropicWebSearchToolType(type)) {
+    throw invalidRequest(`${path}.type: Unsupported tool type '${type}'.`);
+  }
+  if (tool.cache_control !== undefined) {
+    validateCacheControl(tool.cache_control, `${path}.cache_control`);
+  }
+  if (tool.max_uses !== undefined) {
+    validateToolMaxUses(tool.max_uses, `${path}.max_uses`);
+  }
+  const name = tool.name === undefined ? "web_search" : requireString(tool.name, `${path}.name`);
+  const allowedDomains = tool.allowed_domains === undefined
+    ? undefined
+    : parseStringArray(tool.allowed_domains, `${path}.allowed_domains`);
+  const blockedDomains = tool.blocked_domains === undefined
+    ? undefined
+    : parseStringArray(tool.blocked_domains, `${path}.blocked_domains`);
+  const filters = {
+    ...(allowedDomains === undefined ? {} : { allowedDomains }),
+    ...(blockedDomains === undefined ? {} : { blockedDomains })
+  };
+  const userLocation = tool.user_location === undefined
+    ? undefined
+    : requireObject(tool.user_location, `${path}.user_location`);
+  return {
+    kind: "web_search",
+    name,
+    ...(Object.keys(filters).length === 0 ? {} : { filters }),
+    ...(userLocation === undefined ? {} : { userLocation })
+  };
+}
+
 function parseTools(value: unknown): CanonicalTool[] | undefined {
   if (value === undefined) {
     return undefined;
@@ -362,29 +443,15 @@ function parseTools(value: unknown): CanonicalTool[] | undefined {
   return value.map((entry, index) => {
     const path = `tools[${index}]`;
     const tool = requireObject(entry, path);
-    rejectExtraFields(tool, new Set(["type", "name", "description", "input_schema", "cache_control", "max_uses"]), `${path}.`);
-    if (tool.type !== undefined && tool.type !== "custom") {
-      throw invalidRequest(`${path}.type: Only custom tools are supported.`);
-    }
-    if (tool.cache_control !== undefined) {
-      validateCacheControl(tool.cache_control, `${path}.cache_control`);
-    }
-    if (tool.max_uses !== undefined) {
-      validateToolMaxUses(tool.max_uses, `${path}.max_uses`);
-    }
-    const name = requireString(tool.name, `${path}.name`);
+    const parsed = typeof tool.type === "string" && tool.type !== "custom"
+      ? parseWebSearchTool(tool, path)
+      : parseCustomTool(tool, path);
+    const name = parsed.name;
     if (names.has(name)) {
       throw invalidRequest(`${path}.name: Duplicate tool name '${name}'.`);
     }
     names.add(name);
-    const description = tool.description === undefined
-      ? undefined
-      : requireString(tool.description, `${path}.description`, true);
-    return {
-      name,
-      ...(description === undefined ? {} : { description }),
-      inputSchema: requireObject(tool.input_schema, `${path}.input_schema`)
-    };
+    return parsed;
   });
 }
 

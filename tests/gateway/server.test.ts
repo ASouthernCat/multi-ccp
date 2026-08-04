@@ -292,6 +292,69 @@ describe("gateway HTTP protocol", () => {
     });
   });
 
+  it("logs safe upstream request shape diagnostics without tool payloads", async () => {
+    const context = await createContext();
+    const upstream = await listenLoopback((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "resp_shape",
+        model: "responses-model",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }],
+        usage: { input_tokens: 11, output_tokens: 1 }
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "responses-shape",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: `${upstream.endpoint}/v1/responses`,
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "responses-key",
+      model: "responses-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const logs: GatewayRequestLog[] = [];
+    const { endpoint } = await startGateway(context, { onRequestComplete: (entry) => logs.push(entry) });
+
+    const response = await fetch(`${endpoint}/p/responses-shape/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${secret!.localToken}` },
+      body: JSON.stringify(anthropicRequest(false, {
+        tools: [
+          {
+            name: "Read",
+            description: "Read a file from disk.",
+            input_schema: {
+              type: "object",
+              properties: { file_path: { type: "string" } },
+              required: ["file_path"]
+            }
+          },
+          { type: "web_search_20250305", name: "web_search", max_uses: 1 }
+        ],
+        tool_choice: { type: "auto" }
+      }))
+    });
+
+    expect(response.status).toBe(200);
+    await response.json();
+    await vi.waitFor(() => expect(logs).toHaveLength(1));
+    expect(logs[0]).toMatchObject({
+      protocol: "openai_responses",
+      upstreamToolTypes: ["function", "web_search"],
+      upstreamToolCount: 2,
+      upstreamInputItems: 1,
+      upstreamHasToolChoice: true,
+      inputTokens: 11,
+      outputTokens: 1,
+      status: 200
+    });
+    const serializedLog = JSON.stringify(logs[0]);
+    expect(serializedLog).not.toContain("Read a file from disk.");
+    expect(serializedLog).not.toContain("file_path");
+  });
+
   it("isolates concurrent Chat and Responses protocol requests", async () => {
     const context = await createContext();
     const received: Array<{ path: string; authorization?: string; body: Record<string, unknown> }> = [];

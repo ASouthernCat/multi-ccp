@@ -436,6 +436,39 @@ describe("OpenAI Responses stream conversion", () => {
     expect(events.at(-2)?.data.delta.stop_reason).toBe("tool_use");
   });
 
+  it("records and ignores web search output items while streaming the final message", () => {
+    const bridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gpt" });
+    const output = bridge.push([
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0,
+        item: { id: "ws_1", type: "web_search_call", status: "in_progress" }
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "ws_1", type: "web_search_call", status: "completed" }
+      }),
+      responsesEvent("response.output_item.added", {
+        output_index: 1, item: { id: "msg", type: "message", content: [] }
+      }),
+      responsesEvent("response.content_part.added", {
+        item_id: "msg", output_index: 1, content_index: 0, part: { type: "output_text", text: "" }
+      }),
+      responsesEvent("response.output_text.delta", {
+        item_id: "msg", output_index: 1, content_index: 0, delta: "Found it"
+      }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({ status: "completed", usage: { input_tokens: 9, output_tokens: 3 } })
+      })
+    ].join(""));
+    const events = parseOutput(output);
+
+    expect(events.some((event) => event.event === "error")).toBe(false);
+    expect(events.some((event) => event.event === "message_stop")).toBe(true);
+    expect(events.find((event) => event.event === "content_block_delta")?.data.delta.text).toBe("Found it");
+    expect(bridge.metadata.upstreamItemTypes).toEqual(["web_search_call", "message"]);
+  });
+
   it.each([
     ["incomplete max tokens", "response.incomplete", {
       response: responseEnvelope({ status: "incomplete", incomplete_details: { reason: "max_output_tokens" } })
@@ -485,7 +518,7 @@ describe("OpenAI Responses stream conversion", () => {
     ["unknown actionable item", [
       responsesEvent("response.created", { response: responseEnvelope() }),
       responsesEvent("response.output_item.added", {
-        output_index: 0, item: { id: "web", type: "web_search_call" }
+        output_index: 0, item: { id: "computer", type: "computer_call" }
       })
     ].join(""), "Unsupported output item type"]
   ])("fails closed for %s", (_name, wire, message) => {

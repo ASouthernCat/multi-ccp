@@ -133,6 +133,32 @@ describe("Anthropic Messages source parser", () => {
     expect(JSON.stringify(request)).not.toContain("max_uses");
   });
 
+  it("parses Anthropic web search server tools without treating them as custom functions", () => {
+    const request = parseAnthropicMessagesRequest(baseRequest({
+      tools: [{
+        type: "web_search_20250305",
+        name: "web_search",
+        max_uses: 3,
+        allowed_domains: ["threejs.org"],
+        blocked_domains: ["example.test"],
+        user_location: { type: "approximate", country: "US" }
+      }],
+      tool_choice: { type: "tool", name: "web_search" }
+    }));
+
+    expect(request.tools?.[0]).toEqual({
+      kind: "web_search",
+      name: "web_search",
+      filters: {
+        allowedDomains: ["threejs.org"],
+        blockedDomains: ["example.test"]
+      },
+      userLocation: { type: "approximate", country: "US" }
+    });
+    expect(request.toolChoice).toEqual({ mode: "tool", name: "web_search" });
+    expect(JSON.stringify(request)).not.toContain("max_uses");
+  });
+
   it("parses ordinary and tool-result images into shared canonical input parts", () => {
     const request = parseAnthropicMessagesRequest(baseRequest({
       messages: [
@@ -280,7 +306,7 @@ describe("Anthropic Messages source parser", () => {
     ["thinking in user message", baseRequest({ messages: [{ role: "user", content: [
       { type: "thinking", thinking: "invalid" }
     ] }] }), "thinking content blocks are not supported"],
-    ["unsupported tool type", baseRequest({ tools: [{ type: "server", name: "x", input_schema: {} }] }), "Only custom tools are supported"],
+    ["unsupported tool type", baseRequest({ tools: [{ type: "server", name: "x", input_schema: {} }] }), "Unsupported tool type 'server'"],
     ["unknown top field", baseRequest({ surprise: true }), "surprise: Extra inputs are not permitted"],
     ["tool schema extension", baseRequest({ tools: [{ name: "x", input_schema: {}, strict: true }] }), "tools[0].strict"],
     ["invalid tool max_uses", baseRequest({ tools: [{ name: "x", input_schema: {}, max_uses: 0 }] }), "tools[0].max_uses"],
@@ -754,6 +780,28 @@ describe("OpenAI Responses target", () => {
     expect(converted.body.stop).toBeUndefined();
   });
 
+  it("serializes Anthropic web search server tools as Responses hosted web_search", () => {
+    const canonical = parseAnthropicMessagesRequest(baseRequest({
+      tools: [{
+        type: "web_search_20250305",
+        name: "web_search",
+        allowed_domains: ["threejs.org"],
+        user_location: { type: "approximate", country: "US" }
+      }],
+      tool_choice: { type: "tool", name: "web_search" }
+    }));
+    const converted = serializeOpenAIResponsesRequest(canonical, { model: "gpt-5.6" });
+
+    expect(converted.body.tools).toEqual([{
+      type: "web_search",
+      filters: { allowed_domains: ["threejs.org"] },
+      user_location: { type: "approximate", country: "US" }
+    }]);
+    expect(converted.body.tool_choice).toEqual({ type: "web_search" });
+    expect(converted.toolNames.sourceToTarget.size).toBe(0);
+    expect(JSON.stringify(converted.body)).not.toContain("max_uses");
+  });
+
   it("uses native input_image parts for ordinary and function-call-output images", () => {
     const canonical = parseAnthropicMessagesRequest(baseRequest({
       messages: [
@@ -943,6 +991,23 @@ describe("OpenAI Responses target", () => {
     expect(canonicalResponseToAnthropic(parsed.response)).toMatchObject({ stop_reason: "tool_use" });
   });
 
+  it("records and ignores Responses web search output items while preserving message content", () => {
+    const parsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_web",
+      model: "gpt-5.6",
+      status: "completed",
+      output: [
+        { type: "web_search_call", id: "ws_1", status: "completed" },
+        { type: "message", content: [{ type: "output_text", text: "Search result summary" }] }
+      ],
+      usage: { input_tokens: 12, output_tokens: 5 }
+    });
+
+    expect(parsed.upstreamItemTypes).toEqual(["web_search_call", "message"]);
+    expect(parsed.response.content).toEqual([{ type: "text", text: "Search result summary" }]);
+    expect(parsed.response.finishReason).toBe("end_turn");
+  });
+
   it("prepares completed image generation output as an absolute saved-image path", () => {
     const imageStore = new GeneratedImageStore({
       context: { homeDir: "C:\\ccp-test-home" },
@@ -1011,7 +1076,7 @@ describe("OpenAI Responses target", () => {
   it.each([
     [{ id: "r", model: "m", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, output: [{ type: "message", content: [{ type: "output_text", text: "partial" }] }] }, "max_tokens"],
     [{ id: "r", model: "m", status: "failed", error: { message: "provider failed" }, output: [] }, "provider failed"],
-    [{ id: "r", model: "m", status: "completed", output: [{ type: "web_search_call" }] }, "Unsupported output item type"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "web_search_call" }] }, "No representable output"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "reasoning" }] }, "No representable output"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: { input_tokens: -1 } }, "non-negative safe integer"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: null }, "response.usage"]

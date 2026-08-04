@@ -100,6 +100,10 @@ export interface GatewayRequestLog {
   upstreamErrorCode?: string;
   upstreamErrorParam?: string;
   upstreamFields?: string[];
+  upstreamToolTypes?: string[];
+  upstreamToolCount?: number;
+  upstreamInputItems?: number;
+  upstreamHasToolChoice?: boolean;
   upstreamEventTypes?: string[];
   upstreamItemTypes?: string[];
   inputTokens?: number;
@@ -166,6 +170,10 @@ interface RequestState {
   upstreamErrorCode?: string;
   upstreamErrorParam?: string;
   upstreamFields?: string[];
+  upstreamToolTypes?: string[];
+  upstreamToolCount?: number;
+  upstreamInputItems?: number;
+  upstreamHasToolChoice?: boolean;
   upstreamEventTypes?: string[];
   upstreamItemTypes?: string[];
   inputTokens?: number;
@@ -411,6 +419,7 @@ async function handleRequest(
         compatibility: snapshot.config.compatibility
       });
       state.upstreamFields = Object.keys(converted.body).sort();
+      annotateUpstreamRequestShape(state, converted.body);
       const upstream = await fetchUpstream(snapshot, converted.body, controller.signal, deps.fetchImpl, state);
       if (!upstream.ok) {
         const mapped = await mapUpstreamError(
@@ -474,6 +483,7 @@ async function handleRequest(
       compatibility: snapshot.config.compatibility
     });
     state.upstreamFields = Object.keys(converted.body).sort();
+    annotateUpstreamRequestShape(state, converted.body);
     const upstream = await fetchUpstream(snapshot, converted.body, controller.signal, deps.fetchImpl, state);
 
     if (!upstream.ok) {
@@ -1093,6 +1103,19 @@ function classifyResponsesStreamFailure(result: GatewayStreamResult): GatewayFai
   return "stream_protocol";
 }
 
+function annotateUpstreamRequestShape(state: RequestState, body: Record<string, unknown>): void {
+  const tools = Array.isArray(body.tools) ? body.tools : undefined;
+  if (tools) {
+    state.upstreamToolCount = tools.length;
+    const types = [...new Set(tools.map((tool) => isRecord(tool) ? safeDiagnosticToken(tool.type) : undefined)
+      .filter((type): type is string => type !== undefined))];
+    if (types.length > 0) state.upstreamToolTypes = types;
+  }
+  const input = body.input;
+  if (Array.isArray(input)) state.upstreamInputItems = input.length;
+  if (body.tool_choice !== undefined) state.upstreamHasToolChoice = true;
+}
+
 function emitRequestLog(
   deps: Pick<GatewayServerOptions, "onRequestComplete"> & { now: () => number },
   req: IncomingMessage,
@@ -1127,6 +1150,12 @@ function emitRequestLog(
       ...(state.upstreamErrorCode ? { upstreamErrorCode: state.upstreamErrorCode } : {}),
       ...(state.upstreamErrorParam ? { upstreamErrorParam: state.upstreamErrorParam } : {}),
       ...(state.upstreamFields ? { upstreamFields: [...state.upstreamFields] } : {}),
+      ...(state.upstreamToolTypes ? { upstreamToolTypes: [...state.upstreamToolTypes] } : {}),
+      ...(state.upstreamToolCount === undefined ? {} : { upstreamToolCount: state.upstreamToolCount }),
+      ...(state.upstreamInputItems === undefined ? {} : { upstreamInputItems: state.upstreamInputItems }),
+      ...(state.upstreamHasToolChoice === undefined ? {} : {
+        upstreamHasToolChoice: state.upstreamHasToolChoice
+      }),
       ...(state.upstreamEventTypes ? { upstreamEventTypes: [...state.upstreamEventTypes] } : {}),
       ...(state.upstreamItemTypes ? { upstreamItemTypes: [...state.upstreamItemTypes] } : {}),
       ...(state.inputTokens === undefined ? {} : { inputTokens: state.inputTokens }),

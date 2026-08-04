@@ -17,10 +17,31 @@ export type CanonicalContent =
   | { type: "tool_use"; id: string; name: string; input: Record<string, unknown> }
   | { type: "tool_result"; toolUseId: string; content: CanonicalToolResultContent; isError?: boolean };
 
-export interface CanonicalTool {
+export interface CanonicalFunctionTool {
+  kind?: "function";
   name: string;
   description?: string;
   inputSchema: Record<string, unknown>;
+}
+
+export interface CanonicalWebSearchTool {
+  kind: "web_search";
+  name: string;
+  filters?: {
+    allowedDomains?: string[];
+    blockedDomains?: string[];
+  };
+  userLocation?: Record<string, unknown>;
+}
+
+export type CanonicalTool = CanonicalFunctionTool | CanonicalWebSearchTool;
+
+export function isCanonicalFunctionTool(tool: CanonicalTool): tool is CanonicalFunctionTool {
+  return tool.kind === undefined || tool.kind === "function";
+}
+
+export function isCanonicalWebSearchTool(tool: CanonicalTool): tool is CanonicalWebSearchTool {
+  return tool.kind === "web_search";
 }
 
 export interface CanonicalUsage {

@@ -12,6 +12,7 @@ import type {
   CanonicalToolResultContent,
   ToolNameMapping
 } from "./canonical.js";
+import { isCanonicalFunctionTool } from "./canonical.js";
 import { MODERN_OPENAI_COMPATIBILITY } from "./config.js";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
 import {
@@ -62,7 +63,7 @@ export function mapOpenAIFinishReason(value: unknown): CanonicalFinishReason {
 }
 
 function collectToolNames(request: CanonicalRequest): string[] {
-  const names = request.tools?.map((tool) => tool.name) ?? [];
+  const names = request.tools?.filter(isCanonicalFunctionTool).map((tool) => tool.name) ?? [];
   for (const message of request.messages) {
     for (const block of message.content) {
       if (block.type === "tool_use") {
@@ -307,7 +308,12 @@ export function serializeOpenAIChatRequest(
     body.stop = request.stop;
   }
   if (request.tools !== undefined && request.tools.length > 0) {
-    body.tools = request.tools.map((tool) => ({
+    const unsupportedTool = request.tools.find((tool) => !isCanonicalFunctionTool(tool));
+    if (unsupportedTool) {
+      throw invalidRequest(`tools: Tool type '${unsupportedTool.kind}' is not supported by OpenAI Chat Completions gateway profiles.`);
+    }
+    const functionTools = request.tools.filter(isCanonicalFunctionTool);
+    body.tools = functionTools.map((tool) => ({
       type: "function",
       function: {
         name: requireTargetToolName(toolNames, tool.name),

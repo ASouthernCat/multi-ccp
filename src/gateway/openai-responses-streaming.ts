@@ -32,7 +32,7 @@ interface ItemState {
   key: string;
   outputIndex: number;
   id?: string;
-  type?: "message" | "function_call" | "reasoning" | "image_generation_call";
+  type?: "message" | "function_call" | "reasoning" | "image_generation_call" | "web_search_call";
   textParts: Map<number, TextState>;
   callId?: string;
   name?: string;
@@ -361,7 +361,7 @@ export class OpenAIResponsesStreamConverter {
     const state = this.resolveItem(index, optionalString(item.id, "stream.item.id"));
     this.setItemType(state, type);
 
-    if (type === "reasoning") return;
+    if (type === "reasoning" || type === "web_search_call") return;
     if (type === "image_generation_call") {
       this.processImage(state, item, done, output);
       return;
@@ -472,7 +472,7 @@ export class OpenAIResponsesStreamConverter {
 
     if (Array.isArray(response.output)) {
       response.output.forEach((item, outputIndex) => {
-        if (isObject(item) && item.type === "image_generation_call") {
+        if (isObject(item) && (item.type === "image_generation_call" || item.type === "web_search_call")) {
           this.processOutputItem({ output_index: outputIndex, item }, true, output);
         }
       });
@@ -623,7 +623,13 @@ export class OpenAIResponsesStreamConverter {
   }
 
   private setItemType(state: ItemState, type: string): void {
-    if (type !== "message" && type !== "function_call" && type !== "reasoning" && type !== "image_generation_call") {
+    if (
+      type !== "message" &&
+      type !== "function_call" &&
+      type !== "reasoning" &&
+      type !== "image_generation_call" &&
+      type !== "web_search_call"
+    ) {
       throw upstreamProtocolError(
         `Unsupported output item type '${type}'.`,
         undefined,

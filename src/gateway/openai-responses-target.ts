@@ -6,10 +6,12 @@ import type {
   CanonicalRequest,
   CanonicalResponse,
   CanonicalResponseContent,
+  CanonicalTool,
   CanonicalToolChoice,
   CanonicalToolResultContent,
   ToolNameMapping
 } from "./canonical.js";
+import { isCanonicalFunctionTool, isCanonicalWebSearchTool } from "./canonical.js";
 import { OPENAI_RESPONSES_COMPATIBILITY } from "./config.js";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
 import {
@@ -53,7 +55,7 @@ export interface OpenAIResponsesParsedResponse {
 }
 
 function collectToolNames(request: CanonicalRequest): string[] {
-  const names = request.tools?.map((tool) => tool.name) ?? [];
+  const names = request.tools?.filter(isCanonicalFunctionTool).map((tool) => tool.name) ?? [];
   for (const message of request.messages) {
     for (const block of message.content) {
       if (block.type === "tool_use") names.push(block.name);
@@ -158,16 +160,36 @@ function serializeInput(request: CanonicalRequest, mapping: ToolNameMapping): Ar
   return request.messages.flatMap((message) => serializeMessage(message, mapping));
 }
 
-function serializeToolChoice(choice: CanonicalToolChoice, mapping: ToolNameMapping): unknown {
+function serializeToolChoice(choice: CanonicalToolChoice, mapping: ToolNameMapping, request: CanonicalRequest): unknown {
   if (choice.mode === "auto" || choice.mode === "required" || choice.mode === "none") {
     return choice.mode;
   }
   if (!choice.name) {
     throw invalidRequest("tool_choice.name: Field required when type is tool.");
   }
+  if (request.tools?.some((tool) => isCanonicalWebSearchTool(tool) && tool.name === choice.name)) {
+    return { type: "web_search" };
+  }
   return {
     type: "function",
     name: requireTargetToolName(mapping, choice.name)
+  };
+}
+
+function serializeWebSearchTool(tool: CanonicalTool): Record<string, unknown> {
+  if (!isCanonicalWebSearchTool(tool)) {
+    throw invalidRequest("tools: Expected a web_search tool.");
+  }
+  const filters = tool.filters === undefined
+    ? undefined
+    : {
+      ...(tool.filters.allowedDomains === undefined ? {} : { allowed_domains: tool.filters.allowedDomains }),
+      ...(tool.filters.blockedDomains === undefined ? {} : { blocked_domains: tool.filters.blockedDomains })
+    };
+  return {
+    type: "web_search",
+    ...(filters === undefined || Object.keys(filters).length === 0 ? {} : { filters }),
+    ...(tool.userLocation === undefined ? {} : { user_location: tool.userLocation })
   };
 }
 
@@ -227,12 +249,15 @@ export function serializeOpenAIResponsesRequest(
     if (request.topP !== undefined) body.top_p = request.topP;
   }
   if (request.tools !== undefined && request.tools.length > 0) {
+    const functionTools = request.tools.filter(isCanonicalFunctionTool);
+    const webSearchTools = request.tools.filter(isCanonicalWebSearchTool);
     // OpenAI docs: strict:true requires every object property to be required and
     // additionalProperties:false, otherwise the request is rejected. Claude Code
     // tools routinely leave optional fields out of required[], so non-strict is
     // the safe default for Anthropic→Responses translation.
     const useStrictTools = compatibility.toolStrict === "strict";
-    body.tools = request.tools.map((tool) => ({
+    body.tools = [
+      ...functionTools.map((tool) => ({
       type: "function",
       name: requireTargetToolName(toolNames, tool.name),
       ...(tool.description === undefined ? {} : { description: tool.description }),
@@ -240,9 +265,11 @@ export function serializeOpenAIResponsesRequest(
         ? normalizeStrictJsonSchema(tool.inputSchema)
         : tool.inputSchema,
       strict: useStrictTools
-    }));
+      })),
+      ...webSearchTools.map(serializeWebSearchTool)
+    ];
     if (request.toolChoice) {
-      body.tool_choice = serializeToolChoice(request.toolChoice, toolNames);
+      body.tool_choice = serializeToolChoice(request.toolChoice, toolNames, request);
     }
     if (compatibility.parallelToolCalls === "supported") {
       body.parallel_tool_calls = request.toolChoice?.disableParallelToolUse === true ? false : true;
@@ -336,6 +363,7 @@ function parseResponseInternal(
       return;
     }
     if (type === "reasoning") return;
+    if (type === "web_search_call") return;
     if (type === "image_generation_call") {
       const status = requireString(item.status, `${path}.status`);
       const result = requireString(item.result, `${path}.result`);
