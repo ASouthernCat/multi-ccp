@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Gateway Profile 会关闭 Claude Code 对未知 Gateway 模型窗口的强制 200k 预压缩，避免 `claude-ccp-*` 模型启动时显示未知模型警告；实际上下文限制由上游响应决定。
+- Gateway Profile 现在会通过 Claude Code 的 `/model` 选择器展示当前 Upstream 配置的全部模型，并使用稳定的 `claude-ccp-*` 别名把选择映射回实际 Upstream 模型；选择不会改写共享 Upstream 或 `.ccp.json` 默认绑定，已移除的旧别名会返回明确错误。
+- Gateway 内部协议版本升级到 v3，升级后会替换受 multi-ccp 管理的旧协议进程，确保模型发现能力立即生效；旧 Profile 首次启动会补齐默认模型别名，已有 `/model` 选择则保持不变。
+
 ## 0.3.1
 
 - Gateway 兼容 AICodeMirror Responses 流中的 `codex.response.metadata` 事件，并按 OpenAI Responses 契约消费 `image_generation_call`：校验并原子保存最终 PNG/JPEG/WebP、按 SHA-256 去重，再向 Claude Code 返回绝对路径；partial/base64 不会写入 Anthropic SSE 或日志。

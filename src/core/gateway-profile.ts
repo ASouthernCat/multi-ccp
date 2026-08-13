@@ -32,6 +32,7 @@ import {
   readGatewayRuntimeConfig,
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
+import { gatewayModelAlias } from "../gateway/models.js";
 
 export const GATEWAY_SECRET_FILE = ".ccp-gateway.json";
 
@@ -129,7 +130,8 @@ export function buildGatewaySettings(
   current: ClaudeSettings | undefined,
   profileName: string,
   endpoint: string,
-  secret: Pick<GatewayProfileSecret, "localToken">
+  secret: Pick<GatewayProfileSecret, "localToken">,
+  defaultModel?: string
 ): ClaudeSettings {
   const env = { ...(current?.env ?? {}) };
   for (const name of MODEL_ENV_NAMES) delete env[name];
@@ -144,10 +146,19 @@ export function buildGatewaySettings(
     CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1",
     CLAUDE_CODE_DISABLE_THINKING: "1",
     CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1",
+    CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+    // Gateway model ids are provider-defined, so Claude Code cannot infer
+    // their context window from the id alone.
+    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
     MAX_THINKING_TOKENS: "0",
     ENABLE_TOOL_SEARCH: "false"
   });
-  return { ...(current ?? {}), theme: current?.theme ?? "dark", env };
+  return {
+    ...(current ?? {}),
+    ...(defaultModel === undefined ? {} : { model: gatewayModelAlias(defaultModel) }),
+    theme: current?.theme ?? "dark",
+    env
+  };
 }
 
 export async function readGatewayProfile(
@@ -193,7 +204,14 @@ export async function repairGatewayProfileSettings(
     readGatewayRuntimeConfig(context),
     readSettings(profileDir)
   ]);
-  const expected = buildGatewaySettings(current, profileName, getGatewayEndpoint(runtimeConfig), profileSecret);
+  const savedModel = typeof current?.model === "string" ? current.model.trim() : "";
+  const expected = buildGatewaySettings(
+    current,
+    profileName,
+    getGatewayEndpoint(runtimeConfig),
+    profileSecret,
+    savedModel ? undefined : config.model
+  );
   if (!jsonEqual(current, expected)) await writeSettings(profileDir, expected);
   return { config, secret };
 }
@@ -222,7 +240,8 @@ export async function updateGatewayProfile(
     currentSettings,
     profileName,
     getGatewayEndpoint(runtimeConfig),
-    profileSecret
+    profileSecret,
+    binding.model
   );
   try {
     await writeMeta(profileDir, nextMeta);

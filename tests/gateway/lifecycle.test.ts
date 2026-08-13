@@ -236,7 +236,7 @@ describe("gateway lifecycle", () => {
     expect(second).toMatchObject({ running: true, instanceId: "shared-instance" });
   });
 
-  it("stops a verified prior-protocol runtime before starting protocol version 2", async () => {
+  it("stops a verified prior-protocol runtime before starting the current protocol", async () => {
     const context = await createContext();
     const runtimePath = getGatewayRuntimePath(context);
     await mkdir(path.dirname(runtimePath), { recursive: true });
@@ -279,7 +279,7 @@ describe("gateway lifecycle", () => {
     expect(spawnProcess).toHaveBeenCalledTimes(1);
     expect(status).toMatchObject({ running: true, instanceId: "instance-2" });
     expect(JSON.parse(await readFile(runtimePath, "utf8"))).toMatchObject({
-      protocolVersion: 2,
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
       instanceId: "instance-2",
       pid: 4242
     });

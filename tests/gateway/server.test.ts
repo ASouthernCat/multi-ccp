@@ -47,6 +47,7 @@ async function createTestGatewayProfile(
     chatCompletionsUrl: string;
     apiKey: string;
     model: string;
+    models?: string[];
     protocol?: GatewayUpstreamProtocol;
     endpointUrl?: string;
     compatibility?: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
@@ -61,7 +62,7 @@ async function createTestGatewayProfile(
     ...(input.endpointUrl ? { endpointUrl: input.endpointUrl } : {}),
     chatCompletionsUrl: input.chatCompletionsUrl,
     apiKey: input.apiKey,
-    models: [input.model],
+    models: input.models ?? [input.model],
     compatibility: input.compatibility
   }, context);
   return createStoredGatewayProfile({ name: input.name, upstreamId, model: input.model }, context);
@@ -144,7 +145,7 @@ describe("gateway HTTP protocol", () => {
     expect(health).toMatchObject({
       ok: true,
       service: "multi-ccp-gateway",
-      protocolVersion: 2,
+      protocolVersion: 3,
       instanceId: "instance-test",
       endpoint,
       profileCount: 2
@@ -153,7 +154,7 @@ describe("gateway HTTP protocol", () => {
     expect(handle.instanceId).toBe("instance-test");
   });
 
-  it("returns 404 for optional endpoints without loading profile secrets", async () => {
+  it("keeps count_tokens optional and protects model discovery", async () => {
     const context = await createContext();
     const resolve = vi.fn().mockRejectedValue(new Error("must not resolve"));
     const logs: GatewayRequestLog[] = [];
@@ -166,13 +167,80 @@ describe("gateway HTTP protocol", () => {
     const models = await fetch(`${endpoint}/p/example/v1/models`);
 
     expect(count.status).toBe(404);
-    expect(models.status).toBe(404);
-    expect(resolve).not.toHaveBeenCalled();
+    expect(models.status).toBe(401);
+    expect(resolve).toHaveBeenCalledWith("example");
     await vi.waitFor(() => expect(logs).toHaveLength(2));
     expect(logs.map((entry) => ({ kind: entry.requestKind, outcome: entry.outcome, status: entry.status }))).toEqual([
       { kind: "count_tokens", outcome: "expected_unsupported", status: 404 },
-      { kind: "models", outcome: "expected_unsupported", status: 404 }
+      { kind: "models", outcome: "failure", status: 401 }
     ]);
+  });
+
+  it("discovers current upstream models and routes aliases to the selected model", async () => {
+    const context = await createContext();
+    const received: Array<Record<string, unknown>> = [];
+    const upstream = await listenLoopback(async (req, res) => {
+      received.push(await readRequestJson(req));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chat",
+        model: "second-model",
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }]
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "model-picker",
+      provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "key",
+      model: "first-model",
+      models: ["first-model", "second-model"]
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const { endpoint } = await startGateway(context);
+    const catalog = await fetch(`${endpoint}/p/model-picker/v1/models`, {
+      headers: { "x-api-key": secret!.localToken }
+    }).then((response) => response.json()) as {
+      data: Array<{ id: string; display_name: string }>;
+      has_more: boolean;
+      first_id: string | null;
+      last_id: string | null;
+    };
+    const selected = catalog.data.find((entry) => entry.display_name.startsWith("second-model"));
+    expect(catalog.has_more).toBe(false);
+    expect(catalog.first_id).toBe(catalog.data[0]?.id);
+    expect(catalog.last_id).toBe(catalog.data.at(-1)?.id);
+    expect(selected).toBeDefined();
+    expect(selected!.id).toMatch(/^claude-ccp-/);
+
+    const response = await fetch(`${endpoint}/p/model-picker/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(false, { model: selected!.id }))
+    });
+    expect(response.status).toBe(200);
+    expect(received[0]?.model).toBe("second-model");
+  });
+
+  it("rejects a stale ccp model alias instead of silently using the profile default", async () => {
+    const context = await createContext();
+    const profile = await createTestGatewayProfile({
+      name: "stale-model",
+      provider: "openai-compatible",
+      chatCompletionsUrl: "https://example.test/v1/chat/completions",
+      apiKey: "key",
+      model: "configured-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const { endpoint } = await startGateway(context);
+    const response = await fetch(`${endpoint}/p/stale-model/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(false, { model: "claude-ccp-cmVtb3ZlZC1tb2RlbA" }))
+    });
+    const body = await response.json() as { error?: { message?: string } };
+    expect(response.status).toBe(400);
+    expect(body.error?.message).toContain("no longer configured");
   });
 
   it("isolates concurrent profiles, upstream credentials, models, and local tokens", async () => {

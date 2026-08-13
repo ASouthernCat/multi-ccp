@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { assertProfileName, CcpError } from "../core/errors.js";
 import { getGatewaySecretPath, readGatewayProfile, validateGatewayProfileBinding } from "../core/gateway-profile.js";
-import { getGatewayUpstreamFingerprint } from "../core/gateway-upstreams.js";
+import { getGatewayUpstreamFingerprint, readGatewayUpstreamConfig } from "../core/gateway-upstreams.js";
 import { getProfilesRoot, type PathContext } from "../core/paths.js";
 import { getMetaPath, readMeta } from "../core/settings.js";
 import type { GatewayProfileConfig, GatewayResolvedSecret } from "../core/types.js";
@@ -10,6 +10,8 @@ import type { GatewayProfileConfig, GatewayResolvedSecret } from "../core/types.
 export interface GatewayRouteSnapshot {
   profileName: string;
   profileDir: string;
+  upstreamId: string;
+  models: readonly string[];
   config: Readonly<GatewayProfileConfig>;
   secret: Readonly<GatewayResolvedSecret>;
   fingerprint: string;
@@ -77,6 +79,7 @@ export class GatewayRegistry {
   private async load(profileName: string, expectedFingerprint: string): Promise<GatewayRouteSnapshot> {
     const profileDir = path.join(getProfilesRoot(this.context), profileName);
     const loaded = await readGatewayProfile(profileDir, this.context);
+    const upstream = await readGatewayUpstreamConfig(loaded.binding.upstreamId, this.context);
     const actualFingerprint = await this.readFingerprint(profileName);
     if (actualFingerprint !== expectedFingerprint) {
       return this.load(profileName, actualFingerprint);
@@ -84,6 +87,8 @@ export class GatewayRegistry {
     const snapshot = deepFreeze({
       profileName,
       profileDir,
+      upstreamId: loaded.binding.upstreamId,
+      models: upstream.models,
       config: loaded.config,
       secret: loaded.secret,
       fingerprint: actualFingerprint

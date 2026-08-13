@@ -40,6 +40,7 @@ import {
 } from "./openai-chat-target.js";
 import { GatewayRegistry, type GatewayRouteSnapshot } from "./registry.js";
 import { OpenAIAnthropicStreamBridge } from "./streaming.js";
+import { buildGatewayModelDiscovery, resolveGatewayModel } from "./models.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3921;
@@ -368,15 +369,10 @@ async function handleRequest(
     state.profileName = route.profileName;
     state.requestKind = route.kind;
 
-    if (route.kind === "count_tokens" || route.kind === "models") {
+    if (route.kind === "count_tokens") {
       state.status = 404;
       state.outcome = "expected_unsupported";
       sendError(res, 404, { type: "not_found_error", message: "Not found." });
-      return;
-    }
-    if (req.method !== "POST") {
-      state.status = 405;
-      sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
       return;
     }
 
@@ -393,14 +389,37 @@ async function handleRequest(
       sendError(res, 401, { type: "authentication_error", message: "Invalid authentication credentials." });
       return;
     }
+    if (route.kind === "models") {
+      if (req.method !== "GET") {
+        state.status = 405;
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        return;
+      }
+      state.status = 200;
+      state.outcome = "success";
+      const models = buildGatewayModelDiscovery(snapshot);
+      sendJson(res, 200, {
+        data: models,
+        has_more: false,
+        first_id: models[0]?.id ?? null,
+        last_id: models.at(-1)?.id ?? null
+      });
+      return;
+    }
+    if (req.method !== "POST") {
+      state.status = 405;
+      sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+      return;
+    }
 
     state.activeStage = "request_validation";
     validateAnthropicVersion(req);
     validateJsonContentType(req);
     const input = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
     const canonical = parseAnthropicMessagesRequest(input);
-    state.model = snapshot.config.model;
     state.clientModel = canonical.clientModel;
+    const selectedModel = resolveGatewayModel(canonical.clientModel, snapshot);
+    state.model = selectedModel;
     state.stream = canonical.stream;
     state.protocol = snapshot.config.protocol;
     state.endpointHost = new URL(snapshot.config.endpointUrl).host;
@@ -415,7 +434,7 @@ async function handleRequest(
         sessionId: readHeader(req.headers["x-claude-code-session-id"])
       });
       const converted = serializeOpenAIResponsesRequest(canonical, {
-        model: snapshot.config.model,
+        model: selectedModel,
         compatibility: snapshot.config.compatibility
       });
       state.upstreamFields = Object.keys(converted.body).sort();
@@ -439,7 +458,7 @@ async function handleRequest(
           upstream,
           snapshot.config.protocol,
           converted.toolNames,
-          snapshot.config.model,
+          selectedModel,
           controller.signal,
           state.startedAt,
           deps.now,
@@ -465,7 +484,7 @@ async function handleRequest(
       );
       const convertedResponse = parseOpenAIResponsesResponseWithMetadata(parsed, {
         toolNames: converted.toolNames,
-        modelFallback: snapshot.config.model,
+        modelFallback: selectedModel,
         imageStore
       });
       await persistGeneratedImages(imageStore, convertedResponse.generatedImages);
@@ -479,7 +498,7 @@ async function handleRequest(
     }
 
     const converted = serializeOpenAIChatRequest(canonical, {
-      model: snapshot.config.model,
+      model: selectedModel,
       compatibility: snapshot.config.compatibility
     });
     state.upstreamFields = Object.keys(converted.body).sort();
@@ -505,7 +524,7 @@ async function handleRequest(
         upstream,
         snapshot.config.protocol,
         converted.toolNames,
-        snapshot.config.model,
+        selectedModel,
         controller.signal,
         state.startedAt,
         deps.now,
@@ -527,7 +546,7 @@ async function handleRequest(
     );
     const response = parseOpenAIChatResponse(parsed, {
       toolNames: converted.toolNames,
-      modelFallback: snapshot.config.model
+      modelFallback: selectedModel
     });
     state.inputTokens = response.usage.inputTokens;
     state.outputTokens = response.usage.outputTokens;

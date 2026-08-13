@@ -376,8 +376,11 @@ describe("gateway upstream and profile storage", () => {
     expect(upstream.secret.apiKey).toBe("sk-upstream-only");
     expect(settings?.env).toMatchObject({
       ANTHROPIC_BASE_URL: "http://127.0.0.1:3921/p/openai-main",
-      ANTHROPIC_AUTH_TOKEN: profileSecret?.localToken
+      ANTHROPIC_AUTH_TOKEN: profileSecret?.localToken,
+      CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+      CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1"
     });
+    expect(settings?.model).toMatch(/^claude-ccp-/);
     expect(JSON.stringify(settings)).not.toContain("sk-upstream-only");
     if (process.platform !== "win32") {
       expect((await stat(getGatewaySecretPath(profile.dir))).mode & 0o777).toBe(0o600);
@@ -467,6 +470,25 @@ describe("gateway upstream and profile storage", () => {
     expect(repaired?.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:3921/p/repair");
     expect(repaired?.env?.ANTHROPIC_AUTH_TOKEN).toBe(secret?.localToken);
     expect(repaired?.env?.ANTHROPIC_MODEL).toBeUndefined();
+    expect(repaired?.env?.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT).toBe("1");
+    expect(repaired?.model).toMatch(/^claude-ccp-/);
+  });
+
+  it("preserves a Claude Code /model selection when repairing gateway settings", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "saved-selection", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "saved-model",
+      upstreamId: "saved-selection",
+      model: "first"
+    }, context);
+    const current = await readSettings(profile.dir);
+    await writeSettings(profile.dir, { ...current, model: "claude-ccp-c2Vjb25k" });
+
+    await repairGatewayProfileSettings(profile.dir, profile.name, context);
+
+    expect((await readSettings(profile.dir))?.model).toBe("claude-ccp-c2Vjb25k");
+    expect((await readMeta(profile.dir))?.gateway).toEqual({ upstreamId: "saved-selection", model: "first" });
   });
 
   it("switches profile bindings while preserving the local token", async () => {
@@ -485,15 +507,17 @@ describe("gateway upstream and profile storage", () => {
       model: "new-model"
     }, context);
 
-    const [meta, preserved, snapshot] = await Promise.all([
+    const [meta, preserved, settings, snapshot] = await Promise.all([
       readMeta(profile.dir),
       readGatewayProfileSecret(profile.dir),
+      readSettings(profile.dir),
       new GatewayRegistry(context).resolve("editable")
     ]);
     expect(meta?.gateway).toEqual({ upstreamId: "second", model: "new-model" });
     expect(preserved?.localToken).toBe(original?.localToken);
     expect(snapshot.secret.apiKey).toBe("second-key");
     expect(snapshot.config.model).toBe("new-model");
+    expect(settings?.model).toMatch(/^claude-ccp-/);
   });
 
   it("prevents deleting an upstream that is referenced by a profile", async () => {

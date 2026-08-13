@@ -338,7 +338,7 @@ export async function createGatewayProfile(
     });
     await writeSettings(
       profileDir,
-      buildGatewaySettings(undefined, input.name, getGatewayEndpoint(runtimeConfig), secret)
+      buildGatewaySettings(undefined, input.name, getGatewayEndpoint(runtimeConfig), secret, model)
     );
     return summarizeProfile(input.name, profileDir, context);
   } catch (error) {
