@@ -815,8 +815,8 @@ async function useGatewayBinding(profileName: string, upstreamId?: string, model
     upstreamId: upstream.id,
     model: selectedModel
   });
-  console.log(`Profile '${profileName}' now uses ${upstream.id}/${selectedModel}.`);
-  console.log("The running gateway will apply this binding to the next request.");
+  console.log(`Profile '${profileName}' now uses ${upstream.id}/${selectedModel} as its Default model.`);
+  console.log("Running sessions using Default switch on their next request; explicit /model selections remain selected while available on the chosen Upstream.");
 }
 
 export function createProgram(): Command {
@@ -1081,7 +1081,7 @@ export function createProgram(): Command {
     .argument("<profile>")
     .argument("[upstreamId]")
     .argument("[model]")
-    .description("Switch a gateway profile to an upstream and model")
+    .description("Set a gateway profile's upstream and Default model")
     .action(useGatewayBinding);
 
   program

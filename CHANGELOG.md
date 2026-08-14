@@ -3,8 +3,10 @@
 ## Unreleased
 
 - Gateway Profile 会关闭 Claude Code 对未知 Gateway 模型窗口的强制 200k 预压缩，避免 `claude-ccp-*` 模型启动时显示未知模型警告；实际上下文限制由上游响应决定。
-- Gateway Profile 现在会通过 Claude Code 的 `/model` 选择器展示当前 Upstream 配置的全部模型，并使用稳定的 `claude-ccp-*` 别名把选择映射回实际 Upstream 模型；选择不会改写共享 Upstream 或 `.ccp.json` 默认绑定，已移除的旧别名会返回明确错误。
-- Gateway 内部协议版本升级到 v3，升级后会替换受 multi-ccp 管理的旧协议进程，确保模型发现能力立即生效；旧 Profile 首次启动会补齐默认模型别名，已有 `/model` 选择则保持不变。
+- Gateway Profile 会通过带当前模型显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，并用 option 别名列出当前 Upstream 的全部 `From gateway` 选项；修改 Binding 后，`/model` 的当前默认名称同步刷新，使用 Default 的运行中会话在下一请求切换，仍可用的显式 `/model` 选择继续固定到原模型。
+- 创建、启动修复或切换 Gateway Profile 绑定时会预写并刷新 Claude Code 的本地模型目录，并为当前 Upstream 的每个模型预注册 Default 展示别名；首次启动和运行中切换 Default 都能显示可读的供应商模型名，不再显示内部 `claude-ccp-*` 别名。
+- 当前 Upstream 以外的模型会返回明确的 `400`，不再静默回退；Upstream 模型列表会在下一次 `ccp start` 时同步到 Profile 白名单，仍有效的 `/model` 选择会保留。
+- Gateway 内部协议版本升级到 v4，升级后会替换受 multi-ccp 管理的旧协议进程，确保 Default 显示元数据、option 别名和严格路由立即生效；旧 Profile 首次启动会补齐白名单、Default 映射和本地模型目录。
 
 ## 0.3.1
 

@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { CcpError } from "./errors.js";
 import type { PathContext } from "./paths.js";
@@ -6,6 +7,7 @@ import {
   readJsonFile,
   readMeta,
   readSettings,
+  getSettingsPath,
   writeJsonFileAtomic,
   writeMeta,
   writeSettings
@@ -32,23 +34,58 @@ import {
   readGatewayRuntimeConfig,
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
-import { gatewayModelAlias } from "../gateway/models.js";
+import {
+  buildGatewayModelCatalog,
+  CCP_DEFAULT_MODEL_ALIAS,
+  decodeGatewayDefaultModelAlias,
+  decodeGatewayModelAlias,
+  gatewayDefaultModelAlias,
+  gatewayModelAlias,
+  gatewayModelOptionAlias
+} from "../gateway/models.js";
 
 export const GATEWAY_SECRET_FILE = ".ccp-gateway.json";
+export const GATEWAY_MODEL_CACHE_FILE = "gateway-models.json";
 
 const MODEL_ENV_NAMES = [
   "ANTHROPIC_MODEL",
   "ANTHROPIC_SMALL_FAST_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_NAME",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL_SUPPORTED_CAPABILITIES",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL_SUPPORTED_CAPABILITIES",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL_SUPPORTED_CAPABILITIES",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL_SUPPORTED_CAPABILITIES",
   "CLAUDE_CODE_SUBAGENT_MODEL"
 ];
 
+interface GatewaySettingsModels {
+  models: readonly string[];
+  defaultModel: string;
+  legacyDefaultModel?: string;
+  selectedModel?: string;
+}
+
+// Claude Code 2.1.219+ resolves the LLM gateway Default row through Opus 5;
+// 2.1.200-2.1.218 used Opus 4.8 and already supported modelOverrides.
+const CLAUDE_CODE_DEFAULT_MODEL_IDS = ["claude-opus-5", "claude-opus-4-8"] as const;
+
 export function getGatewaySecretPath(profileDir: string): string {
   return path.join(profileDir, GATEWAY_SECRET_FILE);
+}
+
+export function getGatewayModelCachePath(profileDir: string): string {
+  return path.join(profileDir, "cache", GATEWAY_MODEL_CACHE_FILE);
 }
 
 export function validateGatewayProfileBinding(value: unknown): GatewayProfileBinding {
@@ -126,12 +163,28 @@ export async function writeGatewayProfileSecret(
   await writeJsonFileAtomic(getGatewaySecretPath(profileDir), validateGatewayProfileSecret(secret), 0o600);
 }
 
+export async function writeGatewayModelCache(
+  profileDir: string,
+  profileName: string,
+  endpoint: string,
+  upstreamId: string,
+  models: readonly string[],
+  defaultModel: string
+): Promise<void> {
+  const catalog = buildGatewayModelCatalog(upstreamId, models, defaultModel);
+  await writeJsonFileAtomic(getGatewayModelCachePath(profileDir), {
+    baseUrl: `${endpoint}/p/${encodeURIComponent(profileName)}`,
+    fetchedAt: Date.now(),
+    models: catalog.map(({ id, display_name }) => ({ id, display_name }))
+  });
+}
+
 export function buildGatewaySettings(
   current: ClaudeSettings | undefined,
   profileName: string,
   endpoint: string,
   secret: Pick<GatewayProfileSecret, "localToken">,
-  defaultModel?: string
+  modelConfig: GatewaySettingsModels
 ): ClaudeSettings {
   const env = { ...(current?.env ?? {}) };
   for (const name of MODEL_ENV_NAMES) delete env[name];
@@ -153,9 +206,18 @@ export function buildGatewaySettings(
     MAX_THINKING_TOKENS: "0",
     ENABLE_TOOL_SEARCH: "false"
   });
+  // Keep explicit picker choices separate from Default. The Default alias
+  // carries display metadata, while the gateway always resolves it live.
+  const availableModels = modelConfig.models.map(gatewayModelOptionAlias);
+  const selectedModel = normalizeSelectedGatewayModel(modelConfig, availableModels);
+  const modelOverrides = stringEntries(current?.modelOverrides);
+  const defaultAlias = gatewayDefaultModelAlias(modelConfig.defaultModel);
+  for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) modelOverrides[modelId] = defaultAlias;
   return {
     ...(current ?? {}),
-    ...(defaultModel === undefined ? {} : { model: gatewayModelAlias(defaultModel) }),
+    model: selectedModel,
+    availableModels,
+    modelOverrides,
     theme: current?.theme ?? "dark",
     env
   };
@@ -168,6 +230,7 @@ export async function readGatewayProfile(
   meta: ProfileMeta;
   binding: GatewayProfileBinding;
   config: GatewayProfileConfig;
+  models: readonly string[];
   profileSecret: GatewayProfileSecret;
   secret: GatewayResolvedSecret;
 }> {
@@ -189,6 +252,7 @@ export async function readGatewayProfile(
     meta,
     binding,
     config,
+    models: upstream.config.models,
     profileSecret,
     secret: { localToken: profileSecret.localToken, apiKey: upstream.secret.apiKey }
   };
@@ -199,7 +263,7 @@ export async function repairGatewayProfileSettings(
   profileName: string,
   context: PathContext = {}
 ): Promise<{ config: GatewayProfileConfig; secret: GatewayResolvedSecret }> {
-  const [{ config, secret, profileSecret }, runtimeConfig, current] = await Promise.all([
+  const [{ binding, config, models, secret, profileSecret }, runtimeConfig, current] = await Promise.all([
     readGatewayProfile(profileDir, context),
     readGatewayRuntimeConfig(context),
     readSettings(profileDir)
@@ -210,9 +274,21 @@ export async function repairGatewayProfileSettings(
     profileName,
     getGatewayEndpoint(runtimeConfig),
     profileSecret,
-    savedModel ? undefined : config.model
+    {
+      models,
+      defaultModel: config.model,
+      selectedModel: savedModel
+    }
   );
   if (!jsonEqual(current, expected)) await writeSettings(profileDir, expected);
+  await writeGatewayModelCache(
+    profileDir,
+    profileName,
+    getGatewayEndpoint(runtimeConfig),
+    binding.upstreamId,
+    models,
+    config.model
+  );
   return { config, secret };
 }
 
@@ -231,6 +307,7 @@ export async function updateGatewayProfile(
   ]);
   if (meta?.type !== "gateway") throw new CcpError(`Profile is not a gateway profile: ${profileDir}`);
   if (!profileSecret) throw new CcpError(`Gateway profile secret is missing: ${getGatewaySecretPath(profileDir)}`);
+  const currentBinding = validateGatewayProfileBinding(meta.gateway);
   const binding = validateGatewayProfileBinding(input);
   if (!upstream.models.includes(binding.model)) {
     throw new CcpError(`Gateway model '${binding.model}' is not configured for upstream '${binding.upstreamId}'.`);
@@ -241,15 +318,30 @@ export async function updateGatewayProfile(
     profileName,
     getGatewayEndpoint(runtimeConfig),
     profileSecret,
-    binding.model
+    {
+      models: upstream.models,
+      defaultModel: binding.model,
+      legacyDefaultModel: currentBinding.model,
+      selectedModel: typeof currentSettings?.model === "string" ? currentSettings.model : undefined
+    }
   );
   try {
     await writeMeta(profileDir, nextMeta);
     await writeSettings(profileDir, nextSettings);
+    await writeGatewayModelCache(
+      profileDir,
+      profileName,
+      getGatewayEndpoint(runtimeConfig),
+      binding.upstreamId,
+      upstream.models,
+      binding.model
+    );
   } catch (error) {
     await Promise.allSettled([
       writeMeta(profileDir, meta),
-      currentSettings ? writeSettings(profileDir, currentSettings) : Promise.resolve()
+      currentSettings
+        ? writeSettings(profileDir, currentSettings)
+        : rm(getSettingsPath(profileDir), { force: true })
     ]);
     throw error;
   }
@@ -265,4 +357,31 @@ export function tokensEqual(expected: string, actual: string): boolean {
 
 function jsonEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function stringEntries(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, string] =>
+      typeof entry[1] === "string"
+    )
+  );
+}
+
+function normalizeSelectedGatewayModel(
+  modelConfig: GatewaySettingsModels,
+  availableModels: readonly string[]
+): string {
+  const selectedModel = modelConfig.selectedModel?.trim();
+  if (
+    !selectedModel ||
+    selectedModel === "default" ||
+    selectedModel === CCP_DEFAULT_MODEL_ALIAS ||
+    decodeGatewayDefaultModelAlias(selectedModel)
+  ) return "default";
+  if (availableModels.includes(selectedModel)) return selectedModel;
+  const legacyModel = decodeGatewayModelAlias(selectedModel);
+  if (!legacyModel || !modelConfig.models.includes(legacyModel)) return "default";
+  const legacyDefaultModel = modelConfig.legacyDefaultModel ?? modelConfig.defaultModel;
+  return legacyModel === legacyDefaultModel ? "default" : gatewayModelOptionAlias(legacyModel);
 }

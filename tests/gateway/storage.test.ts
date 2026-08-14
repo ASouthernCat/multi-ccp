@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createGatewayProfile } from "../../src/core/profiles.js";
 import {
+  getGatewayModelCachePath,
   getGatewaySecretPath,
   readGatewayProfileSecret,
   repairGatewayProfileSettings,
@@ -20,8 +21,13 @@ import {
   updateGatewayUpstream,
   validateGatewayUpstreamConfig
 } from "../../src/core/gateway-upstreams.js";
-import { readMeta, readSettings, writeSettings } from "../../src/core/settings.js";
+import { getSettingsPath, readMeta, readSettings, writeSettings } from "../../src/core/settings.js";
 import { authorizeLocalGatewayRequest, readLocalGatewayToken } from "../../src/gateway/auth.js";
+import {
+  gatewayDefaultModelAlias,
+  gatewayModelAlias,
+  gatewayModelOptionAlias
+} from "../../src/gateway/models.js";
 import { GatewayRegistry } from "../../src/gateway/registry.js";
 import {
   normalizeChatCompletionsUrl,
@@ -306,6 +312,18 @@ describe("gateway upstream and profile storage", () => {
     })).toThrow("protocol is invalid");
   });
 
+  it("rejects upstream models that collide with the internal gateway alias namespace", () => {
+    expect(() => validateGatewayUpstreamConfig({
+      version: 2,
+      id: "reserved-model",
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      endpointUrl: "https://example.test/v1/chat/completions",
+      models: ["claude-ccp-default"],
+      compatibility: {}
+    })).toThrow("reserved 'claude-ccp-' prefix");
+  });
+
   it("locks official OpenAI compatibility while preserving compatible-provider overrides", () => {
     const override = {
       instructionRole: "system" as const,
@@ -357,11 +375,12 @@ describe("gateway upstream and profile storage", () => {
       model: "gpt-test",
       preset: "gateway"
     }, context);
-    const [meta, profileSecret, upstream, settings] = await Promise.all([
+    const [meta, profileSecret, upstream, settings, modelCache] = await Promise.all([
       readMeta(profile.dir),
       readGatewayProfileSecret(profile.dir),
       readGatewayUpstream("openai", context),
-      readSettings(profile.dir)
+      readSettings(profile.dir),
+      readFile(getGatewayModelCachePath(profile.dir), "utf8").then(JSON.parse)
     ]);
 
     expect(meta).toMatchObject({
@@ -380,7 +399,21 @@ describe("gateway upstream and profile storage", () => {
       CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
       CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1"
     });
-    expect(settings?.model).toMatch(/^claude-ccp-/);
+    expect(settings?.model).toBe("default");
+    expect(settings?.availableModels).toEqual([gatewayModelOptionAlias("gpt-test")]);
+    expect(settings?.modelOverrides).toEqual({
+      "claude-opus-5": gatewayDefaultModelAlias("gpt-test"),
+      "claude-opus-4-8": gatewayDefaultModelAlias("gpt-test")
+    });
+    expect(modelCache).toMatchObject({
+      baseUrl: "http://127.0.0.1:3921/p/openai-main",
+      models: [
+        { id: gatewayDefaultModelAlias("gpt-test"), display_name: "gpt-test (openai)" },
+        { id: gatewayModelOptionAlias("gpt-test"), display_name: "gpt-test (openai)" }
+      ]
+    });
+    expect(modelCache.fetchedAt).toEqual(expect.any(Number));
+    expect(JSON.stringify(settings?.env)).not.toContain("ANTHROPIC_DEFAULT_");
     expect(JSON.stringify(settings)).not.toContain("sk-upstream-only");
     if (process.platform !== "win32") {
       expect((await stat(getGatewaySecretPath(profile.dir))).mode & 0o777).toBe(0o600);
@@ -457,7 +490,13 @@ describe("gateway upstream and profile storage", () => {
         ANTHROPIC_BASE_URL: "http://wrong.invalid",
         ANTHROPIC_AUTH_TOKEN: "wrong-token",
         ANTHROPIC_MODEL: "wrong-model",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "old-default",
+        ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: "Old default",
         CUSTOM_ENV: "keep"
+      },
+      modelOverrides: {
+        "claude-sonnet-5": "keep-override",
+        invalid: null
       }
     });
 
@@ -470,8 +509,16 @@ describe("gateway upstream and profile storage", () => {
     expect(repaired?.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:3921/p/repair");
     expect(repaired?.env?.ANTHROPIC_AUTH_TOKEN).toBe(secret?.localToken);
     expect(repaired?.env?.ANTHROPIC_MODEL).toBeUndefined();
+    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
     expect(repaired?.env?.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT).toBe("1");
-    expect(repaired?.model).toMatch(/^claude-ccp-/);
+    expect(repaired?.model).toBe("default");
+    expect(repaired?.availableModels).toEqual([gatewayModelOptionAlias("model")]);
+    expect(repaired?.modelOverrides).toEqual({
+      "claude-sonnet-5": "keep-override",
+      "claude-opus-5": gatewayDefaultModelAlias("model"),
+      "claude-opus-4-8": gatewayDefaultModelAlias("model")
+    });
   });
 
   it("preserves a Claude Code /model selection when repairing gateway settings", async () => {
@@ -487,8 +534,33 @@ describe("gateway upstream and profile storage", () => {
 
     await repairGatewayProfileSettings(profile.dir, profile.name, context);
 
-    expect((await readSettings(profile.dir))?.model).toBe("claude-ccp-c2Vjb25k");
+    expect((await readSettings(profile.dir))?.model).toBe(gatewayModelOptionAlias("second"));
+    expect((await readSettings(profile.dir))?.availableModels).toEqual([
+      gatewayModelOptionAlias("first"),
+      gatewayModelOptionAlias("second")
+    ]);
     expect((await readMeta(profile.dir))?.gateway).toEqual({ upstreamId: "saved-selection", model: "first" });
+  });
+
+  it("normalizes a saved binding-default alias to the single Default picker row", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "saved-default", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "saved-default-model",
+      upstreamId: "saved-default",
+      model: "first"
+    }, context);
+    const current = await readSettings(profile.dir);
+    await writeSettings(profile.dir, { ...current, model: gatewayModelAlias("first") });
+
+    await repairGatewayProfileSettings(profile.dir, profile.name, context);
+    const repaired = await readSettings(profile.dir);
+
+    expect(repaired?.model).toBe("default");
+    expect(repaired?.availableModels).toEqual([
+      gatewayModelOptionAlias("first"),
+      gatewayModelOptionAlias("second")
+    ]);
   });
 
   it("switches profile bindings while preserving the local token", async () => {
@@ -507,17 +579,110 @@ describe("gateway upstream and profile storage", () => {
       model: "new-model"
     }, context);
 
-    const [meta, preserved, settings, snapshot] = await Promise.all([
+    const [meta, preserved, settings, snapshot, modelCache] = await Promise.all([
       readMeta(profile.dir),
       readGatewayProfileSecret(profile.dir),
       readSettings(profile.dir),
-      new GatewayRegistry(context).resolve("editable")
+      new GatewayRegistry(context).resolve("editable"),
+      readFile(getGatewayModelCachePath(profile.dir), "utf8").then(JSON.parse)
     ]);
     expect(meta?.gateway).toEqual({ upstreamId: "second", model: "new-model" });
     expect(preserved?.localToken).toBe(original?.localToken);
     expect(snapshot.secret.apiKey).toBe("second-key");
     expect(snapshot.config.model).toBe("new-model");
-    expect(settings?.model).toMatch(/^claude-ccp-/);
+    expect(settings?.model).toBe("default");
+    expect(settings?.availableModels).toEqual([gatewayModelOptionAlias("new-model")]);
+    expect(settings?.modelOverrides).toMatchObject({
+      "claude-opus-5": gatewayDefaultModelAlias("new-model"),
+      "claude-opus-4-8": gatewayDefaultModelAlias("new-model")
+    });
+    expect(modelCache).toMatchObject({
+      baseUrl: "http://127.0.0.1:3921/p/editable",
+      models: [
+        { id: gatewayDefaultModelAlias("new-model"), display_name: "new-model (second)" },
+        { id: gatewayModelOptionAlias("new-model"), display_name: "new-model (second)" }
+      ]
+    });
+  });
+
+  it("keeps a valid explicit /model selection when changing the binding default", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "defaults", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "explicit-selection",
+      upstreamId: "defaults",
+      model: "first"
+    }, context);
+    const current = await readSettings(profile.dir);
+    await writeSettings(profile.dir, { ...current, model: gatewayModelOptionAlias("first") });
+
+    await updateGatewayProfile(profile.dir, profile.name, {
+      upstreamId: "defaults",
+      model: "second"
+    }, context);
+
+    const [settings, modelCache] = await Promise.all([
+      readSettings(profile.dir),
+      readFile(getGatewayModelCachePath(profile.dir), "utf8").then(JSON.parse)
+    ]);
+    expect(settings?.model).toBe(gatewayModelOptionAlias("first"));
+    expect(settings?.availableModels).toEqual([
+      gatewayModelOptionAlias("first"),
+      gatewayModelOptionAlias("second")
+    ]);
+    expect(settings?.modelOverrides).toMatchObject({
+      "claude-opus-5": gatewayDefaultModelAlias("second"),
+      "claude-opus-4-8": gatewayDefaultModelAlias("second")
+    });
+    expect(modelCache.models).toEqual([
+      { id: gatewayDefaultModelAlias("second"), display_name: "second (defaults)" },
+      { id: gatewayDefaultModelAlias("first"), display_name: "first (defaults)" },
+      { id: gatewayModelOptionAlias("first"), display_name: "first (defaults)" },
+      { id: gatewayModelOptionAlias("second"), display_name: "second (defaults)" }
+    ]);
+    expect((await readMeta(profile.dir))?.gateway).toEqual({ upstreamId: "defaults", model: "second" });
+  });
+
+  it("treats the legacy binding-default alias as Default when changing the binding before startup repair", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "legacy-default", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "legacy-default-selection",
+      upstreamId: "legacy-default",
+      model: "first"
+    }, context);
+    const current = await readSettings(profile.dir);
+    await writeSettings(profile.dir, { ...current, model: gatewayModelAlias("first") });
+
+    await updateGatewayProfile(profile.dir, profile.name, {
+      upstreamId: "legacy-default",
+      model: "second"
+    }, context);
+
+    expect((await readSettings(profile.dir))?.model).toBe("default");
+    expect((await readMeta(profile.dir))?.gateway).toEqual({ upstreamId: "legacy-default", model: "second" });
+  });
+
+  it("removes newly derived settings when a binding update fails and no settings existed", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "rollback", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "rollback-profile",
+      upstreamId: "rollback",
+      model: "first"
+    }, context);
+    const originalMeta = await readMeta(profile.dir);
+    await rm(getSettingsPath(profile.dir), { force: true });
+    await rm(getGatewayModelCachePath(profile.dir), { force: true });
+    await mkdir(getGatewayModelCachePath(profile.dir), { recursive: true });
+
+    await expect(updateGatewayProfile(profile.dir, profile.name, {
+      upstreamId: "rollback",
+      model: "second"
+    }, context)).rejects.toThrow();
+
+    expect(await readMeta(profile.dir)).toEqual(originalMeta);
+    expect(await readSettings(profile.dir)).toBeUndefined();
   });
 
   it("prevents deleting an upstream that is referenced by a profile", async () => {

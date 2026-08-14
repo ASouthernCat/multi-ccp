@@ -12,9 +12,14 @@ import type {
   GatewayResponsesCompatibility,
   GatewayUpstreamProtocol
 } from "../../src/core/types.js";
-import { readGatewayProfileSecret } from "../../src/core/gateway-profile.js";
+import { readGatewayProfileSecret, updateGatewayProfile } from "../../src/core/gateway-profile.js";
 import { createGatewayServer, type GatewayRequestLog } from "../../src/gateway/server.js";
 import { getGatewayGeneratedDir } from "../../src/core/paths.js";
+import {
+  CCP_DEFAULT_MODEL_ALIAS,
+  gatewayDefaultModelAlias,
+  gatewayModelOptionAlias
+} from "../../src/gateway/models.js";
 
 interface LoopbackHandle {
   endpoint: string;
@@ -145,7 +150,7 @@ describe("gateway HTTP protocol", () => {
     expect(health).toMatchObject({
       ok: true,
       service: "multi-ccp-gateway",
-      protocolVersion: 3,
+      protocolVersion: 4,
       instanceId: "instance-test",
       endpoint,
       profileCount: 2
@@ -206,12 +211,23 @@ describe("gateway HTTP protocol", () => {
       first_id: string | null;
       last_id: string | null;
     };
-    const selected = catalog.data.find((entry) => entry.display_name.startsWith("second-model"));
+    const selected = catalog.data.find((entry) => entry.id === gatewayModelOptionAlias("second-model"));
+    const defaultEntries = catalog.data.filter((entry) => entry.display_name === "first-model (model-picker-upstream)");
     expect(catalog.has_more).toBe(false);
     expect(catalog.first_id).toBe(catalog.data[0]?.id);
     expect(catalog.last_id).toBe(catalog.data.at(-1)?.id);
     expect(selected).toBeDefined();
-    expect(selected!.id).toMatch(/^claude-ccp-/);
+    expect(selected!.id).toBe(gatewayModelOptionAlias("second-model"));
+    expect(catalog.data.map((entry) => entry.id)).toEqual([
+      gatewayDefaultModelAlias("first-model"),
+      gatewayDefaultModelAlias("second-model"),
+      gatewayModelOptionAlias("first-model"),
+      gatewayModelOptionAlias("second-model")
+    ]);
+    expect(defaultEntries.map((entry) => entry.id)).toEqual([
+      gatewayDefaultModelAlias("first-model"),
+      gatewayModelOptionAlias("first-model")
+    ]);
 
     const response = await fetch(`${endpoint}/p/model-picker/v1/messages`, {
       method: "POST",
@@ -220,6 +236,53 @@ describe("gateway HTTP protocol", () => {
     });
     expect(response.status).toBe(200);
     expect(received[0]?.model).toBe("second-model");
+  });
+
+  it("applies binding changes to Default on the next request without overriding explicit model selections", async () => {
+    const context = await createContext();
+    const received: string[] = [];
+    const upstream = await listenLoopback(async (req, res) => {
+      received.push(String((await readRequestJson(req)).model));
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({
+        id: "chat",
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }]
+      }));
+    });
+    const profile = await createTestGatewayProfile({
+      name: "hot-default",
+      provider: "openai-compatible",
+      chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
+      apiKey: "key",
+      model: "first-model",
+      models: ["first-model", "second-model"]
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const { endpoint } = await startGateway(context);
+    const call = (model: string) => fetch(`${endpoint}/p/hot-default/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(false, { model }))
+    });
+
+    const firstDefaultAlias = gatewayDefaultModelAlias("first-model");
+    expect((await call(firstDefaultAlias)).status).toBe(200);
+    await updateGatewayProfile(profile.dir, profile.name, {
+      upstreamId: "hot-default-upstream",
+      model: "second-model"
+    }, context);
+    expect((await call(firstDefaultAlias)).status).toBe(200);
+    expect((await call(gatewayDefaultModelAlias("second-model"))).status).toBe(200);
+    expect((await call(CCP_DEFAULT_MODEL_ALIAS)).status).toBe(200);
+    expect((await call(gatewayModelOptionAlias("first-model"))).status).toBe(200);
+
+    expect(received).toEqual([
+      "first-model",
+      "second-model",
+      "second-model",
+      "second-model",
+      "first-model"
+    ]);
   });
 
   it("rejects a stale ccp model alias instead of silently using the profile default", async () => {
@@ -241,6 +304,27 @@ describe("gateway HTTP protocol", () => {
     const body = await response.json() as { error?: { message?: string } };
     expect(response.status).toBe(400);
     expect(body.error?.message).toContain("no longer configured");
+  });
+
+  it("rejects built-in Claude models instead of silently using the profile default", async () => {
+    const context = await createContext();
+    const profile = await createTestGatewayProfile({
+      name: "builtin-model",
+      provider: "openai-compatible",
+      chatCompletionsUrl: "https://example.test/v1/chat/completions",
+      apiKey: "key",
+      model: "configured-model"
+    }, context);
+    const secret = await readGatewayProfileSecret(profile.dir);
+    const { endpoint } = await startGateway(context);
+    const response = await fetch(`${endpoint}/p/builtin-model/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(false, { model: "claude-opus-5" }))
+    });
+    const body = await response.json() as { error?: { message?: string } };
+    expect(response.status).toBe(400);
+    expect(body.error?.message).toContain("not configured for the current Gateway Upstream");
   });
 
   it("isolates concurrent profiles, upstream credentials, models, and local tokens", async () => {
@@ -276,14 +360,14 @@ describe("gateway HTTP protocol", () => {
     const secretB = await readGatewayProfileSecret(profileB.dir);
     const { endpoint } = await startGateway(context);
 
-    const call = (name: string, token: string) => fetch(`${endpoint}/p/${name}/v1/messages?beta=true`, {
+    const call = (name: string, token: string, model: string) => fetch(`${endpoint}/p/${name}/v1/messages?beta=true`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model }))
     });
     const [responseA, responseB] = await Promise.all([
-      call("provider-a", secretA!.localToken),
-      call("provider-b", secretB!.localToken)
+      call("provider-a", secretA!.localToken, "model-a"),
+      call("provider-b", secretB!.localToken, "model-b")
     ]);
     const [bodyA, bodyB] = await Promise.all([responseA.json(), responseB.json()]);
 
@@ -301,7 +385,7 @@ describe("gateway HTTP protocol", () => {
       body: { model: "model-b" }
     });
 
-    const crossProfile = await call("provider-b", secretA!.localToken);
+    const crossProfile = await call("provider-b", secretA!.localToken, "model-b");
     expect(crossProfile.status).toBe(401);
     expect(received).toHaveLength(2);
   });
@@ -336,7 +420,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/responses/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${secret!.localToken}` },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "responses-model" }))
     });
     const body = await response.json();
 
@@ -389,6 +473,7 @@ describe("gateway HTTP protocol", () => {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${secret!.localToken}` },
       body: JSON.stringify(anthropicRequest(false, {
+        model: "responses-model",
         tools: [
           {
             name: "Read",
@@ -455,14 +540,14 @@ describe("gateway HTTP protocol", () => {
       readGatewayProfileSecret(chat.dir), readGatewayProfileSecret(responses.dir)
     ]);
     const { endpoint } = await startGateway(context);
-    const call = (name: string, token: string) => fetch(`${endpoint}/p/${name}/v1/messages`, {
+    const call = (name: string, token: string, model: string) => fetch(`${endpoint}/p/${name}/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": token },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model }))
     });
     const [chatResponse, responsesResponse] = await Promise.all([
-      call("mixed-chat", chatSecret!.localToken),
-      call("mixed-responses", responsesSecret!.localToken)
+      call("mixed-chat", chatSecret!.localToken, "chat-model"),
+      call("mixed-responses", responsesSecret!.localToken, "responses-model")
     ]);
 
     expect((await chatResponse.json()).content[0].text).toBe("chat");
@@ -521,7 +606,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/responses-stream/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "responses-model" }))
     });
     const body = await response.text();
 
@@ -605,7 +690,7 @@ describe("gateway HTTP protocol", () => {
         "x-api-key": secret!.localToken,
         "x-claude-code-session-id": "session-image-test"
       },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "responses-model" }))
     });
     const body = await response.text();
 
@@ -682,7 +767,7 @@ describe("gateway HTTP protocol", () => {
         "x-api-key": secret!.localToken,
         "x-claude-code-session-id": "session-stale-image"
       },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "responses-model" }))
     });
     const body = await response.text();
 
@@ -732,7 +817,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/responses-image-failure/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "responses-model" }))
     });
     const body = await response.text();
 
@@ -780,7 +865,10 @@ describe("gateway HTTP protocol", () => {
         "content-type": "application/json",
         authorization: `Bearer ${secret!.localToken}`
       },
-      body: JSON.stringify(anthropicRequest(false, { output_config: { effort: "xhigh" } }))
+      body: JSON.stringify(anthropicRequest(false, {
+        model: "reasoning-model",
+        output_config: { effort: "xhigh" }
+      }))
     });
 
     expect(response.status).toBe(200);
@@ -791,7 +879,7 @@ describe("gateway HTTP protocol", () => {
     expect(logs[0]).toMatchObject({
       profileName: "gpt-5.6",
       model: "reasoning-model",
-      clientModel: "claude-client-alias",
+      clientModel: "reasoning-model",
       stream: false,
       effort: "xhigh",
       effortMapping: "reasoning_effort",
@@ -828,7 +916,7 @@ describe("gateway HTTP protocol", () => {
     const contentType = await fetch(`${endpoint}/p/limits/v1/messages`, {
       method: "POST",
       headers: auth,
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "model" }))
     });
     const invalidJson = await fetch(`${endpoint}/p/limits/v1/messages`, {
       method: "POST",
@@ -838,7 +926,7 @@ describe("gateway HTTP protocol", () => {
     const oversized = await fetch(`${endpoint}/p/limits/v1/messages`, {
       method: "POST",
       headers: { ...auth, "content-type": "application/json" },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "model" }))
     });
 
     expect(contentType.status).toBe(415);
@@ -916,7 +1004,7 @@ describe("gateway HTTP protocol", () => {
         "content-type": "application/json",
         authorization: `Bearer ${secret!.localToken}`
       },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "model" }))
     });
     const body = await response.json();
 
@@ -970,7 +1058,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/redirect/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "model" }))
     });
 
     expect(response.status).toBe(502);
@@ -998,7 +1086,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/anthropic-error/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest())
+      body: JSON.stringify(anthropicRequest(false, { model: "model" }))
     });
     const body = await response.json();
 
@@ -1030,7 +1118,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/stream/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "model" }))
     });
     const body = await response.text();
 
@@ -1060,7 +1148,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/timeout/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "model" }))
     });
     const body = await response.text();
 
@@ -1091,7 +1179,7 @@ describe("gateway HTTP protocol", () => {
     const response = await fetch(`${endpoint}/p/stream-error-log/v1/messages`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-      body: JSON.stringify(anthropicRequest(true))
+      body: JSON.stringify(anthropicRequest(true, { model: "model" }))
     });
     const body = await response.text();
 
@@ -1134,7 +1222,7 @@ describe("gateway HTTP protocol", () => {
       fetch(`${endpoint}/p/done-without-eof/v1/messages`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
-        body: JSON.stringify(anthropicRequest(true))
+        body: JSON.stringify(anthropicRequest(true, { model: "model" }))
       }).then((response) => response.text()),
       new Promise<never>((_, reject) => setTimeout(() => reject(new Error("gateway waited for upstream EOF")), 500))
     ]);
@@ -1186,7 +1274,7 @@ describe("gateway HTTP protocol", () => {
         });
       });
       req.once("error", reject);
-      req.end(JSON.stringify(anthropicRequest(true)));
+      req.end(JSON.stringify(anthropicRequest(true, { model: "model" })));
     });
 
     await Promise.race([

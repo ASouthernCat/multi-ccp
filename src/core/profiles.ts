@@ -8,6 +8,7 @@ import { getSettingsPath, readMeta, readSettings, removeProfileDir, writeMeta, w
 import {
   buildGatewaySettings,
   readGatewayProfileSecret,
+  writeGatewayModelCache,
   writeGatewayProfileSecret
 } from "./gateway-profile.js";
 import {
@@ -336,10 +337,15 @@ export async function createGatewayProfile(
       gateway,
       createdAt: new Date().toISOString()
     });
+    const endpoint = getGatewayEndpoint(runtimeConfig);
     await writeSettings(
       profileDir,
-      buildGatewaySettings(undefined, input.name, getGatewayEndpoint(runtimeConfig), secret, model)
+      buildGatewaySettings(undefined, input.name, endpoint, secret, {
+        models: upstream.models,
+        defaultModel: model
+      })
     );
+    await writeGatewayModelCache(profileDir, input.name, endpoint, upstreamId, upstream.models, model);
     return summarizeProfile(input.name, profileDir, context);
   } catch (error) {
     await rm(profileDir, { recursive: true, force: true }).catch(() => undefined);

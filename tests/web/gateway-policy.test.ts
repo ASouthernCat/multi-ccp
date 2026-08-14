@@ -159,6 +159,10 @@ describe("gateway Web UI policy", () => {
     expect(app).toContain("? { endpointUrl: $('upstreamEndpointUrl').value }");
     expect(app).toContain(": { baseUrl: $('upstreamBaseUrl').value }");
     expect(app).toContain("gatewayProtocolLabel(upstream.protocol)");
+    expect(app).toContain("<label>Default model<select id=\"editGatewayModel\"");
+    expect(app).toContain("Running sessions using Default switch on their next request.");
+    expect(app).toContain("Explicit /model selections remain selected while available on the chosen Upstream.");
+    expect(app).toContain(">Save Default</button>");
     expect(app).toContain("template.protocol === upstream.protocol && template.endpointUrl === upstream.endpointUrl");
     expect(app).toContain("Change protocol from ${gatewayProtocolLabel(form.dataset.originalProtocol)}");
     expect(app).toContain("baseUrl.value = gatewayBaseUrlFromEndpointLikeValue(baseUrl.value)");
@@ -188,6 +192,8 @@ describe("gateway Web UI policy", () => {
     expect(app).toContain('empty.hidden = available');
     expect(app).toContain('setCreateProfileAvailability(canCreate, unavailableMessage)');
     expect(html).toContain('id="newGatewayEmpty"');
+    expect(html).toContain('<label>Default model <select name="gatewayModel"');
+    expect(html).toContain('Every Upstream model remains available through /model.');
     expect(html).toContain('请点击下方 Manage Upstreams');
     expect(html).not.toContain('data-kind-fields="custom-gateway"');
     expect(app).toContain("bindGatewayBinding('newGateway')");
