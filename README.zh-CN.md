@@ -209,7 +209,7 @@ ccp start openai-work
 
 创建 AICodeMirror、Mimo、OpenRouter 或其他代理等 OpenAI-compatible 上游。自定义上游可以使用 Responses 或 Chat Completions；Web UI 可填写 base URL，并会根据所选 protocol 自动补全为 `/v1/responses` 或 `/v1/chat/completions`。CLI 当前会提示填写完整 endpoint URL。
 
-输入多个模型时使用英文逗号分隔，例如 `gpt-5.6-sol, gpt-5.5`。
+输入多个模型时使用英文逗号分隔，例如 `gpt-5.6-sol, gpt-5.5`。CLI 和 Web UI 也可以使用当前 API Key 请求上游的 `base URL + /models` 端点，再搜索、多选并添加返回的模型 ID；已经配置的模型不会被替换。
 
 ```bash
 ccp gateway add aicodemirror
@@ -235,7 +235,7 @@ Responses reasoning summary 当前会被省略，不会映射为 Anthropic think
 
 网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。失败请求还会记录稳定的 `failureStage` / `failureCode`、可用的上游 HTTP 状态和受长度限制的 request ID，以及 SSE 首事件耗时和终止事件元数据，用于区分上游 HTTP 错误、流转换错误和缺少终止事件的上游断流。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
 
-网关支持 Messages 请求、非流式和 SSE 响应、文本、原生图片输入、原生图片型 tool result、工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。每个 Gateway Profile 会通过带显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，同时用 option 别名把当前 Upstream 的全部模型列为可选的 `From gateway` 条目。本地模型目录会预先注册该 Upstream 每个模型对应的 Default 展示别名，因此修改 Binding 后，现有会话 `/model` 中的当前默认模型名称会同步刷新，正在使用 Default 的会话也会在下一次请求切换，无需重启网关；通过 `/model` 显式选择的模型只要在新 Upstream 中仍可用，就继续固定使用该模型。Default 能显示可读模型名，同一模型也能作为独立选项出现，且不会暴露内置 Opus 行。multi-ccp 会在创建 Gateway Profile、启动前修复配置或切换绑定时预写并刷新 Claude Code 的本地网关模型目录，让首次启动顶部就能显示供应商模型的可读名称，而不会短暂暴露内部 `claude-ccp-*` 别名。请求当前 Upstream 以外的模型会明确返回 `400`，不再静默回退；内部 `claude-ccp-*` 命名空间保留给网关别名。Upstream 模型列表变化会在下一次 `ccp start` 该 Profile 时同步；仍然有效的 `/model` 选择会继续保留。由于供应商自定义模型 ID 本身不携带可靠的上下文窗口元数据，Gateway Profile 会设置 `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1`，取消 Claude Code 对未知网关模型的警告和强制 200k token 预压缩；具体上下文限制及超限后的行为由网关/上游错误契约决定。可选的 token count 端点仍会明确返回 `404`，由 Claude Code 使用自身 fallback；请求日志会把它标记为预期兼容回退，而不是推理失败。
+网关支持 Messages 请求、非流式和 SSE 响应、文本、原生图片输入、原生图片型 tool result、工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。每个 Gateway Profile 会通过带显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，同时用 option 别名把当前 Upstream 的全部模型列为可选的 `From gateway` 条目。本地模型目录会预先注册该 Upstream 每个模型对应的 Default 展示别名，因此修改 Binding 后，现有会话 `/model` 中的当前默认模型名称会同步刷新，正在使用 Default 的会话也会在下一次请求切换，无需重启网关；通过 `/model` 显式选择的模型只要在新 Upstream 中仍可用，就继续固定使用该模型。Default 能显示可读模型名，同一模型也能作为独立选项出现，且不会暴露内置 Opus 行。multi-ccp 会在创建 Gateway Profile、启动前修复配置或切换绑定时预写并刷新 Claude Code 的本地网关模型目录，让首次启动顶部就能显示供应商模型的可读名称，而不会短暂暴露内部 `claude-ccp-*` 别名。请求当前 Upstream 以外的模型会明确返回 `400`，不再静默回退；内部 `claude-ccp-*` 命名空间保留给网关别名。若模型是在 Claude Code 会话启动后新增的，重新绑定 Profile 会通过临时的 `anthropic.<模型ID>` 选项把它热加入 `/model`，并通过 Claude 可热重载的默认模型环境项让 Default 显示并路由到原始供应商模型 ID；下一次 `ccp start` 会恢复标准网关目录标签。仍然有效的 `/model` 选择会继续保留。由于供应商自定义模型 ID 本身不携带可靠的上下文窗口元数据，Gateway Profile 会设置 `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` 和 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`，取消 Claude Code 对未知网关模型的警告、强制 200k token 预压缩和自动 `[1m]` 后缀；具体上下文限制及超限后的行为由网关/上游错误契约决定。可选的 token count 端点仍会明确返回 `404`，由 Claude Code 使用自身 fallback；请求日志会把它标记为预期兼容回退，而不是推理失败。
 
 ## 历史会话同步
 

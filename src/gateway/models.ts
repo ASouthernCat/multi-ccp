@@ -5,6 +5,8 @@ import { invalidRequest } from "./errors.js";
 export const CCP_MODEL_ALIAS_PREFIX = "claude-ccp-";
 export const CCP_MODEL_OPTION_ALIAS_PREFIX = "claude-ccp-option-";
 export const CCP_DEFAULT_MODEL_ALIAS_PREFIX = "claude-ccp-default-";
+/** Claude Code hot-reloads availableModels entries in this provider namespace. */
+export const CCP_LIVE_MODEL_ALIAS_PREFIX = "anthropic.";
 /** Legacy stable Default alias written by pre-release Gateway v4 builds. */
 export const CCP_DEFAULT_MODEL_ALIAS = "claude-ccp-default";
 
@@ -28,6 +30,38 @@ export function gatewayModelOptionAlias(model: string): string {
 /** Encode the current binding model so Claude Code refreshes Default's display name. */
 export function gatewayDefaultModelAlias(model: string): string {
   return `${CCP_DEFAULT_MODEL_ALIAS_PREFIX}${Buffer.from(model, "utf8").toString("base64url")}`;
+}
+
+/**
+ * Build readable aliases for models that were added after Claude Code cached
+ * /v1/models. Avoid both configured model ids and aliases already assigned in
+ * this catalog so routing remains unambiguous.
+ */
+export function buildGatewayLiveModelAliases(models: readonly string[]): ReadonlyMap<string, string> {
+  const aliases = new Map<string, string>();
+  const used = new Set(models);
+  for (const model of models) {
+    let alias = `${CCP_LIVE_MODEL_ALIAS_PREFIX}${model}`;
+    if (used.has(alias)) {
+      const encoded = Buffer.from(model, "utf8").toString("base64url");
+      alias = `${CCP_LIVE_MODEL_ALIAS_PREFIX}ccp.${encoded}`;
+      while (used.has(alias)) alias = `${CCP_LIVE_MODEL_ALIAS_PREFIX}${alias}`;
+    }
+    aliases.set(model, alias);
+    used.add(alias);
+  }
+  return aliases;
+}
+
+export function gatewayLiveModelAlias(model: string, models: readonly string[]): string {
+  return buildGatewayLiveModelAliases(models).get(model) ?? `${CCP_LIVE_MODEL_ALIAS_PREFIX}${model}`;
+}
+
+export function decodeGatewayLiveModelAlias(value: string, models: readonly string[]): string | undefined {
+  for (const [model, alias] of buildGatewayLiveModelAliases(models)) {
+    if (alias === value) return model;
+  }
+  return undefined;
 }
 
 export function decodeGatewayModelAlias(value: string): string | undefined {
@@ -66,9 +100,15 @@ export function resolveGatewayModel(
     return snapshot.config.model;
   }
   if (snapshot.models.includes(clientModel)) return clientModel;
-  const decoded = decodeGatewayModelAlias(clientModel) ?? decodeGatewayModelOptionAlias(clientModel);
+  const decoded = decodeGatewayModelAlias(clientModel)
+    ?? decodeGatewayModelOptionAlias(clientModel)
+    ?? decodeGatewayLiveModelAlias(clientModel, snapshot.models);
   if (decoded && snapshot.models.includes(decoded)) return decoded;
-  if (clientModel.startsWith(CCP_MODEL_ALIAS_PREFIX) || clientModel.startsWith(CCP_MODEL_OPTION_ALIAS_PREFIX)) {
+  if (
+    clientModel.startsWith(CCP_MODEL_ALIAS_PREFIX)
+    || clientModel.startsWith(CCP_MODEL_OPTION_ALIAS_PREFIX)
+    || clientModel.startsWith(CCP_LIVE_MODEL_ALIAS_PREFIX)
+  ) {
     throw invalidRequest("model: The selected Gateway model is invalid or is no longer configured for this Upstream.");
   }
   throw invalidRequest("model: This model is not configured for the current Gateway Upstream.");

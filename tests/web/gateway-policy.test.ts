@@ -143,6 +143,11 @@ describe("gateway Web UI policy", () => {
     expect(app).toContain('Renaming also updates bound Profiles.');
     expect(app).toContain('Full Endpoint URL');
     expect(app).toContain('id="upstreamCommonModel"');
+    expect(app).toContain('id="upstreamFetchModels"');
+    expect(app).toContain('/api/gateway/upstreams/models');
+    expect(app).toContain('id="upstreamDiscoveredList"');
+    expect(app).toContain('class="gateway-discovered-check"');
+    expect(css).toContain('.gateway-discovered-models');
     expect(app).toContain('class="gateway-log-endpoint" title=');
     expect(app).toContain('function gatewayLogDetailHasValue');
     expect(app).toContain('function gatewayLogDetailSection');

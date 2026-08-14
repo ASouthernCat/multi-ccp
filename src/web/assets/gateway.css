@@ -287,6 +287,293 @@ body {
   margin-top: 1px;
 }
 
+.gateway-model-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.gateway-control-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gateway-model-input-row input {
+  min-width: 0;
+}
+
+.gateway-fetch-models {
+  min-width: 78px;
+  min-height: 36px;
+  justify-content: center;
+  gap: 5px;
+  padding-inline: 10px;
+}
+
+.gateway-fetch-models svg {
+  width: 14px;
+  height: 14px;
+}
+
+.gateway-fetch-models.is-fetching svg {
+  animation: gateway-model-spin 900ms linear infinite;
+}
+
+@keyframes gateway-model-spin {
+  to { transform: rotate(360deg); }
+}
+
+.gateway-discovered-models {
+  position: absolute;
+  z-index: 4;
+  top: 56px;
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  box-shadow: 0 14px 34px rgba(25, 24, 21, 0.18);
+  overflow: hidden;
+  animation: gateway-model-picker-in 140ms ease-out both;
+}
+
+.gateway-discovered-models[hidden] {
+  display: none;
+}
+
+.gateway-discovered-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 43px;
+  padding: 7px 9px 7px 11px;
+}
+
+.gateway-discovered-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.gateway-discovered-head strong {
+  color: var(--ink);
+  font-size: 11.5px;
+}
+
+.gateway-discovered-head span {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gateway-discovered-head .icon-only {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gateway-discovery-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.gateway-discovery-toolbar > * {
+  min-width: 0;
+}
+
+.gateway-model-search {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--faint);
+}
+
+.gateway-model-search svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+}
+
+.gateway-model-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: 10.5px;
+  outline: none;
+}
+
+.gateway-discovery-bulk {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.gateway-discovery-bulk button {
+  min-height: 28px;
+  padding: 3px 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.gateway-discovery-bulk button:hover:not(:disabled),
+.gateway-discovery-bulk button:focus-visible {
+  background: var(--chip);
+}
+
+.gateway-discovery-bulk button:disabled {
+  color: var(--faint);
+  opacity: 0.55;
+}
+
+.gateway-discovered-list {
+  grid-row: 3;
+  min-height: 68px;
+  max-height: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  background: var(--panel);
+}
+
+.gateway-discovered-row {
+  min-width: 0;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  cursor: pointer;
+}
+
+.gateway-discovered-row:last-child {
+  border-bottom: 0;
+}
+
+.gateway-discovered-row:hover {
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.gateway-discovered-row[hidden] {
+  display: none;
+}
+
+.gateway-discovered-check {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.gateway-discovered-check:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.gateway-discovered-id {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.35;
+}
+
+.gateway-discovered-status {
+  color: var(--green);
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gateway-discovery-empty {
+  grid-row: 3;
+  min-height: 68px;
+  display: grid;
+  place-items: center;
+  color: var(--faint);
+  font-size: 10.5px;
+}
+
+.gateway-discovery-empty[hidden] {
+  display: none;
+}
+
+.gateway-discovery-footer {
+  grid-row: 4;
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 9px 6px 11px;
+  border-top: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.gateway-discovery-footer > span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.gateway-discovery-footer button {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 10px;
+}
+
+@keyframes gateway-model-picker-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .gateway-model-help {
   display: grid;
   color: var(--faint);
@@ -1476,12 +1763,34 @@ body {
     width: 100%;
     border-left: 0;
   }
+
+  .gateway-discovered-models {
+    right: 8px;
+    bottom: 8px;
+    left: 8px;
+    min-width: 0;
+  }
+
+  .gateway-discovery-toolbar {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 3px;
+  }
+
+  .gateway-discovery-bulk {
+    justify-content: flex-end;
+  }
+
+  .gateway-discovered-head span {
+    max-width: calc(100vw - 112px);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .gateway-toggle input::after,
   .gateway-upstream-drawer:not([hidden]),
-  .gateway-drawer-scrim:not([hidden]) {
+  .gateway-drawer-scrim:not([hidden]),
+  .gateway-discovered-models,
+  .gateway-fetch-models.is-fetching svg {
     transition: none;
     animation: none;
   }

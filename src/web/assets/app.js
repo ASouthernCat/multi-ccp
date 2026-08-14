@@ -737,6 +737,117 @@ function bindGatewayCommonModels() {
         input.dispatchEvent(new Event('input'));
     };
 }
+async function fetchUpstreamModels() {
+    const button = $('upstreamFetchModels');
+    if (button.dataset.pending === '1')
+        return;
+    const apiKey = $('upstreamApiKey').value.trim();
+    if (!apiKey) {
+        toast('Enter an API key before fetching models');
+        return;
+    }
+    const protocol = $('upstreamProtocol').value;
+    const provider = $('upstreamProvider').value;
+    const body = {
+        provider,
+        protocol,
+        apiKey,
+        ...($('upstreamUrlMode').value === 'endpoint'
+            ? { endpointUrl: $('upstreamEndpointUrl').value }
+            : { baseUrl: $('upstreamBaseUrl').value })
+    };
+    const buttonMarkup = button.innerHTML;
+    button.dataset.pending = '1';
+    button.disabled = true;
+    button.classList.add('is-fetching');
+    button.innerHTML = `${iconSvg('refresh')}<span>Fetching</span>`;
+    try {
+        const data = await api('/api/gateway/upstreams/models', { method: 'POST', body: JSON.stringify(body) });
+        renderUpstreamDiscoveredModels(data.models || [], data.modelsUrl || '');
+    }
+    catch (err) {
+        toast(err.message);
+    }
+    finally {
+        if ($('upstreamFetchModels') === button) {
+            delete button.dataset.pending;
+            button.classList.remove('is-fetching');
+            button.innerHTML = buttonMarkup;
+            button.disabled = !$('upstreamApiKey').value.trim();
+        }
+    }
+}
+
+function upstreamModelValues() {
+    return $('upstreamModels').value.split(/[\s,]+/).map(value => value.trim()).filter(Boolean);
+}
+
+function updateDiscoveredModelSelection() {
+    const panel = $('upstreamDiscoveredModels');
+    if (!panel || panel.hidden)
+        return;
+    const selectable = Array.from(panel.querySelectorAll('.gateway-discovered-check:not(:disabled)'));
+    const selected = selectable.filter(input => input.checked);
+    $('upstreamDiscoverySelection').textContent = `${selected.length} selected`;
+    $('upstreamAddDiscovered').disabled = selected.length === 0;
+    $('upstreamSelectVisible').disabled = !selectable.some(input => !input.closest('.gateway-discovered-row').hidden && !input.checked);
+    $('upstreamClearDiscovered').disabled = selected.length === 0;
+}
+
+function filterDiscoveredModels() {
+    const query = $('upstreamModelSearch').value.trim().toLowerCase();
+    const rows = Array.from(document.querySelectorAll('#upstreamDiscoveredList .gateway-discovered-row'));
+    let visible = 0;
+    rows.forEach(row => {
+        row.hidden = Boolean(query) && !row.dataset.model.toLowerCase().includes(query);
+        if (!row.hidden)
+            visible += 1;
+    });
+    $('upstreamDiscoveryEmpty').hidden = visible > 0;
+    updateDiscoveredModelSelection();
+}
+
+function renderUpstreamDiscoveredModels(models, modelsUrl) {
+    const existing = new Set(upstreamModelValues());
+    const ordered = [...new Set(models)].sort((left, right) => Number(existing.has(right)) - Number(existing.has(left)) || left.localeCompare(right));
+    const panel = $('upstreamDiscoveredModels');
+    const source = hostname(modelsUrl);
+    $('upstreamDiscoveryMeta').textContent = `${ordered.length} available${source ? ` from ${source}` : ''}`;
+    $('upstreamDiscoveryMeta').title = modelsUrl;
+    $('upstreamModelSearch').value = '';
+    $('upstreamDiscoveredList').innerHTML = ordered.map(model => {
+        const configured = existing.has(model);
+        return `<label class="gateway-discovered-row" data-model="${escapeHtml(model)}"><input class="gateway-discovered-check" type="checkbox" value="${escapeHtml(model)}" ${configured ? 'checked disabled' : ''} /><span class="gateway-discovered-id">${escapeHtml(model)}</span>${configured ? '<span class="gateway-discovered-status">Configured</span>' : ''}</label>`;
+    }).join('');
+    panel.hidden = ordered.length === 0;
+    panel.querySelectorAll('.gateway-discovered-check').forEach(input => input.onchange = updateDiscoveredModelSelection);
+    updateDiscoveredModelSelection();
+    $('upstreamModelSearch').focus();
+}
+
+function selectVisibleDiscoveredModels() {
+    document.querySelectorAll('#upstreamDiscoveredList .gateway-discovered-row:not([hidden]) .gateway-discovered-check:not(:disabled)').forEach(input => {
+        input.checked = true;
+    });
+    updateDiscoveredModelSelection();
+}
+
+function clearDiscoveredModels() {
+    document.querySelectorAll('#upstreamDiscoveredList .gateway-discovered-check:not(:disabled)').forEach(input => {
+        input.checked = false;
+    });
+    updateDiscoveredModelSelection();
+}
+
+function addSelectedUpstreamModels() {
+    const input = $('upstreamModels');
+    const selected = Array.from(document.querySelectorAll('#upstreamDiscoveredList .gateway-discovered-check:checked:not(:disabled)')).map(option => option.value.trim()).filter(Boolean);
+    const models = upstreamModelValues();
+    input.value = [...new Set([...models, ...selected])].join(', ');
+    input.dispatchEvent(new Event('input'));
+    $('upstreamDiscoveredModels').hidden = true;
+    toast(`Added ${selected.length} model${selected.length === 1 ? '' : 's'}`);
+}
 function syncUpstreamUrlMode(mode = $('upstreamUrlMode')?.value || 'base') {
     const isEndpoint = mode === 'endpoint';
     $('upstreamUrlMode').value = mode;
@@ -765,7 +876,7 @@ function renderUpstreamEditor(upstream) {
     const baseUrl = gatewayEndpointToBaseUrl(upstream?.endpointUrl || '', protocol);
     const endpointUrl = upstream?.endpointUrl || '';
     const renameHint = editing ? '<span class="gateway-field-hint gateway-field-hint-compact">Renaming also updates bound Profiles.</span>' : '';
-    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">&times;</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide gateway-template-field">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamTemplateHint" title="${escapeHtml(template?.description || '')}">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required placeholder="my-provider" autocomplete="off" />${renameHint}</label><label>Provider Format<input id="upstreamProviderLabel" class="gateway-readonly" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly title="Provider Format is controlled by the selected template" /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Protocol<select id="upstreamProtocol"><option value="openai_responses" ${protocol === 'openai_responses' ? 'selected' : ''}>Responses (recommended)</option><option value="openai_chat_completions" ${protocol === 'openai_chat_completions' ? 'selected' : ''}>Chat Completions (legacy)</option></select></label><div class="gateway-wide gateway-url-config"><div class="gateway-url-heading"><span>URL</span><div class="segmented gateway-url-mode" role="group"><button type="button" class="active" data-upstream-url-mode="base">Base URL</button><button type="button" data-upstream-url-mode="endpoint">Full Endpoint</button></div><input id="upstreamUrlMode" type="hidden" value="base" /></div><label id="upstreamBaseUrlField">Base URL<input id="upstreamBaseUrl" value="${escapeHtml(baseUrl)}" required placeholder="https://api.example.com or .../v1" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamBaseUrlHint">Auto-completes <code>/v1/responses</code></span></label><label id="upstreamEndpointUrlField" hidden>Full Endpoint URL<input id="upstreamEndpointUrl" value="${escapeHtml(endpointUrl)}" placeholder="https://api.example.com/v1/responses" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact">Used exactly as entered</span></label></div><label class="gateway-wide gateway-model-field">Models<input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><div class="gateway-model-help"><span>Separate multiple model IDs with ,</span><span>Common models may not be supported by this provider.</span></div><div class="gateway-model-quick"><span>Quick add</span><select id="upstreamCommonModel"><option value="">Select a common model...</option>${gatewayCommonModelOptions(protocol)}</select></div></label><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... or provider API Key' })}</label></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}</div>${gatewayAdvancedFields('upstreamEditor', protocol, compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
+    form.innerHTML = `<div class="modal-head upstream-editor-head"><div class="upstream-editor-title"><span id="upstreamBrandPreview">${brandIconMarkup(gatewayTemplateBrand(templateId, upstream), iconSvg('route'), 'upstream-editor-logo')}</span><div><p class="eyebrow">${editing ? 'edit upstream' : 'new upstream'}</p><h2>${editing ? escapeHtml(upstream.id) : 'Connect Provider'}</h2></div></div><button class="icon-btn" id="upstreamClose" type="button">&times;</button></div><div class="upstream-form-body"><div class="gateway-form-grid"><label class="gateway-wide gateway-template-field">Preset Template<select id="upstreamTemplate">${gatewayUpstreamTemplateOptions(templateId)}</select><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamTemplateHint" title="${escapeHtml(template?.description || '')}">${escapeHtml(template?.description || '')}</span></label><label>Upstream ID<input id="upstreamId" value="${escapeHtml(upstream?.id || '')}" required placeholder="my-provider" autocomplete="off" />${renameHint}</label><label>Provider Format<input id="upstreamProviderLabel" class="gateway-readonly" value="${provider === 'openai' ? 'OpenAI official' : 'OpenAI-compatible'}" readonly title="Provider Format is controlled by the selected template" /><input id="upstreamProvider" type="hidden" value="${escapeHtml(provider)}" /></label><label class="gateway-wide">Protocol<select id="upstreamProtocol"><option value="openai_responses" ${protocol === 'openai_responses' ? 'selected' : ''}>Responses (recommended)</option><option value="openai_chat_completions" ${protocol === 'openai_chat_completions' ? 'selected' : ''}>Chat Completions (legacy)</option></select></label><div class="gateway-wide gateway-url-config"><div class="gateway-url-heading"><span>URL</span><div class="segmented gateway-url-mode" role="group"><button type="button" class="active" data-upstream-url-mode="base">Base URL</button><button type="button" data-upstream-url-mode="endpoint">Full Endpoint</button></div><input id="upstreamUrlMode" type="hidden" value="base" /></div><label id="upstreamBaseUrlField">Base URL<input id="upstreamBaseUrl" value="${escapeHtml(baseUrl)}" required placeholder="https://api.example.com or .../v1" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact" id="upstreamBaseUrlHint">Auto-completes <code>/v1/responses</code></span></label><label id="upstreamEndpointUrlField" hidden>Full Endpoint URL<input id="upstreamEndpointUrl" value="${escapeHtml(endpointUrl)}" placeholder="https://api.example.com/v1/responses" autocomplete="url" /><span class="gateway-field-hint gateway-field-hint-compact">Used exactly as entered</span></label></div><label class="gateway-wide">API Key${secretInput('upstreamApiKey', '', { disabled: editing, required: !editing, placeholder: editing ? 'Loading...' : 'sk-... or provider API Key' })}</label><div class="gateway-wide gateway-model-field"><label class="gateway-control-label" for="upstreamModels">Models</label><div class="gateway-model-input-row"><input id="upstreamModels" value="${escapeHtml((upstream?.models || []).join(', '))}" required placeholder="gpt-5.6-sol, gpt-5.5" autocomplete="off" /><button class="ghost icon-action gateway-fetch-models" id="upstreamFetchModels" type="button" title="Fetch available models" disabled>${iconSvg('refresh')}<span>Fetch</span></button></div><div class="gateway-model-help"><span>Separate multiple model IDs with ,</span><span>Common models may not be supported by this provider.</span></div><div class="gateway-model-quick"><span>Quick add</span><select id="upstreamCommonModel"><option value="">Select a common model...</option>${gatewayCommonModelOptions(protocol)}</select></div><section id="upstreamDiscoveredModels" class="gateway-discovered-models" hidden><header class="gateway-discovered-head"><div><strong>Available models</strong><span id="upstreamDiscoveryMeta"></span></div><button class="ghost icon-action icon-only" id="upstreamCloseDiscovery" type="button" title="Close model picker" aria-label="Close model picker">&times;</button></header><div class="gateway-discovery-toolbar"><label class="gateway-model-search">${iconSvg('search')}<input id="upstreamModelSearch" type="search" placeholder="Filter models" autocomplete="off" /></label><div class="gateway-discovery-bulk"><button id="upstreamSelectVisible" type="button">Select all</button><button id="upstreamClearDiscovered" type="button">Clear</button></div></div><div id="upstreamDiscoveredList" class="gateway-discovered-list" role="group" aria-label="Available models"></div><div id="upstreamDiscoveryEmpty" class="gateway-discovery-empty" hidden>No matching models</div><footer class="gateway-discovery-footer"><span id="upstreamDiscoverySelection">0 selected</span><button class="primary" id="upstreamAddDiscovered" type="button" disabled>Add selected</button></footer></section></div></div><div class="gateway-mode-field"><span>Compatibility</span>${gatewayModeButtons('upstreamEditor', mode, protocol, provider)}</div>${gatewayAdvancedFields('upstreamEditor', protocol, compatibility)}</div><menu class="modal-actions"><button class="ghost" id="upstreamCancel" type="button">Cancel</button><button class="primary" id="upstreamSave" type="button" ${editing ? 'disabled' : ''}>${editing ? 'Save Upstream' : 'Create Upstream'}</button></menu><div class="dialog-toast-region"></div>`;
     const modelHints = form.querySelectorAll('.gateway-model-help span');
     modelHints[0].textContent = 'Separate multiple model IDs with commas.';
     modelHints[1].remove();
@@ -793,6 +904,18 @@ function renderUpstreamEditor(upstream) {
     $('upstreamBaseUrl').addEventListener('input', refreshCustomBrand);
     $('upstreamEndpointUrl').addEventListener('input', refreshCustomBrand);
     $('upstreamModels').addEventListener('input', refreshCustomBrand);
+    $('upstreamFetchModels').onclick = () => void fetchUpstreamModels();
+    $('upstreamAddDiscovered').onclick = addSelectedUpstreamModels;
+    $('upstreamModelSearch').oninput = filterDiscoveredModels;
+    $('upstreamSelectVisible').onclick = selectVisibleDiscoveredModels;
+    $('upstreamClearDiscovered').onclick = clearDiscoveredModels;
+    $('upstreamCloseDiscovery').onclick = () => {
+        $('upstreamDiscoveredModels').hidden = true;
+    };
+    $('upstreamApiKey').addEventListener('input', () => {
+        if ($('upstreamFetchModels').dataset.pending !== '1')
+            $('upstreamFetchModels').disabled = !$('upstreamApiKey').value.trim();
+    });
     $('upstreamClose').onclick = () => void closeUpstreamEditor();
     $('upstreamCancel').onclick = () => void closeUpstreamEditor();
     $('upstreamSave').onclick = () => saveGatewayUpstream(editing ? upstream.id : '');
@@ -912,6 +1035,9 @@ async function openUpstreamEditor(id = '') {
             const save = $('upstreamSave');
             if (save)
                 save.disabled = false;
+            const fetchModels = $('upstreamFetchModels');
+            if (fetchModels)
+                fetchModels.disabled = !input.value.trim();
         }
     }
 }

@@ -35,10 +35,13 @@ import {
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
 import {
+  buildGatewayLiveModelAliases,
   buildGatewayModelCatalog,
   CCP_DEFAULT_MODEL_ALIAS,
   decodeGatewayDefaultModelAlias,
+  decodeGatewayLiveModelAlias,
   decodeGatewayModelAlias,
+  decodeGatewayModelOptionAlias,
   gatewayDefaultModelAlias,
   gatewayModelAlias,
   gatewayModelOptionAlias
@@ -74,6 +77,7 @@ interface GatewaySettingsModels {
   defaultModel: string;
   legacyDefaultModel?: string;
   selectedModel?: string;
+  liveKnownModels?: readonly string[];
 }
 
 // Claude Code 2.1.219+ resolves the LLM gateway Default row through Opus 5;
@@ -188,6 +192,11 @@ export function buildGatewaySettings(
 ): ClaudeSettings {
   const env = { ...(current?.env ?? {}) };
   for (const name of MODEL_ENV_NAMES) delete env[name];
+  const knownModels = modelConfig.liveKnownModels ? new Set(modelConfig.liveKnownModels) : undefined;
+  const isLiveDefault = knownModels !== undefined && !knownModels.has(modelConfig.defaultModel);
+  const defaultTarget = isLiveDefault
+    ? modelConfig.defaultModel
+    : gatewayDefaultModelAlias(modelConfig.defaultModel);
   Object.assign(env, {
     ANTHROPIC_BASE_URL: `${endpoint}/p/${encodeURIComponent(profileName)}`,
     ANTHROPIC_AUTH_TOKEN: secret.localToken,
@@ -200,19 +209,32 @@ export function buildGatewaySettings(
     CLAUDE_CODE_DISABLE_THINKING: "1",
     CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1",
     CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+    CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
     // Gateway model ids are provider-defined, so Claude Code cannot infer
     // their context window from the id alone.
     CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
     MAX_THINKING_TOKENS: "0",
     ENABLE_TOOL_SEARCH: "false"
   });
-  // Keep explicit picker choices separate from Default. The Default alias
-  // carries display metadata, while the gateway always resolves it live.
-  const availableModels = modelConfig.models.map(gatewayModelOptionAlias);
+  // Claude hot-reloads env values but does not unset removed values. Always
+  // replace this target so live Default changes also work in both directions.
+  // A direct override for an uncached target would display the built-in Opus name.
+  env.ANTHROPIC_DEFAULT_OPUS_MODEL = defaultTarget;
+  // Claude Code caches /v1/models for the process lifetime, but hot-reloads
+  // settings. Models missing from that cache use the anthropic.* namespace so
+  // they become selectable immediately; startup repair restores catalog aliases.
+  const liveAliases = buildGatewayLiveModelAliases(modelConfig.models);
+  const availableModels = modelConfig.models.map((model) =>
+    knownModels && !knownModels.has(model)
+      ? liveAliases.get(model) ?? gatewayModelOptionAlias(model)
+      : gatewayModelOptionAlias(model)
+  );
   const selectedModel = normalizeSelectedGatewayModel(modelConfig, availableModels);
   const modelOverrides = stringEntries(current?.modelOverrides);
-  const defaultAlias = gatewayDefaultModelAlias(modelConfig.defaultModel);
-  for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) modelOverrides[modelId] = defaultAlias;
+  for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) delete modelOverrides[modelId];
+  if (!isLiveDefault) {
+    for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) modelOverrides[modelId] = defaultTarget;
+  }
   return {
     ...(current ?? {}),
     model: selectedModel,
@@ -313,6 +335,9 @@ export async function updateGatewayProfile(
     throw new CcpError(`Gateway model '${binding.model}' is not configured for upstream '${binding.upstreamId}'.`);
   }
   const nextMeta: ProfileMeta = { ...meta, gateway: binding };
+  const liveKnownModels = currentBinding.upstreamId === binding.upstreamId
+    ? cachedGatewayModels(currentSettings, upstream.models)
+    : [];
   const nextSettings = buildGatewaySettings(
     currentSettings,
     profileName,
@@ -322,7 +347,8 @@ export async function updateGatewayProfile(
       models: upstream.models,
       defaultModel: binding.model,
       legacyDefaultModel: currentBinding.model,
-      selectedModel: typeof currentSettings?.model === "string" ? currentSettings.model : undefined
+      selectedModel: typeof currentSettings?.model === "string" ? currentSettings.model : undefined,
+      liveKnownModels
     }
   );
   try {
@@ -368,6 +394,17 @@ function stringEntries(value: unknown): Record<string, string> {
   );
 }
 
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+}
+
+function cachedGatewayModels(settings: ClaudeSettings | undefined, models: readonly string[]): string[] {
+  const availableModels = new Set(stringArray(settings?.availableModels));
+  return models.filter((model) =>
+    availableModels.has(gatewayModelOptionAlias(model)) || availableModels.has(gatewayModelAlias(model))
+  );
+}
+
 function normalizeSelectedGatewayModel(
   modelConfig: GatewaySettingsModels,
   availableModels: readonly string[]
@@ -380,8 +417,14 @@ function normalizeSelectedGatewayModel(
     decodeGatewayDefaultModelAlias(selectedModel)
   ) return "default";
   if (availableModels.includes(selectedModel)) return selectedModel;
+  const explicitModel = decodeGatewayModelOptionAlias(selectedModel)
+    ?? decodeGatewayLiveModelAlias(selectedModel, modelConfig.models);
+  if (explicitModel && modelConfig.models.includes(explicitModel)) {
+    return availableModels[modelConfig.models.indexOf(explicitModel)] ?? "default";
+  }
   const legacyModel = decodeGatewayModelAlias(selectedModel);
   if (!legacyModel || !modelConfig.models.includes(legacyModel)) return "default";
   const legacyDefaultModel = modelConfig.legacyDefaultModel ?? modelConfig.defaultModel;
-  return legacyModel === legacyDefaultModel ? "default" : gatewayModelOptionAlias(legacyModel);
+  if (legacyModel === legacyDefaultModel) return "default";
+  return availableModels[modelConfig.models.indexOf(legacyModel)] ?? "default";
 }

@@ -1,4 +1,4 @@
-import { confirm, input, password, select } from "@inquirer/prompts";
+import { checkbox, confirm, input, password, select } from "@inquirer/prompts";
 import { Command } from "commander";
 import { CcpError } from "../core/errors.js";
 import { launchClaude } from "../core/launcher.js";
@@ -37,8 +37,10 @@ import {
 } from "../core/presets.js";
 import {
   createGatewayUpstream,
+  fetchGatewayModels,
   listGatewayUpstreams,
   readGatewayUpstreamConfig,
+  readGatewayUpstreamSecret,
   removeGatewayUpstream,
   updateGatewayUpstream
 } from "../core/gateway-upstreams.js";
@@ -264,6 +266,33 @@ async function chooseGatewayModel(upstream: GatewayUpstreamSummary, defaultModel
 
 function parseGatewayModels(value: string): string[] {
   return [...new Set(value.split(/[\s,]+/).map((model) => model.trim()).filter(Boolean))];
+}
+
+async function discoverGatewayModels(
+  provider: GatewayProvider,
+  protocol: GatewayUpstreamProtocol,
+  endpointUrl: string,
+  apiKey: string,
+  currentModels: string[]
+): Promise<string[]> {
+  if (!(await confirm({ message: "Fetch available models from the provider /models endpoint?", default: true }))) {
+    return currentModels;
+  }
+  try {
+    const result = await fetchGatewayModels({ provider, protocol, endpointUrl, apiKey });
+    console.log(`Models endpoint: ${result.modelsUrl}`);
+    console.log(`Discovered ${result.models.length} model${result.models.length === 1 ? "" : "s"}.`);
+    const selected = result.models.length === 1
+      ? result.models
+      : await checkbox({
+          message: "Select models to add",
+          choices: result.models.map((model) => ({ name: model, value: model, checked: currentModels.includes(model) }))
+        });
+    return [...new Set([...currentModels, ...selected])];
+  } catch (error) {
+    console.log(`Unable to discover models: ${(error as Error).message}`);
+    return currentModels;
+  }
 }
 
 async function promptGatewayProvider(defaultValue: GatewayProvider = "openai-compatible"): Promise<GatewayProvider> {
@@ -709,17 +738,18 @@ async function addGatewayUpstream(id?: string): Promise<void> {
     provider,
     protocol === template.protocol ? template.endpointUrl : ""
   );
-  const models = parseGatewayModels(await input({
+  let models = parseGatewayModels(await input({
     message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
     default: template.models.length ? template.models.join(", ") : undefined,
-    required: true,
-    validate: (value) => parseGatewayModels(value).length ? true : "At least one model is required."
+    required: false
   }));
   const apiKey = await password({
     message: "Provider API key (hidden)",
     mask: "*",
     validate: (value) => value.trim() ? true : "API key is required."
   });
+  models = await discoverGatewayModels(provider, protocol, endpointUrl, apiKey, models);
+  if (!models.length) throw new CcpError("At least one model is required.");
   const compatibility = template.id === "custom"
     ? await promptGatewayCompatibility(protocol, provider)
     : { ...template.compatibility };
@@ -754,16 +784,18 @@ async function editGatewayUpstream(id: string): Promise<void> {
     provider,
     protocol === current.protocol && provider === current.provider ? current.endpointUrl : ""
   );
-  const models = parseGatewayModels(await input({
+  let models = parseGatewayModels(await input({
     message: "Models (comma-separated, e.g. gpt-5.6-sol, gpt-5.5)",
     default: current.models.join(", "),
-    required: true,
-    validate: (value) => parseGatewayModels(value).length ? true : "At least one model is required."
+    required: false
   }));
   const apiKey = await password({
     message: "Replacement API key (hidden, Enter to keep current)",
     mask: "*"
   });
+  const discoveryApiKey = apiKey.trim() || (await readGatewayUpstreamSecret(id)).apiKey;
+  models = await discoverGatewayModels(provider, protocol, endpointUrl, discoveryApiKey, models);
+  if (!models.length) throw new CcpError("At least one model is required.");
   const compatibility = await promptGatewayCompatibility(
     protocol,
     provider,

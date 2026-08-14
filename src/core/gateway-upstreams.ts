@@ -29,6 +29,25 @@ import {
 } from "../gateway/config.js";
 import { CCP_MODEL_ALIAS_PREFIX } from "../gateway/models.js";
 
+export interface GatewayModelDiscoveryInput {
+  provider: GatewayProvider;
+  protocol: GatewayUpstreamProtocol;
+  baseUrl?: string;
+  endpointUrl?: string;
+  apiKey: string;
+}
+
+export interface GatewayModelDiscoveryOptions {
+  fetch?: typeof globalThis.fetch;
+  timeoutMs?: number;
+  maxResponseBytes?: number;
+}
+
+export interface GatewayModelDiscoveryResult {
+  models: string[];
+  modelsUrl: string;
+}
+
 export function assertGatewayUpstreamId(id: string): void {
   assertProfileName(id);
 }
@@ -161,6 +180,152 @@ export function normalizeGatewayModels(value: unknown): string[] {
     throw new CcpError(`Gateway upstream model '${reserved}' uses the reserved '${CCP_MODEL_ALIAS_PREFIX}' prefix.`);
   }
   return models;
+}
+
+function validateGatewayDiscoveryUrl(value: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    throw new CcpError("Gateway model discovery URL must be a valid http or https URL.");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new CcpError("Gateway model discovery URL must use http or https.");
+  }
+  if (parsed.username || parsed.password) {
+    throw new CcpError("Gateway model discovery URL must not contain a username or password.");
+  }
+  for (const key of parsed.searchParams.keys()) {
+    if (/(?:key|token|secret|authorization)/i.test(key)) {
+      throw new CcpError(`Gateway model discovery URL query parameter '${key}' may contain credentials.`);
+    }
+  }
+  parsed.hash = "";
+  return parsed;
+}
+
+function gatewayModelsUrl(input: GatewayModelDiscoveryInput): string {
+  if (input.baseUrl?.trim() && input.endpointUrl?.trim()) {
+    throw new CcpError("Send either baseUrl or endpointUrl, not both.");
+  }
+  const isEndpoint = Boolean(input.endpointUrl?.trim());
+  const fallback = input.provider === "openai"
+    ? input.protocol === "openai_responses"
+      ? "https://api.openai.com/v1/responses"
+      : "https://api.openai.com/v1/chat/completions"
+    : "";
+  const raw = (isEndpoint ? input.endpointUrl : input.baseUrl)?.trim() || fallback;
+  if (!raw) throw new CcpError("A gateway base URL or endpoint URL is required to discover models.");
+
+  const parsed = validateGatewayDiscoveryUrl(raw);
+  let pathname = parsed.pathname.replace(/\/+$/, "");
+  const endpointSuffix = input.protocol === "openai_responses" ? "/responses" : "/chat/completions";
+  if (pathname.toLowerCase().endsWith(endpointSuffix)) {
+    pathname = pathname.slice(0, -endpointSuffix.length).replace(/\/+$/, "");
+  } else if (isEndpoint) {
+    throw new CcpError(`Gateway ${input.protocol === "openai_responses" ? "Responses" : "Chat Completions"} endpoint must end with '${endpointSuffix}'.`);
+  }
+  if (!isEndpoint && pathname && !pathname.toLowerCase().endsWith("/v1")) {
+    pathname = `${pathname}/v1`;
+  }
+  if (!pathname) pathname = "/v1";
+  parsed.pathname = `${pathname.replace(/\/+$/, "")}/models`;
+  return parsed.toString();
+}
+
+function extractGatewayModelIds(payload: unknown): string[] {
+  const entries = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object"
+      ? (() => {
+          const value = payload as Record<string, unknown>;
+          if (Array.isArray(value.data)) return value.data;
+          if (Array.isArray(value.models)) return value.models;
+          return [];
+        })()
+      : [];
+  const models: string[] = [];
+  for (const entry of entries) {
+    let value: unknown = entry;
+    if (entry && typeof entry === "object") {
+      const item = entry as Record<string, unknown>;
+      value = item.id ?? item.name ?? item.model;
+    }
+    if (typeof value !== "string") continue;
+    const model = value.trim().replace(/^models\//i, "");
+    if (model) models.push(model);
+  }
+  return [...new Set(models)];
+}
+
+async function readGatewayDiscoveryBody(response: Response, maxBytes: number): Promise<string> {
+  if (!response.body) {
+    const text = await response.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) throw new CcpError("Gateway model discovery response is too large.");
+    return text;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      total += next.value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new CcpError("Gateway model discovery response is too large.");
+      }
+      chunks.push(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))).toString("utf8");
+}
+
+export async function fetchGatewayModels(
+  input: GatewayModelDiscoveryInput,
+  options: GatewayModelDiscoveryOptions = {}
+): Promise<GatewayModelDiscoveryResult> {
+  const apiKey = input.apiKey.trim();
+  if (!apiKey) throw new CcpError("Gateway API key is required to discover models.");
+  const modelsUrl = gatewayModelsUrl(input);
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  if (!fetchImpl) throw new CcpError("Gateway model discovery is unavailable in this runtime.");
+  const timeoutMs = options.timeoutMs ?? 15_000;
+  const maxResponseBytes = options.maxResponseBytes ?? 2 * 1024 * 1024;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  let response: Response;
+  try {
+    response = await fetchImpl(modelsUrl, {
+      method: "GET",
+      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      signal: controller.signal
+    });
+    const body = await readGatewayDiscoveryBody(response, maxResponseBytes);
+    if (!response.ok) {
+      throw new CcpError(`Gateway model discovery failed with HTTP ${response.status}.`);
+    }
+    let payload: unknown;
+    try {
+      payload = JSON.parse(body);
+    } catch (error) {
+      throw new CcpError("Gateway model discovery returned invalid JSON.", { cause: error });
+    }
+    const models = extractGatewayModelIds(payload);
+    if (!models.length) throw new CcpError("Gateway model discovery returned no usable models.");
+    return { models, modelsUrl };
+  } catch (error) {
+    if (error instanceof CcpError) throw error;
+    if ((error as { name?: string }).name === "AbortError") {
+      throw new CcpError(`Gateway model discovery timed out after ${timeoutMs} ms.`);
+    }
+    throw new CcpError(`Gateway model discovery request failed: ${(error as Error).message || "unknown error"}.`, { cause: error });
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function validateGatewayUpstreamConfig(value: unknown): GatewayUpstreamConfig {

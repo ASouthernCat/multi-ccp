@@ -13,6 +13,7 @@ import {
 } from "../../src/core/gateway-profile.js";
 import {
   createGatewayUpstream,
+  fetchGatewayModels,
   getGatewayUpstreamPath,
   getGatewayUpstreamSecretPath,
   listGatewayUpstreams,
@@ -25,6 +26,7 @@ import { getSettingsPath, readMeta, readSettings, writeSettings } from "../../sr
 import { authorizeLocalGatewayRequest, readLocalGatewayToken } from "../../src/gateway/auth.js";
 import {
   gatewayDefaultModelAlias,
+  gatewayLiveModelAlias,
   gatewayModelAlias,
   gatewayModelOptionAlias
 } from "../../src/gateway/models.js";
@@ -66,6 +68,65 @@ async function createCompatibleUpstream(
 }
 
 describe("gateway upstream and profile storage", () => {
+  it("discovers OpenAI and Gemini-style model catalogs from a gateway base URL", async () => {
+    const requests: Array<{ url: string; authorization: string }> = [];
+    const fetchMock: typeof globalThis.fetch = async (url, init): Promise<Response> => {
+      requests.push({
+        url: String(url),
+        authorization: String((init?.headers as Record<string, string>).authorization)
+      });
+      const payload = String(url).includes("gemini")
+        ? { models: [{ name: "models/gemini-3.6-flash" }, { name: "models/gemini-3.5-flash" }] }
+        : { data: [{ id: "gpt-5.6" }, { id: "gpt-5.5" }, { id: "gpt-5.6" }] };
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+    };
+
+    const openai = await fetchGatewayModels({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      baseUrl: "https://gateway.example/v1",
+      apiKey: "secret"
+    }, { fetch: fetchMock });
+    const gemini = await fetchGatewayModels({
+      provider: "openai-compatible",
+      protocol: "openai_chat_completions",
+      baseUrl: "https://api.aicodemirror.com/api/gemini/v1",
+      apiKey: "secret"
+    }, { fetch: fetchMock });
+
+    expect(openai).toEqual({ models: ["gpt-5.6", "gpt-5.5"], modelsUrl: "https://gateway.example/v1/models" });
+    expect(gemini).toEqual({
+      models: ["gemini-3.6-flash", "gemini-3.5-flash"],
+      modelsUrl: "https://api.aicodemirror.com/api/gemini/v1/models"
+    });
+    expect(requests).toEqual([
+      { url: "https://gateway.example/v1/models", authorization: "Bearer secret" },
+      { url: "https://api.aicodemirror.com/api/gemini/v1/models", authorization: "Bearer secret" }
+    ]);
+  });
+
+  it("rejects unsafe, invalid, and empty model discovery responses", async () => {
+    const fetchMock = async () => new Response("{}", { status: 200 });
+    await expect(fetchGatewayModels({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      baseUrl: "https://gateway.example/v1?api_key=secret",
+      apiKey: "secret"
+    }, { fetch: fetchMock })).rejects.toThrow("may contain credentials");
+    await expect(fetchGatewayModels({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://gateway.example/v1/chat/completions",
+      apiKey: "secret"
+    }, { fetch: fetchMock })).rejects.toThrow("must end with '/responses'");
+    await expect(fetchGatewayModels({
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      baseUrl: "https://gateway.example/v1",
+      apiKey: "secret"
+    }, { fetch: fetchMock })).rejects.toThrow("no usable models");
+  });
+
   it("keeps safe query parameters, rejects credentials, and defaults the OpenAI endpoint", () => {
     expect(normalizeChatCompletionsUrl("https://example.test/openai?api-version=2026-01-01"))
       .toBe("https://example.test/openai/chat/completions?api-version=2026-01-01");
@@ -396,7 +457,9 @@ describe("gateway upstream and profile storage", () => {
     expect(settings?.env).toMatchObject({
       ANTHROPIC_BASE_URL: "http://127.0.0.1:3921/p/openai-main",
       ANTHROPIC_AUTH_TOKEN: profileSecret?.localToken,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: gatewayDefaultModelAlias("gpt-test"),
       CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
+      CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
       CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1"
     });
     expect(settings?.model).toBe("default");
@@ -413,7 +476,8 @@ describe("gateway upstream and profile storage", () => {
       ]
     });
     expect(modelCache.fetchedAt).toEqual(expect.any(Number));
-    expect(JSON.stringify(settings?.env)).not.toContain("ANTHROPIC_DEFAULT_");
+    expect(settings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
+    expect(settings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION).toBeUndefined();
     expect(JSON.stringify(settings)).not.toContain("sk-upstream-only");
     if (process.platform !== "win32") {
       expect((await stat(getGatewaySecretPath(profile.dir))).mode & 0o777).toBe(0o600);
@@ -509,9 +573,10 @@ describe("gateway upstream and profile storage", () => {
     expect(repaired?.env?.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:3921/p/repair");
     expect(repaired?.env?.ANTHROPIC_AUTH_TOKEN).toBe(secret?.localToken);
     expect(repaired?.env?.ANTHROPIC_MODEL).toBeUndefined();
-    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBeUndefined();
+    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe(gatewayDefaultModelAlias("model"));
     expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
     expect(repaired?.env?.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT).toBe("1");
+    expect(repaired?.env?.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe("1");
     expect(repaired?.model).toBe("default");
     expect(repaired?.availableModels).toEqual([gatewayModelOptionAlias("model")]);
     expect(repaired?.modelOverrides).toEqual({
@@ -591,11 +656,11 @@ describe("gateway upstream and profile storage", () => {
     expect(snapshot.secret.apiKey).toBe("second-key");
     expect(snapshot.config.model).toBe("new-model");
     expect(settings?.model).toBe("default");
-    expect(settings?.availableModels).toEqual([gatewayModelOptionAlias("new-model")]);
-    expect(settings?.modelOverrides).toMatchObject({
-      "claude-opus-5": gatewayDefaultModelAlias("new-model"),
-      "claude-opus-4-8": gatewayDefaultModelAlias("new-model")
-    });
+    expect(settings?.availableModels).toEqual([gatewayLiveModelAlias("new-model", ["new-model"])]);
+    expect(settings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("new-model");
+    expect(settings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
+    expect(settings?.modelOverrides?.["claude-opus-5"]).toBeUndefined();
+    expect(settings?.modelOverrides?.["claude-opus-4-8"]).toBeUndefined();
     expect(modelCache).toMatchObject({
       baseUrl: "http://127.0.0.1:3921/p/editable",
       models: [
@@ -641,6 +706,55 @@ describe("gateway upstream and profile storage", () => {
       { id: gatewayModelOptionAlias("second"), display_name: "second (defaults)" }
     ]);
     expect((await readMeta(profile.dir))?.gateway).toEqual({ upstreamId: "defaults", model: "second" });
+  });
+
+  it("hot-adds a new upstream model to /model and uses its readable id for Default", async () => {
+    const context = await createContext();
+    await createCompatibleUpstream(context, { id: "hot-models", models: ["first", "second"] });
+    const profile = await createGatewayProfile({
+      name: "hot-model-profile",
+      upstreamId: "hot-models",
+      model: "first"
+    }, context);
+    const currentUpstream = await readGatewayUpstream("hot-models", context);
+    await updateGatewayUpstream("hot-models", {
+      ...currentUpstream.config,
+      models: ["first", "second", "third"]
+    }, context);
+
+    await updateGatewayProfile(profile.dir, profile.name, {
+      upstreamId: "hot-models",
+      model: "third"
+    }, context);
+    const hotSettings = await readSettings(profile.dir);
+
+    expect(hotSettings?.model).toBe("default");
+    expect(hotSettings?.availableModels).toEqual([
+      gatewayModelOptionAlias("first"),
+      gatewayModelOptionAlias("second"),
+      gatewayLiveModelAlias("third", ["first", "second", "third"])
+    ]);
+    expect(hotSettings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe("third");
+    expect(hotSettings?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
+    expect(hotSettings?.modelOverrides?.["claude-opus-5"]).toBeUndefined();
+    expect(hotSettings?.modelOverrides?.["claude-opus-4-8"]).toBeUndefined();
+
+    const liveThird = gatewayLiveModelAlias("third", ["first", "second", "third"]);
+    await writeSettings(profile.dir, { ...hotSettings, model: liveThird });
+    await repairGatewayProfileSettings(profile.dir, profile.name, context);
+    const repaired = await readSettings(profile.dir);
+    expect(repaired?.model).toBe(gatewayModelOptionAlias("third"));
+    expect(repaired?.availableModels).toEqual([
+      gatewayModelOptionAlias("first"),
+      gatewayModelOptionAlias("second"),
+      gatewayModelOptionAlias("third")
+    ]);
+    expect(repaired?.modelOverrides).toMatchObject({
+      "claude-opus-5": gatewayDefaultModelAlias("third"),
+      "claude-opus-4-8": gatewayDefaultModelAlias("third")
+    });
+    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL).toBe(gatewayDefaultModelAlias("third"));
+    expect(repaired?.env?.ANTHROPIC_DEFAULT_OPUS_MODEL_NAME).toBeUndefined();
   });
 
   it("treats the legacy binding-default alias as Default when changing the binding before startup repair", async () => {

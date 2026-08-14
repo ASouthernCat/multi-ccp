@@ -18,6 +18,7 @@ import { getGatewayGeneratedDir } from "../../src/core/paths.js";
 import {
   CCP_DEFAULT_MODEL_ALIAS,
   gatewayDefaultModelAlias,
+  gatewayLiveModelAlias,
   gatewayModelOptionAlias
 } from "../../src/gateway/models.js";
 
@@ -236,6 +237,16 @@ describe("gateway HTTP protocol", () => {
     });
     expect(response.status).toBe(200);
     expect(received[0]?.model).toBe("second-model");
+
+    const liveResponse = await fetch(`${endpoint}/p/model-picker/v1/messages`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": secret!.localToken },
+      body: JSON.stringify(anthropicRequest(false, {
+        model: gatewayLiveModelAlias("second-model", ["first-model", "second-model"])
+      }))
+    });
+    expect(liveResponse.status).toBe(200);
+    expect(received[1]?.model).toBe("second-model");
   });
 
   it("applies binding changes to Default on the next request without overriding explicit model selections", async () => {

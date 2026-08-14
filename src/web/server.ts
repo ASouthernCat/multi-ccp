@@ -23,6 +23,7 @@ import { createApiProfileFromPreset, createCcrProfileFromPreset, createGatewayPr
 import { updateGatewayProfile } from "../core/gateway-profile.js";
 import {
   createGatewayUpstream,
+  fetchGatewayModels,
   findGatewayUpstreamReferences,
   listGatewayUpstreams,
   removeGatewayUpstream,
@@ -1018,6 +1019,21 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         return json(res, 201, { upstream: { ...created, profileNames: [] } });
       }
       return methodNotAllowed(res);
+    }
+
+    if (pathname === "/api/gateway/upstreams/models") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, unknown>>(req);
+      const provider = gatewayProvider(body.provider);
+      const protocol = gatewayRequestProtocol(body);
+      const endpointUrl = gatewayRequestUrl(body, protocol, provider);
+      const result = await fetchGatewayModels({
+        provider,
+        protocol,
+        endpointUrl,
+        apiKey: String(body.apiKey ?? "")
+      });
+      return json(res, 200, result);
     }
 
     if (pathname === "/api/gateway/upstream-templates") {
