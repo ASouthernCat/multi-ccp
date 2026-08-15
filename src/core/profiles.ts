@@ -3,7 +3,6 @@ import { access, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { assertProfileName, CcpError } from "./errors.js";
 import { getMainClaudeDir, getProfilesRoot, type PathContext } from "./paths.js";
-import { ensureCcrPreset, getCcrPresetEndpoint } from "./ccr.js";
 import { getSettingsPath, readMeta, readSettings, removeProfileDir, writeMeta, writeSettings } from "./settings.js";
 import {
   buildGatewaySettings,
@@ -24,7 +23,6 @@ import type {
   CreateApiProfileFromEnvInput,
   CreateApiProfileInput,
   CreateLoginProfileInput,
-  CreateCcrProfileInput,
   CreateGatewayProfileInput,
   GatewayProfileSecret,
   ProfileMeta,
@@ -116,9 +114,11 @@ export async function resolveProfileDirForRemoval(
 }
 
 export function inferProfileType(settings?: ClaudeSettings, meta?: ProfileMeta): ProfileType {
-  if (meta?.type) {
-    return meta.type;
+  const metaType = meta?.type as string | undefined;
+  if (metaType === "api" || metaType === "login" || metaType === "gateway") {
+    return metaType;
   }
+  // Unsupported legacy meta types fall through to settings-based inference.
   if (settings?.env?.ANTHROPIC_BASE_URL || settings?.env?.ANTHROPIC_AUTH_TOKEN) {
     return "api";
   }
@@ -138,11 +138,7 @@ export async function summarizeProfile(
   let model = env.ANTHROPIC_MODEL ?? "";
   const baseUrl = env.ANTHROPIC_BASE_URL ?? "";
 
-  if (type === "ccr" && meta?.ccrRoute) {
-    model = `ccr:${meta.ccrRoute}`;
-  } else if (type === "ccr") {
-    model = "ccr";
-  } else if (type === "login") {
+  if (type === "login") {
     model = "login";
   } else if (type === "gateway") {
     model = meta?.gateway?.model ?? "";
@@ -257,40 +253,6 @@ export async function createLoginProfile(input: CreateLoginProfileInput, context
   await mkdir(profileDir, { recursive: true });
   await writeSettings(profileDir, { theme: "dark" });
   await writeMeta(profileDir, { version: 1, type: "login", createdAt: new Date().toISOString() });
-  return summarizeProfile(input.name, profileDir);
-}
-
-export async function createCcrProfile(input: CreateCcrProfileInput, context: PathContext = {}): Promise<ProfileSummary> {
-  const profileDir = await assertNewProfile(input.name, context);
-  if (!input.route.trim()) {
-    throw new CcpError("CCR route is required for a preset-bound CCR profile.");
-  }
-
-  const presetName = input.presetName?.trim() || input.name;
-  const endpoint = await getCcrPresetEndpoint(presetName, context);
-  await mkdir(profileDir, { recursive: true });
-  await writeSettings(profileDir, {
-    theme: "dark",
-    env: {
-      ANTHROPIC_BASE_URL: endpoint,
-      ANTHROPIC_AUTH_TOKEN: input.token.trim() || "ccr-local-secret",
-      NO_PROXY: "127.0.0.1,localhost",
-      DISABLE_TELEMETRY: "1",
-      DISABLE_COST_WARNINGS: "1",
-      API_TIMEOUT_MS: "600000"
-    }
-  });
-  await writeMeta(profileDir, {
-    version: 1,
-    type: "ccr",
-    endpoint,
-    autoStart: true,
-    ccrPreset: presetName,
-    ccrRoute: input.route.trim(),
-    preset: input.presetId,
-    createdAt: new Date().toISOString()
-  });
-  await ensureCcrPreset(presetName, input.route.trim(), context);
   return summarizeProfile(input.name, profileDir);
 }
 

@@ -27,7 +27,7 @@ import {
   normalizeGatewayEndpoint,
   resolveGatewayChatCompletionsUrl
 } from "../gateway/config.js";
-import { CCP_MODEL_ALIAS_PREFIX } from "../gateway/models.js";
+import { reservedGatewayModelPrefix } from "../gateway/models.js";
 
 export interface GatewayModelDiscoveryInput {
   provider: GatewayProvider;
@@ -175,9 +175,10 @@ export function normalizeGatewayModels(value: unknown): string[] {
   if (!Array.isArray(value)) throw new CcpError("Gateway upstream models must be an array.");
   const models = [...new Set(value.map((model) => String(model).trim()).filter(Boolean))];
   if (!models.length) throw new CcpError("Gateway upstream requires at least one model.");
-  const reserved = models.find((model) => model.startsWith(CCP_MODEL_ALIAS_PREFIX));
+  const reserved = models.map((model) => ({ model, prefix: reservedGatewayModelPrefix(model) }))
+    .find((entry) => entry.prefix);
   if (reserved) {
-    throw new CcpError(`Gateway upstream model '${reserved}' uses the reserved '${CCP_MODEL_ALIAS_PREFIX}' prefix.`);
+    throw new CcpError(`Gateway upstream model '${reserved.model}' uses the reserved '${reserved.prefix}' prefix.`);
   }
   return models;
 }
@@ -421,10 +422,8 @@ export async function readGatewayUpstream(
   id: string,
   context: PathContext = {}
 ): Promise<{ config: GatewayUpstreamConfig; secret: GatewayUpstreamSecret }> {
-  const [config, secret] = await Promise.all([
-    readGatewayUpstreamConfig(id, context),
-    readGatewayUpstreamSecret(id, context)
-  ]);
+  const config = await readGatewayUpstreamConfig(id, context);
+  const secret = await readGatewayUpstreamSecret(id, context);
   return { config, secret };
 }
 

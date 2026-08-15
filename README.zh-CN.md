@@ -18,8 +18,6 @@
 - 每个 profile 的 Claude Code 配置、登录状态、环境变量和项目历史记录互相隔离。
 - 创建兼容 Anthropic API 的 profile，自定义 `ANTHROPIC_BASE_URL`、token 和模型配置。
 - 创建 Claude 登录 profile，使用 Claude Code 正常账号登录流程，不保存账号密码。
-- 创建 [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profile，支持多个模型 provider 和 route。
-- 通过同一个 CLI 管理 [Claude Code Router](https://github.com/musistudio/claude-code-router)。
 - 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Responses / Chat Completions provider。
 - 多个 gateway profile 可以并发复用一个本地进程，同时按请求隔离上游 URL、模型、凭据、工具映射、流状态和取消信号。
 - 在不同 profile 之间，或在 `main` 与 profile 之间同步 Claude Code 历史会话。
@@ -59,7 +57,7 @@ How do I use multi-ccp to manage multiple Claude Code profiles? Refer to the REA
 ccp ui
 ```
 
-Web UI 是 CLI 的本地辅助界面，可用于查看 Profile、基于预设创建 Profile、编辑配置、管理共享网关服务与可复用 Upstream、实时切换模型、查看脱敏请求日志，以及打开 CCR 管理入口。
+Web UI 是 CLI 的本地辅助界面，可用于查看 Profile、基于预设创建 Profile、编辑配置、管理共享网关服务与可复用 Upstream、实时切换模型、以及查看脱敏请求日志。
 
 交互式创建一个 profile：
 
@@ -68,7 +66,7 @@ ccp add
 ccp start <profile-name>
 ```
 
-`ccp add` 会让你选择内置预设模板或自定义配置，例如 Built-in Gateway、DeepSeek、AI CodeMirror、Mimo、CCR GPT、Manual CCR、Claude Login 或 Custom API。
+`ccp add` 会让你选择内置预设模板或自定义配置，例如 Built-in Gateway、DeepSeek、AI CodeMirror、Mimo、Claude Login 或 Custom API。
 
 Profile 名称可以包含字母、数字、点号、下划线和连字符，因此 `gpt-5.6` 是合法名称。名称必须以字母或数字开头，不能以点号结尾，也不能使用 Windows 保留设备名。
 
@@ -171,23 +169,6 @@ ccp start personal
 
 `ccp add-login <profile>` 仍可作为直接创建登录 profile 的兼容入口。
 
-### Claude Code Router Profiles
-
-CCR profile 绑定到 [Claude Code Router](https://github.com/musistudio/claude-code-router) preset。Claude Code Router 是一个独立的开源项目，可以将 Claude Code 请求路由到不同模型 provider。`multi-ccp` 会集成它的 config 和 preset system，让每个 profile 可以使用自己的 provider route。
-
-```bash
-ccp ccr status
-ccp ccr model
-ccp add
-ccp start <profile-name>
-```
-
-CCR profile 会把 route 写入 `.ccp.json`，并让 Claude Code 指向类似这样的 preset endpoint：
-
-```text
-http://127.0.0.1:3456/preset/gpt-route
-```
-
 ### 内置 Gateway
 
 Gateway 会根据上游协议，把 Claude Code 的 Anthropic Messages 协议转换为 OpenAI Responses 或 OpenAI Chat Completions。现在分为三个独立层级：一个共享的本地网关服务、可复用的上游供应商配置，以及只选择上游和模型的轻量 Profile。
@@ -235,7 +216,11 @@ Responses reasoning summary 当前会被省略，不会映射为 Anthropic think
 
 网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。失败请求还会记录稳定的 `failureStage` / `failureCode`、可用的上游 HTTP 状态和受长度限制的 request ID，以及 SSE 首事件耗时和终止事件元数据，用于区分上游 HTTP 错误、流转换错误和缺少终止事件的上游断流。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
 
-网关支持 Messages 请求、非流式和 SSE 响应、文本、原生图片输入、原生图片型 tool result、工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。每个 Gateway Profile 会通过带显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，同时用 option 别名把当前 Upstream 的全部模型列为可选的 `From gateway` 条目。本地模型目录会预先注册该 Upstream 每个模型对应的 Default 展示别名，因此修改 Binding 后，现有会话 `/model` 中的当前默认模型名称会同步刷新，正在使用 Default 的会话也会在下一次请求切换，无需重启网关；通过 `/model` 显式选择的模型只要在新 Upstream 中仍可用，就继续固定使用该模型。Default 能显示可读模型名，同一模型也能作为独立选项出现，且不会暴露内置 Opus 行。multi-ccp 会在创建 Gateway Profile、启动前修复配置或切换绑定时预写并刷新 Claude Code 的本地网关模型目录，让首次启动顶部就能显示供应商模型的可读名称，而不会短暂暴露内部 `claude-ccp-*` 别名。请求当前 Upstream 以外的模型会明确返回 `400`，不再静默回退；内部 `claude-ccp-*` 命名空间保留给网关别名。若模型是在 Claude Code 会话启动后新增的，重新绑定 Profile 会通过临时的 `anthropic.<模型ID>` 选项把它热加入 `/model`，并通过 Claude 可热重载的默认模型环境项让 Default 显示并路由到原始供应商模型 ID；下一次 `ccp start` 会恢复标准网关目录标签。仍然有效的 `/model` 选择会继续保留。由于供应商自定义模型 ID 本身不携带可靠的上下文窗口元数据，Gateway Profile 会设置 `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` 和 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`，取消 Claude Code 对未知网关模型的警告、强制 200k token 预压缩和自动 `[1m]` 后缀；具体上下文限制及超限后的行为由网关/上游错误契约决定。可选的 token count 端点仍会明确返回 `404`，由 Claude Code 使用自身 fallback；请求日志会把它标记为预期兼容回退，而不是推理失败。
+网关支持 Messages 请求、非流式和 SSE 响应、文本、原生图片输入、原生图片型 tool result、工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。每个 Gateway Profile 会通过带显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，同时用 option 别名把当前 Upstream 的全部模型列为可选的 `From gateway` 条目。本地模型目录会预先注册该 Upstream 每个模型对应的 Default 展示别名，因此修改 Binding 后，现有会话 `/model` 中的当前默认模型名称会同步刷新，正在使用 Default 的会话也会在下一次请求切换，无需重启网关；通过 `/model` 显式选择的模型只要在新 Upstream 中仍可用，就继续固定使用该模型。Default 能显示可读模型名，同一模型也能作为独立选项出现，且不会暴露内置 Opus 行。
+
+multi-ccp 会在创建 Gateway Profile、启动前修复配置或切换绑定时预写并刷新 Claude Code 的本地网关模型目录，让首次启动顶部就能显示供应商模型的可读名称，而不会短暂暴露内部别名。Gateway 别名只使用保留的 `anthropic.ccp-*` 命名空间，不再支持旧 `claude-ccp-*` 别名。请求当前 Upstream 以外的模型会明确返回 `400`，不再静默回退。若模型是在 Claude Code 启动后新增的，重新绑定 Profile 会通过临时的 `anthropic.<模型ID>` 选项把它热加入 `/model`，并通过 Claude 可热重载的默认模型环境项更新 Default；下一次 `ccp start` 会恢复标准目录标签。仍然有效的 `/model` 选择会继续保留。
+
+由于供应商自定义模型 ID 本身不携带可靠的上下文窗口元数据，Gateway Profile 会设置 `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` 和 `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`。它不会声明固定上下文窗口；启动修复会移除旧的 compact window 覆盖项，让 `/autocompact` 保持 Claude Code 默认的 `auto`，实际限制仍由网关/上游错误契约决定。网关会接受 Claude Code 2.1.233 自动模式分类请求中显式关闭 thinking 的写法，adaptive 和 enabled thinking 仍不受支持。可选的 token count 端点仍会明确返回 `404`，由 Claude Code 使用自身 fallback；请求日志会把它标记为预期兼容回退，而不是推理失败。
 
 ## 历史会话同步
 
@@ -272,7 +257,6 @@ ccp ui
 ccp add [profile]
 ccp add --preset <preset> [profile]
 ccp add-login <profile>
-ccp add-ccr <profile>
 ccp remove <profile>
 ccp status <profile|main>
 ccp start <profile> [claude args...]
@@ -294,23 +278,7 @@ ccp gateway remove <upstream-id>
 ccp gateway use <profile> [upstream-id] [model]
 ```
 
-[Claude Code Router](https://github.com/musistudio/claude-code-router) 相关命令：
-
-```bash
-ccp ccr status
-ccp ccr install
-ccp ccr start
-ccp ccr stop
-ccp ccr restart
-ccp ccr ui
-ccp ccr model
-```
-
-`ccp ccr install` 会固定安装 `@musistudio/claude-code-router@2.0.0`。CCR 3.x 是一次不兼容重写，当前 multi-ccp 不支持。
-
-如果供应商提供 OpenAI Responses 或 Chat Completions 兼容接口，建议优先使用内置 Gateway，而不是 CCR。内置 Gateway 无需安装额外路由服务，并提供可复用 Upstream、模型选择、兼容映射和请求日志。
-
-历史会话同步命令：
+会话同步命令：
 
 ```bash
 ccp sync-session <target-profile> [--all]
@@ -344,7 +312,7 @@ ccp sync-session work to main
 ## 安全说明
 
 - `ccp remove <profile>` 删除前会要求你输入 profile 名称确认。
-- `ccp add`、`ccp add-login` 和 `ccp add-ccr` 不会覆盖已经存在的 profile。
+- `ccp add` 和 `ccp add-login` 不会覆盖已经存在的 profile。
 - `sync-session` 使用 SHA-256 hash 检测冲突，并在覆盖目标文件前询问确认。
 - Login profile 不保存 Claude 账号密码。
 - Gateway API Key 只保存在上游 secret 文件中，不会写入 Profile 目录、`.ccp.json`、普通 Web UI GET/列表响应、日志或上游错误 envelope。本地编辑器仅通过受 UI Token 保护且禁止缓存的 POST 接口读取密钥，默认保持遮罩，只有用户点击眼睛按钮时才显示明文。

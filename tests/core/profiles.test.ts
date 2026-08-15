@@ -2,12 +2,10 @@ import { mkdir, mkdtemp, readFile, stat, utimes, writeFile } from "node:fs/promi
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createApiProfile, createCcrProfile, createLoginProfile, listProfiles, profileExists, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
+import { createApiProfile, createLoginProfile, listProfiles, profileExists, removeProfile, resolveConfigDir } from "../../src/core/profiles.js";
 import { getProfilesRoot, getProjectKey } from "../../src/core/paths.js";
 import { deleteSessionProject, deleteSessionProjectSession, listSessionProjects, parseSelectionText, scanSessionProject, syncSessionProject, syncSessions } from "../../src/core/sessions.js";
 import { removeProfileDir } from "../../src/core/settings.js";
-import { ensureCcrProfileGateway, reloadCcrRuntimeIfPresetOutdated, reloadCcrRuntimeWhenChanged } from "../../src/core/ccr.js";
-import { createApiProfileFromPreset, createCcrProfileFromPreset } from "../../src/core/presets.js";
 
 async function createContext() {
   const homeDir = await mkdtemp(path.join(tmpdir(), "ccp-test-"));
@@ -76,159 +74,6 @@ describe("profiles", () => {
     });
   });
 
-  it("creates CCR profiles and preset manifests", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    await mkdir(ccrDir, { recursive: true });
-    await writeFile(
-      path.join(ccrDir, "config.json"),
-      JSON.stringify({
-        HOST: "0.0.0.0",
-        PORT: 3456,
-        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-test"] }],
-        Router: { longContextThreshold: 12345 }
-      }),
-      "utf8"
-    );
-
-    const profile = await createCcrProfile({ name: "ccrTest", route: "openai,gpt-test", token: "" }, context);
-    expect(profile.type).toBe("ccr");
-    expect(profile.baseUrl).toBe("http://127.0.0.1:3456/preset/ccrTest");
-    expect(profile.model).toBe("ccr:openai,gpt-test");
-
-    const settings = JSON.parse(await readFile(path.join(profile.dir, "settings.json"), "utf8"));
-    expect(settings.env.ANTHROPIC_MODEL).toBeUndefined();
-
-    const manifest = JSON.parse(
-      await readFile(path.join(ccrDir, "presets", "ccrTest", "manifest.json"), "utf8")
-    );
-    expect(manifest.Router.default).toBe("openai,gpt-test");
-    expect(manifest.Router.longContextThreshold).toBe(12345);
-  });
-
-  it("creates CCR preset profiles by auto-configuring AICodeMirror provider templates", async () => {
-    const context = await createContext();
-
-    const profile = await createCcrProfileFromPreset({
-      presetId: "ccr-gpt",
-      name: "ccrPresetAuto",
-      token: "",
-      providerApiKey: "provider-secret"
-    }, context);
-
-    expect(profile.type).toBe("ccr");
-    expect(profile.baseUrl).toBe("http://127.0.0.1:3456/preset/ccr-gpt");
-    expect(profile.model).toBe("ccr:aicodemirror,gpt-5.5");
-
-    const ccrConfig = JSON.parse(await readFile(path.join(context.homeDir, ".claude-code-router", "config.json"), "utf8"));
-    expect(ccrConfig.Providers).toEqual([
-      {
-        name: "aicodemirror",
-        api_base_url: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/chat/completions",
-        api_key: "provider-secret",
-        models: ["gpt-5.5"]
-      }
-    ]);
-    expect(ccrConfig.Router).toMatchObject({
-      default: "aicodemirror,gpt-5.5",
-      background: "aicodemirror,gpt-5.5",
-      think: "aicodemirror,gpt-5.5",
-      longContext: "aicodemirror,gpt-5.5",
-      longContextThreshold: 60000,
-      webSearch: "aicodemirror,gpt-5.5"
-    });
-
-    const manifest = JSON.parse(
-      await readFile(path.join(context.homeDir, ".claude-code-router", "presets", "ccr-gpt", "manifest.json"), "utf8")
-    );
-    expect(manifest.Router.default).toBe("aicodemirror,gpt-5.5");
-  });
-
-  it("repairs invalid CCR router arrays when adding provider templates", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    await mkdir(ccrDir, { recursive: true });
-    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ Router: [] }), "utf8");
-
-    await createCcrProfileFromPreset({ presetId: "ccr-gpt", name: "ccrPresetRepairsRouter", providerApiKey: "" }, context);
-
-    const ccrConfig = JSON.parse(await readFile(path.join(ccrDir, "config.json"), "utf8"));
-    expect(Array.isArray(ccrConfig.Router)).toBe(false);
-    expect(ccrConfig.Router).toMatchObject({
-      default: "aicodemirror,gpt-5.5",
-      background: "aicodemirror,gpt-5.5",
-      think: "aicodemirror,gpt-5.5",
-      longContext: "aicodemirror,gpt-5.5",
-      longContextThreshold: 60000,
-      webSearch: "aicodemirror,gpt-5.5"
-    });
-  });
-
-  it("keeps existing usable CCR router bindings when adding provider templates", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    await mkdir(ccrDir, { recursive: true });
-    await writeFile(
-      path.join(ccrDir, "config.json"),
-      JSON.stringify({
-        HOST: "127.0.0.1",
-        PORT: 3456,
-        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-4.1"] }],
-        Router: { default: "openai,gpt-4.1", longContextThreshold: 12345 }
-      }),
-      "utf8"
-    );
-
-    await createCcrProfileFromPreset({ presetId: "ccr-gpt", name: "ccrPresetKeepsRouter", providerApiKey: "" }, context);
-
-    const ccrConfig = JSON.parse(await readFile(path.join(ccrDir, "config.json"), "utf8"));
-    expect(ccrConfig.Router.default).toBe("openai,gpt-4.1");
-    expect(ccrConfig.Router.longContextThreshold).toBe(12345);
-    expect(ccrConfig.Router.background).toBe("aicodemirror,gpt-5.5");
-    expect(ccrConfig.Providers.map((provider: { name: string }) => provider.name)).toEqual(["openai", "aicodemirror"]);
-  });
-
-  it("restarts a running CCR service after config changes", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    await mkdir(ccrDir, { recursive: true });
-    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ PORT: 3456, Providers: [] }), "utf8");
-    const testEndpoint = vi.fn().mockResolvedValue(true);
-    const restart = vi.fn().mockResolvedValue(undefined);
-
-    await expect(reloadCcrRuntimeWhenChanged(true, context, { testEndpoint, restart, allowCustomHomeDir: true })).resolves.toBe(true);
-
-    expect(restart).toHaveBeenCalledOnce();
-    expect(testEndpoint).toHaveBeenCalledWith("http://127.0.0.1:3456");
-  });
-
-  it("restarts a running CCR service when a preset was written after service start", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    const presetDir = path.join(ccrDir, "presets", "ccrLate");
-    await mkdir(presetDir, { recursive: true });
-    await writeFile(path.join(ccrDir, "config.json"), JSON.stringify({ PORT: 3456, Providers: [] }), "utf8");
-    await writeFile(path.join(ccrDir, ".claude-code-router.pid"), "12345", "utf8");
-    await writeFile(path.join(presetDir, "manifest.json"), JSON.stringify({ name: "ccrLate" }), "utf8");
-    const serviceStart = new Date("2026-01-01T00:00:00.000Z");
-    const presetWrite = new Date("2026-01-01T00:00:05.000Z");
-    await utimes(path.join(presetDir, "manifest.json"), presetWrite, presetWrite);
-    const testEndpoint = vi.fn().mockResolvedValue(true);
-    const restart = vi.fn().mockResolvedValue(undefined);
-    const getProcessStartTimeMs = vi.fn().mockResolvedValue(serviceStart.getTime());
-
-    await expect(reloadCcrRuntimeIfPresetOutdated("ccrLate", context, {
-      testEndpoint,
-      restart,
-      getProcessStartTimeMs,
-      allowCustomHomeDir: true
-    })).resolves.toBe(true);
-
-    expect(restart).toHaveBeenCalledOnce();
-    expect(getProcessStartTimeMs).toHaveBeenCalledWith(12345);
-    expect(testEndpoint).toHaveBeenCalledWith("http://127.0.0.1:3456");
-  });
-
   it("lists profiles sorted by name", async () => {
     const context = await createContext();
     await createLoginProfile({ name: "zeta" }, context);
@@ -271,69 +116,24 @@ describe("profiles", () => {
 
   it("reads legacy PowerShell JSON files with a UTF-8 BOM", async () => {
     const context = await createContext();
-    const dir = path.join(getProfilesRoot(context), "legacyCcr");
+    const dir = path.join(getProfilesRoot(context), "legacyApi");
     await mkdir(dir, { recursive: true });
     await writeFile(
       path.join(dir, "settings.json"),
-      JSON.stringify({ theme: "dark", env: { ANTHROPIC_BASE_URL: "http://127.0.0.1:3456/preset/legacyCcr" } }),
+      JSON.stringify({ theme: "dark", env: { ANTHROPIC_BASE_URL: "https://example.test/anthropic", ANTHROPIC_AUTH_TOKEN: "secret", ANTHROPIC_MODEL: "claude-test" } }),
       "utf8"
     );
     await writeFile(
       path.join(dir, ".ccp.json"),
-      String.fromCharCode(0xfeff) + JSON.stringify({ version: 1, type: "ccr", ccrRoute: "openai,gpt-5.5" }),
+      String.fromCharCode(0xfeff) + JSON.stringify({ version: 1, type: "api", createdAt: "2026-01-01T00:00:00.000Z" }),
       "utf8"
     );
 
     const profiles = await listProfiles(context);
-    expect(profiles[0].name).toBe("legacyCcr");
-    expect(profiles[0].type).toBe("ccr");
-    expect(profiles[0].model).toBe("ccr:openai,gpt-5.5");
+    expect(profiles[0].name).toBe("legacyApi");
+    expect(profiles[0].type).toBe("api");
+    expect(profiles[0].model).toBe("claude-test");
   });
-
-  it("removes legacy model overrides from CCR profiles before launch", async () => {
-    const context = await createContext();
-    const ccrDir = path.join(context.homeDir, ".claude-code-router");
-    await mkdir(ccrDir, { recursive: true });
-    await writeFile(
-      path.join(ccrDir, "config.json"),
-      JSON.stringify({
-        HOST: "127.0.0.1",
-        PORT: 65432,
-        Providers: [{ name: "openai", api_base_url: "https://example.test", models: ["gpt-5.5"] }]
-      }),
-      "utf8"
-    );
-
-    const dir = path.join(getProfilesRoot(context), "legacyGpt");
-    await mkdir(dir, { recursive: true });
-    await writeFile(
-      path.join(dir, "settings.json"),
-      JSON.stringify({
-        theme: "dark",
-        env: {
-          ANTHROPIC_BASE_URL: "http://127.0.0.1:3456/preset/legacyGpt",
-          ANTHROPIC_AUTH_TOKEN: "ccr-local-secret",
-          ANTHROPIC_MODEL: "gpt-5.5",
-          ANTHROPIC_DEFAULT_SONNET_MODEL: "gpt-5.5",
-          CLAUDE_CODE_SUBAGENT_MODEL: "gpt-5.5"
-        }
-      }),
-      "utf8"
-    );
-    await writeFile(
-      path.join(dir, ".ccp.json"),
-      JSON.stringify({ version: 1, type: "ccr", ccrPreset: "legacyGpt", ccrRoute: "openai,gpt-5.5", autoStart: false }),
-      "utf8"
-    );
-
-    await expect(ensureCcrProfileGateway(dir, "legacyGpt", context)).rejects.toThrow("CCR endpoint is not reachable");
-
-    const settings = JSON.parse(await readFile(path.join(dir, "settings.json"), "utf8"));
-    expect(settings.env.ANTHROPIC_MODEL).toBeUndefined();
-    expect(settings.env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
-    expect(settings.env.CLAUDE_CODE_SUBAGENT_MODEL).toBeUndefined();
-  });
-
 
   it("parses sync session selections", () => {
     expect(parseSelectionText("1 3-4", 5)).toEqual([0, 2, 3]);

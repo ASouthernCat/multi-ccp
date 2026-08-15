@@ -1,17 +1,16 @@
-import { ensureCcrProviderTemplate } from "./ccr.js";
 import { CcpError } from "./errors.js";
-import { createApiProfileFromEnv, createCcrProfile, createGatewayProfile } from "./profiles.js";
+import { createApiProfileFromEnv, createGatewayProfile } from "./profiles.js";
 import { readGatewayUpstreamConfig } from "./gateway-upstreams.js";
 import type { ProfileSummary } from "./types.js";
 import type { PathContext } from "./paths.js";
 
-export type ProfilePresetType = "api" | "ccr" | "login" | "custom-api" | "manual-ccr" | "gateway";
+export type ProfilePresetType = "api" | "login" | "custom-api" | "gateway";
 
 export interface BaseProfilePreset {
   id: string;
   label: string;
   type: ProfilePresetType;
-  category: "api" | "ccr" | "custom" | "login" | "gateway";
+  category: "api" | "custom" | "login" | "gateway";
   defaultProfileName: string;
   description: string;
   modelSummary?: string;
@@ -24,28 +23,8 @@ export interface ApiProfilePreset extends BaseProfilePreset {
   env: Record<string, string>;
 }
 
-export interface CcrProviderTemplate {
-  name: string;
-  api_base_url: string;
-  api_key?: string;
-  models: string[];
-}
-
-export interface CcrProfilePreset extends BaseProfilePreset {
-  type: "ccr";
-  ccrPreset: string;
-  ccrRoute: string;
-  tokenDefault?: string;
-  providerTemplate?: CcrProviderTemplate;
-}
-
-
 export interface CustomApiProfilePreset extends BaseProfilePreset {
   type: "custom-api";
-}
-
-export interface ManualCcrProfilePreset extends BaseProfilePreset {
-  type: "manual-ccr";
 }
 
 export interface LoginProfilePreset extends BaseProfilePreset {
@@ -56,7 +35,7 @@ export interface GatewayProfilePreset extends BaseProfilePreset {
   type: "gateway";
 }
 
-export type BuiltinProfilePreset = ApiProfilePreset | CcrProfilePreset | CustomApiProfilePreset | ManualCcrProfilePreset | LoginProfilePreset | GatewayProfilePreset;
+export type BuiltinProfilePreset = ApiProfilePreset | CustomApiProfilePreset | LoginProfilePreset | GatewayProfilePreset;
 
 export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
   {
@@ -134,36 +113,6 @@ export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
     sortOrder: 90
   },
   {
-    id: "ccr-gpt",
-    label: "CCR GPT",
-    type: "ccr",
-    category: "ccr",
-    defaultProfileName: "ccr-gpt",
-    description: "CCR 预设配置，自动配置 AICodeMirror GPT 路由。",
-    modelSummary: "aicodemirror,gpt-5.5",
-    tags: ["CCR", "GPT", "Router"],
-    sortOrder: 40,
-    ccrPreset: "ccr-gpt",
-    ccrRoute: "aicodemirror,gpt-5.5",
-    tokenDefault: "ccr-local-secret",
-    providerTemplate: {
-      name: "aicodemirror",
-      api_base_url: "https://api.aicodemirror.com/api/codex/backend-api/codex/v1/chat/completions",
-      models: ["gpt-5.5"]
-    }
-  },
-  {
-    id: "manual-ccr",
-    label: "Manual CCR",
-    type: "manual-ccr",
-    category: "custom",
-    defaultProfileName: "ccr-profile",
-    description: "手动选择或输入 CCR 路由。",
-    modelSummary: "Manual route",
-    tags: ["CCR", "Manual"],
-    sortOrder: 100
-  },
-  {
     id: "login",
     label: "Claude Login",
     type: "login",
@@ -179,8 +128,7 @@ export const PROFILE_PRESETS: BuiltinProfilePreset[] = [
 export function listProfilePresets(): BuiltinProfilePreset[] {
   return PROFILE_PRESETS.map((preset) => ({
     ...preset,
-    ...(preset.type === "api" ? { env: { ...(preset as ApiProfilePreset).env } } : {}),
-    ...(preset.type === "ccr" && preset.providerTemplate ? { providerTemplate: { ...preset.providerTemplate, models: [...preset.providerTemplate.models] } } : {})
+    ...(preset.type === "api" ? { env: { ...(preset as ApiProfilePreset).env } } : {})
   }));
 }
 
@@ -209,28 +157,6 @@ export async function createApiProfileFromPreset(
       ...preset.env,
       ANTHROPIC_AUTH_TOKEN: input.token.trim() || "REPLACE_WITH_FULL_TOKEN"
     }
-  }, context);
-}
-
-export async function createCcrProfileFromPreset(
-  input: { presetId: string; name?: string; token?: string; providerApiKey?: string },
-  context: PathContext = {}
-): Promise<ProfileSummary> {
-  const preset = getProfilePreset(input.presetId);
-  if (preset.type !== "ccr") {
-    throw new CcpError(`Preset '${input.presetId}' is not a CCR preset.`);
-  }
-
-  if (preset.providerTemplate) {
-    await ensureCcrProviderTemplate(preset.providerTemplate, { apiKey: input.providerApiKey }, context);
-  }
-
-  return createCcrProfile({
-    name: input.name?.trim() || preset.defaultProfileName,
-    presetName: preset.ccrPreset,
-    presetId: preset.id,
-    route: preset.ccrRoute,
-    token: input.token?.trim() || preset.tokenDefault || "ccr-local-secret"
   }, context);
 }
 

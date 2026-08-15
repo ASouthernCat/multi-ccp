@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- 移除 Claude Code Router（CCR）集成：不再提供 `ccp ccr` / `add-ccr`、CCR Profile 预设、Web UI CCR 面板与相关 API；OpenAI 兼容供应商请使用内置 Gateway。
+- Gateway Profile 统一只使用 `anthropic.ccp-*` 别名，不再兼容旧 `claude-ccp-*` 别名；启动时会移除固定上下文窗口和 compact 覆盖项，使 `/autocompact` 保持 Claude Code 默认的 `auto`，实际上下文限制由上游响应决定。
+- Gateway 接受 Claude Code 2.1.233 自动模式分类请求发送的 `thinking: { type: "disabled" }`，同时继续拒绝 adaptive、enabled thinking 及其他无效字段，避免本地 `400` 被客户端误报为模型暂时不可用。
+- Gateway 内部协议版本升级到 v5，升级后会自动替换受 multi-ccp 管理的旧 v4 进程，确保统一别名、默认 auto-compact 和 Claude Code 2.1.233 请求校验立即生效；旧 Profile 首次启动会按当前规范重建派生配置和本地模型目录。
+
 ## 0.3.5
 
 - Gateway Upstream 创建与编辑流程现在可以直接从 base URL 的 `/models` 端点获取模型；CLI 支持交互式多选，Web UI 提供可搜索的选择面板、已配置状态和批量添加操作。

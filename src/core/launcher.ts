@@ -4,9 +4,9 @@ import path from "node:path";
 import { CcpError } from "./errors.js";
 import { getHomeDir, getHomeWorkDir, getMainClaudeDir, type PathContext } from "./paths.js";
 import { resolveConfigDir } from "./profiles.js";
-import { ensureCcrProfileGateway } from "./ccr.js";
 import { ensureBuiltinGatewayProfile } from "./gateway-lifecycle.js";
 import { readMeta } from "./settings.js";
+import { applyGatewayContextPolicy } from "./gateway-claude.js";
 
 const MODEL_ENV_NAMES = [
   "ANTHROPIC_MODEL",
@@ -37,7 +37,6 @@ export interface LaunchOptions {
   cwd?: string;
   confirmMainConfigCwd?: (details: { currentDir: string; fallbackDir: string; profileName: string }) => Promise<boolean>;
   runtimeDeps?: {
-    ensureCcrProfileGateway?: typeof ensureCcrProfileGateway;
     ensureBuiltinGatewayProfile?: typeof ensureBuiltinGatewayProfile;
   };
 }
@@ -46,13 +45,16 @@ function normalizePath(value: string): string {
   return path.resolve(value).replace(/[\\/]+$/, "").toLowerCase();
 }
 
-function buildLaunchEnv(profileDir: string, profileName: string): NodeJS.ProcessEnv {
+function buildLaunchEnv(profileDir: string, profileName: string, gatewayProfile: boolean): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const name of MODEL_ENV_NAMES) {
     delete env[name];
   }
   env.CLAUDE_CONFIG_DIR = profileDir;
   env.CCP_PROFILE = profileName;
+  if (gatewayProfile) {
+    applyGatewayContextPolicy(env);
+  }
   return env;
 }
 
@@ -83,13 +85,7 @@ export async function prepareClaudeLaunch(options: LaunchOptions): Promise<{
 }> {
   const config = await resolveConfigDir(options.name, { allowMain: false, context: options.context });
   const meta = await readMeta(config.dir);
-  if (meta?.type === "ccr") {
-    await (options.runtimeDeps?.ensureCcrProfileGateway ?? ensureCcrProfileGateway)(
-      config.dir,
-      options.name,
-      options.context
-    );
-  } else if (meta?.type === "gateway") {
+  if (meta?.type === "gateway") {
     await (options.runtimeDeps?.ensureBuiltinGatewayProfile ?? ensureBuiltinGatewayProfile)(
       config.dir,
       options.name,
@@ -101,7 +97,7 @@ export async function prepareClaudeLaunch(options: LaunchOptions): Promise<{
     command: "claude",
     args: options.claudeArgs ?? [],
     cwd: await resolveLaunchCwd(options),
-    env: buildLaunchEnv(config.dir, options.name)
+    env: buildLaunchEnv(config.dir, options.name, meta?.type === "gateway")
   };
 }
 

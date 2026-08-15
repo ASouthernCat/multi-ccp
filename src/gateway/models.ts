@@ -2,24 +2,17 @@ import type { GatewayRouteSnapshot } from "./registry.js";
 import { invalidRequest } from "./errors.js";
 
 /** Claude Code only lists model ids beginning with `claude` or `anthropic`. */
-export const CCP_MODEL_ALIAS_PREFIX = "claude-ccp-";
-export const CCP_MODEL_OPTION_ALIAS_PREFIX = "claude-ccp-option-";
-export const CCP_DEFAULT_MODEL_ALIAS_PREFIX = "claude-ccp-default-";
+export const CCP_MODEL_OPTION_ALIAS_PREFIX = "anthropic.ccp-option-";
+export const CCP_DEFAULT_MODEL_ALIAS_PREFIX = "anthropic.ccp-default-";
+export const CCP_MODEL_NAMESPACE_PREFIX = "anthropic.ccp-";
 /** Claude Code hot-reloads availableModels entries in this provider namespace. */
 export const CCP_LIVE_MODEL_ALIAS_PREFIX = "anthropic.";
-/** Legacy stable Default alias written by pre-release Gateway v4 builds. */
-export const CCP_DEFAULT_MODEL_ALIAS = "claude-ccp-default";
 
 export interface GatewayModelDiscoveryEntry {
   type: "model";
   id: string;
   display_name: string;
   created_at: string;
-}
-
-/** Encode the provider model id without introducing delimiter collisions. */
-export function gatewayModelAlias(model: string): string {
-  return `${CCP_MODEL_ALIAS_PREFIX}${Buffer.from(model, "utf8").toString("base64url")}`;
 }
 
 /** Keep explicit picker choices distinct from the stable Default route. */
@@ -39,7 +32,11 @@ export function gatewayDefaultModelAlias(model: string): string {
  */
 export function buildGatewayLiveModelAliases(models: readonly string[]): ReadonlyMap<string, string> {
   const aliases = new Map<string, string>();
-  const used = new Set(models);
+  const used = new Set([
+    ...models,
+    ...models.map(gatewayModelOptionAlias),
+    ...models.map(gatewayDefaultModelAlias)
+  ]);
   for (const model of models) {
     let alias = `${CCP_LIVE_MODEL_ALIAS_PREFIX}${model}`;
     if (used.has(alias)) {
@@ -64,49 +61,45 @@ export function decodeGatewayLiveModelAlias(value: string, models: readonly stri
   return undefined;
 }
 
-export function decodeGatewayModelAlias(value: string): string | undefined {
-  return decodeGatewayAlias(value, CCP_MODEL_ALIAS_PREFIX, gatewayModelAlias);
-}
-
 export function decodeGatewayModelOptionAlias(value: string): string | undefined {
-  return decodeGatewayAlias(value, CCP_MODEL_OPTION_ALIAS_PREFIX, gatewayModelOptionAlias);
+  return decodeGatewayAlias(value, CCP_MODEL_OPTION_ALIAS_PREFIX);
 }
 
 export function decodeGatewayDefaultModelAlias(value: string): string | undefined {
-  return decodeGatewayAlias(value, CCP_DEFAULT_MODEL_ALIAS_PREFIX, gatewayDefaultModelAlias);
+  return decodeGatewayAlias(value, CCP_DEFAULT_MODEL_ALIAS_PREFIX);
 }
 
-function decodeGatewayAlias(
-  value: string,
-  prefix: string,
-  encode: (model: string) => string
-): string | undefined {
+function decodeGatewayAlias(value: string, prefix: string): string | undefined {
   if (!value.startsWith(prefix)) return undefined;
   const encoded = value.slice(prefix.length);
   if (!encoded || !/^[A-Za-z0-9_-]+$/.test(encoded)) return undefined;
   try {
     const model = Buffer.from(encoded, "base64url").toString("utf8");
-    return model && encode(model) === value ? model : undefined;
+    return model && `${prefix}${Buffer.from(model, "utf8").toString("base64url")}` === value
+      ? model
+      : undefined;
   } catch {
     return undefined;
   }
+}
+
+export function reservedGatewayModelPrefix(value: string): string | undefined {
+  return value.startsWith(CCP_MODEL_NAMESPACE_PREFIX) ? CCP_MODEL_NAMESPACE_PREFIX : undefined;
 }
 
 export function resolveGatewayModel(
   clientModel: string,
   snapshot: Pick<GatewayRouteSnapshot, "config" | "models">
 ): string {
-  if (clientModel === CCP_DEFAULT_MODEL_ALIAS || decodeGatewayDefaultModelAlias(clientModel)) {
+  if (decodeGatewayDefaultModelAlias(clientModel)) {
     return snapshot.config.model;
   }
   if (snapshot.models.includes(clientModel)) return clientModel;
-  const decoded = decodeGatewayModelAlias(clientModel)
-    ?? decodeGatewayModelOptionAlias(clientModel)
+  const decoded = decodeGatewayModelOptionAlias(clientModel)
     ?? decodeGatewayLiveModelAlias(clientModel, snapshot.models);
   if (decoded && snapshot.models.includes(decoded)) return decoded;
   if (
-    clientModel.startsWith(CCP_MODEL_ALIAS_PREFIX)
-    || clientModel.startsWith(CCP_MODEL_OPTION_ALIAS_PREFIX)
+    clientModel.startsWith(CCP_MODEL_NAMESPACE_PREFIX)
     || clientModel.startsWith(CCP_LIVE_MODEL_ALIAS_PREFIX)
   ) {
     throw invalidRequest("model: The selected Gateway model is invalid or is no longer configured for this Upstream.");

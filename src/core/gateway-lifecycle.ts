@@ -17,7 +17,7 @@ import { writeJsonFileAtomic } from "./settings.js";
 import { getGatewayEndpoint, readGatewayRuntimeConfig } from "../gateway/config.js";
 
 export const GATEWAY_SERVICE_NAME = "multi-ccp-gateway";
-export const GATEWAY_PROTOCOL_VERSION = 4;
+export const GATEWAY_PROTOCOL_VERSION = 5;
 const DEFAULT_GATEWAY_LOG_MAX_BYTES = 10 * 1024 * 1024;
 
 export interface GatewayRuntimeState {

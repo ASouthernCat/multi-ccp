@@ -1,4 +1,4 @@
-export type ProfileType = "api" | "login" | "ccr" | "gateway" | "unknown";
+export type ProfileType = "api" | "login" | "gateway" | "unknown";
 
 export type GatewayProvider = "openai" | "openai-compatible";
 
@@ -114,9 +114,6 @@ export interface ProfileMeta {
   createdAt?: string;
   preset?: string;
   endpoint?: string;
-  autoStart?: boolean;
-  ccrPreset?: string;
-  ccrRoute?: string;
   gateway?: GatewayProfileBinding;
 }
 
@@ -146,14 +143,6 @@ export interface CreateApiProfileFromEnvInput {
 
 export interface CreateLoginProfileInput {
   name: string;
-}
-
-export interface CreateCcrProfileInput {
-  name: string;
-  route: string;
-  token: string;
-  presetName?: string;
-  presetId?: string;
 }
 
 export interface CreateGatewayProfileInput {

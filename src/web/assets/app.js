@@ -1,5 +1,5 @@
 const token = document.querySelector('meta[name="ccp-ui-token"]').content;
-const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', ccr: null, gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayLogEntriesById: new Map(), gatewayLogFocus: null, gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], ccrRoutes: [], ccrRoutesReason: '', ccrRoutesMessage: '', presets: [], selectedPreset: 'custom-api', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
+const state = { profiles: [], dashboard: null, selected: null, filter: 'all', query: '', view: 'cards', gateway: null, gatewayLog: null, gatewayTab: 'upstreams', gatewayLogFilter: 'all', gatewayLogEntriesById: new Map(), gatewayLogFocus: null, gatewayDrawerAnimationId: 0, gatewayUpstreamTemplates: [], upstreams: [], presets: [], selectedPreset: 'custom-api', presetQuery: '', presetFilter: 'all', sync: { sourceName: 'main', targetName: '', projects: null, selectedProjectKey: '', scan: null, actions: {}, projectQuery: '', scanning: false, applying: false, requestId: 0, confirm: null, lastResult: null } };
 const $ = (id) => document.getElementById(id);
 const primaryModalHistory = [];
 const primaryModalSuppressedCloseCounts = new Map();
@@ -12,7 +12,7 @@ const api = async (path, options = {}) => {
 };
 function escapeHtml(v) { return String(v ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m])); }
 function tagClass(tag) { if (['Ready', 'Running'].includes(tag))
-    return 'ready'; if (['Need Attention', 'Missing API Key', 'Missing Token', 'Missing Base URL', 'Missing Provider Key', 'Gateway Offline', 'CCR Offline', 'No Token'].includes(tag))
+    return 'ready'; if (['Need Attention', 'Missing API Key', 'Missing Token', 'Missing Base URL', 'Missing Provider Key', 'Gateway Offline', 'No Token'].includes(tag))
     return 'warn'; if (['Invalid', 'Path Missing', 'Conflict'].includes(tag))
     return 'bad'; return ''; }
 function tags(items) { return `<div class="tag-row">${items.slice(0, 3).map(t => `<span class="tag ${tagClass(t)}">${escapeHtml(t)}</span>`).join('')}</div>`; }
@@ -23,8 +23,7 @@ function toast(message) { const el = document.createElement('div'); el.className
 } (region || $('toastRegion')).append(el); setTimeout(() => el.remove(), 3600); }
 function brief(profile) { if (profile.type === 'api')
     return `<div><strong>Model</strong> ${escapeHtml(profile.model || 'Claude Code default')}</div><div><strong>Base</strong> ${escapeHtml(hostname(profile.baseUrl) || 'Missing')}</div><div><strong>API Key</strong> ${profile.tokenStatus === 'set' ? 'Configured' : 'Missing'}</div>`; if (profile.type === 'login')
-    return `<div>Claude account login profile</div><div><strong>Path</strong> ${escapeHtml(shortPath(profile.dir))}</div>`; if (profile.type === 'ccr')
-    return `<div><strong>Preset</strong> ${escapeHtml(profile.meta?.ccrPreset || profile.name)}</div><div><strong>Route</strong> ${escapeHtml(profile.meta?.ccrRoute || 'Not set')}</div><div><strong>Endpoint</strong> ${escapeHtml(hostname(profile.baseUrl))}</div>`; if (profile.type === 'gateway')
+    return `<div>Claude account login profile</div><div><strong>Path</strong> ${escapeHtml(shortPath(profile.dir))}</div>`; if (profile.type === 'gateway')
     return `<div><strong>Upstream</strong> ${escapeHtml(profile.meta?.gateway?.upstreamId || 'Missing')}</div><div><strong>Default model</strong> ${escapeHtml(profile.model || 'Missing')}</div><div><strong>Provider</strong> ${escapeHtml(profile.gatewayUpstream?.provider || 'Unavailable')}</div>`; if (profile.type === 'main')
     return `<div>Claude Code default configuration</div><div><strong>Path</strong> ${escapeHtml(shortPath(profile.dir))}</div>`; return `<div><strong>Path</strong> ${escapeHtml(shortPath(profile.dir))}</div>`; }
 function hostname(url) { try {
@@ -39,7 +38,7 @@ function bindMetricAction(element, action) { element.onclick = action; element.o
     event.preventDefault();
     action();
 } }; }
-function renderSummary() { const d = state.dashboard?.profiles || {}; const c = state.dashboard?.ccr || {}; const g = state.dashboard?.gateway || {}; const ccrStatus = c.statusText || (c.running ? 'Running' : 'Offline'); const gatewayStatus = g.statusText || (g.running ? 'Running' : 'Offline'); const metrics = [['Profiles', d.total ?? 0, 'all'], ['API', d.api ?? 0, 'api'], ['Gateway', d.gateway ?? 0, 'gateway'], ['Login', d.login ?? 0, 'login'], ['CCR', d.ccr ?? 0, 'ccr'], ['Attention', d.needsAttention ?? 0, 'attention']]; $('summaryGrid').innerHTML = metrics.map(([label, val, kind]) => `<article class="metric ${kind}"><span>${label}</span><b>${val}</b></article>`).join('') + `<article class="metric ccr-status" role="button" tabindex="0" id="ccrMetric" title="打开 CCR 管理" aria-label="打开 CCR 管理，当前状态 ${escapeHtml(ccrStatus)}"><span>CCR</span><b>${escapeHtml(ccrStatus)}</b></article><article class="metric gateway-service ${g.running ? 'running' : ''}" role="button" tabindex="0" id="gatewayMetric" title="打开 Gateway 管理" aria-label="打开 Gateway 管理，当前状态 ${escapeHtml(gatewayStatus)}"><span>Gateway Service</span><b>${escapeHtml(gatewayStatus)}</b></article>`; bindMetricAction($('ccrMetric'), openCcrPanel); bindMetricAction($('gatewayMetric'), openGatewayPanel); }
+function renderSummary() { const d = state.dashboard?.profiles || {}; const g = state.dashboard?.gateway || {}; const gatewayStatus = g.statusText || (g.running ? 'Running' : 'Offline'); const metrics = [['Profiles', d.total ?? 0, 'all'], ['API', d.api ?? 0, 'api'], ['Gateway', d.gateway ?? 0, 'gateway'], ['Login', d.login ?? 0, 'login'], ['Attention', d.needsAttention ?? 0, 'attention']]; $('summaryGrid').innerHTML = metrics.map(([label, val, kind]) => `<article class="metric ${kind}"><span>${label}</span><b>${val}</b></article>`).join('') + `<article class="metric gateway-service ${g.running ? 'running' : ''}" role="button" tabindex="0" id="gatewayMetric" title="打开 Gateway 管理" aria-label="打开 Gateway 管理，当前状态 ${escapeHtml(gatewayStatus)}"><span>Gateway Service</span><b>${escapeHtml(gatewayStatus)}</b></article>`; bindMetricAction($('gatewayMetric'), openGatewayPanel); }
 function iconSvg(name) {
     const icons = {
         home: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11.4 12 4l8 7.4v7.1a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 18.5v-7.1Z"/><path d="M9 20v-6h6v6"/></svg>',
@@ -85,7 +84,7 @@ function bindSecretToggles(scope = document) {
     });
 }
 function hydrateIcons() { document.querySelectorAll('[data-icon]').forEach(el => { el.innerHTML = iconSvg(el.dataset.icon); }); }
-function iconFor(type) { return iconSvg({ main: 'home', api: 'key', gateway: 'route', login: 'user', ccr: 'route', unknown: 'circleHelp' }[type] || 'circleHelp'); }
+function iconFor(type) { return iconSvg({ main: 'home', api: 'key', gateway: 'route', login: 'user', unknown: 'circleHelp' }[type] || 'circleHelp'); }
 const providerIcons = {
     aicodemirror: '/icons/aicodemirror.ico',
     anthropic: '/icons/anthropic.svg',
@@ -130,14 +129,13 @@ function profileBrand(p) {
             return 'openai';
         return inferProviderBrand(upstream.id, upstream.endpointUrl, upstream.models, p.model);
     }
-    if (p.type === 'api' || p.type === 'ccr')
-        return inferProviderBrand(p.name, p.baseUrl, p.model, p.meta?.ccrRoute, p.tags);
+    if (p.type === 'api')
+        return inferProviderBrand(p.name, p.baseUrl, p.model, p.tags);
     return '';
 }
 function profileIcon(p) { return brandIconMarkup(profileBrand(p), iconFor(p.type), 'profile-brand-logo'); }
 function actionHint(p) { if (p.type === 'api')
-    return p.tokenStatus === 'set' ? 'API Key ready' : 'Needs API Key'; if (p.type === 'ccr')
-    return p.statusText; if (p.type === 'login')
+    return p.tokenStatus === 'set' ? 'API Key ready' : 'Needs API Key'; if (p.type === 'login')
     return 'Login isolated'; if (p.type === 'main')
     return 'Default config'; return p.statusText; }
 function renderBoard(options = {}) { const board = $('profileBoard'); const items = filtered(); if (!items.length) {
@@ -149,7 +147,7 @@ function renderBoard(options = {}) { const board = $('profileBoard'); const item
 function restoreBoardFocus(options) { if (!options.focusSearch)
     return; const input = $('profileBoard').querySelector('#searchInput'); if (!input)
     return; input.focus(); const pos = input.value.length; input.setSelectionRange(pos, pos); }
-function boardToolbar() { return `<div class="board-toolbar"><div class="board-tools-left"><div class="search-wrap"><span>${iconSvg('search')}</span><input id="searchInput" type="search" placeholder="搜索 profile、模型、endpoint..." value="${escapeHtml(state.query)}" /></div><div class="filters" id="typeFilters"><button class="chip ${state.filter === 'all' ? 'active' : ''}" data-filter="all" type="button">All</button><button class="chip ${state.filter === 'main' ? 'active' : ''}" data-filter="main" type="button">Main</button><button class="chip ${state.filter === 'api' ? 'active' : ''}" data-filter="api" type="button">API</button><button class="chip ${state.filter === 'gateway' ? 'active' : ''}" data-filter="gateway" type="button">Gateway</button><button class="chip ${state.filter === 'login' ? 'active' : ''}" data-filter="login" type="button">Login</button><button class="chip ${state.filter === 'ccr' ? 'active' : ''}" data-filter="ccr" type="button">CCR</button><button class="chip ${state.filter === 'attention' ? 'active' : ''}" data-filter="attention" type="button">Attention</button></div></div><div class="board-tools-right"><button class="chip ${state.view === 'cards' ? 'active' : ''}" id="cardViewBtn" type="button">Cards</button><button class="chip ${state.view === 'list' ? 'active' : ''}" id="listViewBtn" type="button">List</button></div></div>`; }
+function boardToolbar() { return `<div class="board-toolbar"><div class="board-tools-left"><div class="search-wrap"><span>${iconSvg('search')}</span><input id="searchInput" type="search" placeholder="搜索 profile、模型、endpoint..." value="${escapeHtml(state.query)}" /></div><div class="filters" id="typeFilters"><button class="chip ${state.filter === 'all' ? 'active' : ''}" data-filter="all" type="button">All</button><button class="chip ${state.filter === 'main' ? 'active' : ''}" data-filter="main" type="button">Main</button><button class="chip ${state.filter === 'api' ? 'active' : ''}" data-filter="api" type="button">API</button><button class="chip ${state.filter === 'gateway' ? 'active' : ''}" data-filter="gateway" type="button">Gateway</button><button class="chip ${state.filter === 'login' ? 'active' : ''}" data-filter="login" type="button">Login</button><button class="chip ${state.filter === 'attention' ? 'active' : ''}" data-filter="attention" type="button">Attention</button></div></div><div class="board-tools-right"><button class="chip ${state.view === 'cards' ? 'active' : ''}" id="cardViewBtn" type="button">Cards</button><button class="chip ${state.view === 'list' ? 'active' : ''}" id="listViewBtn" type="button">List</button></div></div>`; }
 function bindBoardControls(scope) { const search = scope.querySelector('#searchInput'); if (search)
     search.oninput = e => { state.query = e.target.value; renderBoard({ focusSearch: true }); }; const filters = scope.querySelector('#typeFilters'); if (filters)
     filters.onclick = e => { if (!e.target.dataset.filter)
@@ -157,25 +155,21 @@ function bindBoardControls(scope) { const search = scope.querySelector('#searchI
     card.onclick = () => { state.view = 'cards'; renderBoard(); }; const list = scope.querySelector('#listViewBtn'); if (list)
     list.onclick = () => { state.view = 'list'; renderBoard(); }; }
 function renderCards(arr) { return `<div class="cards">${arr.map(p => `<article class="profile-card ${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><div class="card-top"><div class="profile-icon ${p.type}">${profileIcon(p)}</div><div class="card-title"><h3>${escapeHtml(p.name)}</h3><p>${escapeHtml(actionHint(p))}</p></div></div>${tags(p.tags)}<div class="profile-meta">${brief(p)}</div><div class="card-actions"><button class="ghost tiny icon-action" type="button" data-term="${escapeHtml(p.name)}" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button></div><img class="profile-clawd profile-clawd-card" src="/icons/clawd.svg" alt="" aria-hidden="true" draggable="false" /></article>`).join('')}</div>`; }
-function renderList(arr) { return `<table class="list-table"><thead><tr><th>Name</th><th>Tags</th><th>Model / Route</th><th>Base / Path</th><th>Actions</th></tr></thead><tbody>${arr.map(p => `<tr class="${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><td><span class="profile-list-name"><span class="profile-icon ${p.type}">${profileIcon(p)}</span><strong>${escapeHtml(p.name)}</strong></span></td><td>${tags(p.tags)}</td><td>${escapeHtml(p.model || p.meta?.ccrRoute || '—')}</td><td>${escapeHtml(hostname(p.baseUrl) || shortPath(p.dir))}</td><td><span class="profile-list-actions"><button class="ghost tiny icon-action" type="button" data-term="${escapeHtml(p.name)}" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button><img class="profile-clawd profile-clawd-list" src="/icons/clawd.svg" alt="" aria-hidden="true" draggable="false" /></span></td></tr>`).join('')}</tbody></table>`; }
+function renderList(arr) { return `<table class="list-table"><thead><tr><th>Name</th><th>Tags</th><th>Model</th><th>Base / Path</th><th>Actions</th></tr></thead><tbody>${arr.map(p => `<tr class="${state.selected === p.name ? 'selected' : ''}" data-select="${escapeHtml(p.name)}"><td><span class="profile-list-name"><span class="profile-icon ${p.type}">${profileIcon(p)}</span><strong>${escapeHtml(p.name)}</strong></span></td><td>${tags(p.tags)}</td><td>${escapeHtml(p.model || '—')}</td><td>${escapeHtml(hostname(p.baseUrl) || shortPath(p.dir))}</td><td><span class="profile-list-actions"><button class="ghost tiny icon-action" type="button" data-term="${escapeHtml(p.name)}" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button><img class="profile-clawd profile-clawd-list" src="/icons/clawd.svg" alt="" aria-hidden="true" draggable="false" /></span></td></tr>`).join('')}</tbody></table>`; }
 function updateBoardSelection(name) {
     const board = $('profileBoard');
     if (!board)
         return;
     board.querySelectorAll('[data-select]').forEach(element => element.classList.toggle('selected', element.dataset.select === name));
 }
-async function selectProfile(name) { const data = await api(`/api/profiles/${encodeURIComponent(name)}`); if (data.profile?.type === 'ccr')
-    await loadRoutes(); state.selected = name; $('drawer').inert = false; $('drawer').setAttribute('aria-hidden', 'false'); renderDrawer(data.profile); updateBoardSelection(name); $('workspace').classList.add('drawer-open'); }
+async function selectProfile(name) { const data = await api(`/api/profiles/${encodeURIComponent(name)}`); state.selected = name; $('drawer').inert = false; $('drawer').setAttribute('aria-hidden', 'false'); renderDrawer(data.profile); updateBoardSelection(name); $('workspace').classList.add('drawer-open'); }
 function renderDrawer(p) { const env = p.settings?.env || {}; $('drawer').innerHTML = `<div class="drawer-rail"><button class="icon-btn" id="drawerClose" type="button" title="关闭">×</button></div><div class="drawer-fixed"><p class="eyebrow">${escapeHtml(p.type)} profile</p><h2>${escapeHtml(p.name)}</h2>${tags(p.tags)}<div class="drawer-section launch-section"><p class="eyebrow">launch</p><div class="command"><code>${escapeHtml(p.startCommand)}</code><span class="command-actions"><button class="ghost tiny" id="copyStart">Copy</button><button class="ghost tiny icon-action" id="termStart" type="button" title="Open Terminal">${iconSvg('terminal')}<span>Terminal</span></button></span></div></div></div><div class="drawer-scroll"><div class="profile-summary"><div class="drawer-section profile-info"><div class="kv"><span>Status</span><strong>${escapeHtml(p.statusText)}</strong><span>Path</span><strong><button class="path-link" id="revealSettings" type="button" title="在文件管理器中显示">${escapeHtml(p.settingsPath)}</button></strong></div>${fullConfigBlock(p)}</div></div>${settingsForm(p, env)}<div class="drawer-section drawer-sync-section"><p class="eyebrow">sessions</p><button class="ghost icon-action" id="openSyncWorkspace" type="button">${iconSvg('history')}<span>Sync Workspace</span></button><p class="hint">在 profile 之间可视化同步项目会话日志。</p></div>${p.type !== 'main' ? `<div class="drawer-section"><p class="eyebrow">danger zone</p><p class="hint">删除操作不可撤销。请输入 profile 名称确认。</p><div class="danger-actions"><input id="deleteConfirm" placeholder="${escapeHtml(p.name)}"/><button class="ghost" id="deleteBtn">Delete Profile</button></div></div>` : ''}</div>`; $('drawerClose').onclick = closeDrawer; $('copyStart').onclick = () => copy(p.startCommand); $('termStart').onclick = () => launchTerminal(p.name); $('revealSettings').onclick = () => revealSettings(p.name); $('openSyncWorkspace').onclick = () => openSyncWorkspace(p.name); bindSecretToggles($('drawer')); if (p.type === 'api')
-    void hydrateProfileApiKey(p.name); const openCcr = $('openCcrUiFromDrawer'); if (openCcr)
-    openCcr.onclick = e => { e.preventDefault(); openCcrUi(); }; const openGateway = $('openGatewayFromDrawer'); if (openGateway)
+    void hydrateProfileApiKey(p.name); const openGateway = $('openGatewayFromDrawer'); if (openGateway)
     openGateway.onclick = openGatewayPanel; if (p.type === 'gateway')
     bindGatewayBinding('editGateway', p.meta?.gateway?.upstreamId, p.meta?.gateway?.model); const save = $('saveSettings'); if (save)
     save.onclick = () => saveProfile(p).catch(err => toast(err.message)); const del = $('deleteBtn'); if (del)
     del.onclick = () => deleteProfile(p.name); }
 function closeDrawer() { state.selected = null; updateBoardSelection(null); $('workspace').classList.remove('drawer-open'); $('drawer').setAttribute('aria-hidden', 'true'); $('drawer').inert = true; }
-function ccrRouteOptions(selected = '') { const routes = state.ccrRoutes || []; if (!routes.length)
-    return `<option value="">${escapeHtml(state.ccrRoutesMessage || '没有可用 CCR 路由')}</option>`; const missing = selected && !routes.includes(selected) ? `<option value="" selected>当前路由不可用：${escapeHtml(selected)}</option>` : ''; const placeholder = selected && routes.includes(selected) ? '<option value="">选择模型路由</option>' : '<option value="" selected>选择模型路由</option>'; return [missing || placeholder, ...routes.map(route => `<option value="${escapeHtml(route)}" ${route === selected ? 'selected' : ''}>${escapeHtml(route)}</option>`)].join(''); }
 function fullConfigBlock(p) { const config = { settings: p.settings || {}, ...(p.meta ? { ccp: p.meta } : {}) }; return `<details class="preset-config drawer-config"><summary>完整配置</summary><pre>${escapeHtml(JSON.stringify(config, null, 2))}</pre></details>`; }
 const gatewayChatCompatibilityKeys = ['instructionRole', 'maxTokensField', 'supportsStop', 'supportsSampling', 'parallelToolCalls', 'streamUsage', 'reasoningEffort', 'structuredOutput'];
 const gatewayResponsesCompatibilityKeys = ['instructions', 'maxOutputTokens', 'supportsStop', 'supportsSampling', 'parallelToolCalls', 'toolStrict', 'reasoningEffort', 'structuredOutput', 'store'];
@@ -282,15 +276,11 @@ function gatewaySettingsForm(p) {
 function settingsForm(p, env) {
     if (p.type === 'api')
         return `<div class="drawer-section"><p class="eyebrow">settings</p><label>Base URL<input id="baseUrl" value="${escapeHtml(env.ANTHROPIC_BASE_URL || '')}" placeholder="https://api.example.com/anthropic" autocomplete="url"></label><label>API Key${secretInput('apiKey', '', { disabled: true, placeholder: 'Loading...' })}</label><label>Model<input id="model" value="${escapeHtml(env.ANTHROPIC_MODEL || '')}" placeholder="留空使用默认，或完整模型ID如 claude-opus-4-8" autocomplete="off"></label><label>Opus Model<input id="opusModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_OPUS_MODEL || '')}" placeholder="claude-opus-4-8" autocomplete="off"></label><label>Sonnet Model<input id="sonnetModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_SONNET_MODEL || '')}" placeholder="claude-sonnet-5" autocomplete="off"></label><label>Haiku Model<input id="haikuModel" value="${escapeHtml(env.ANTHROPIC_DEFAULT_HAIKU_MODEL || '')}" placeholder="claude-haiku-4-5" autocomplete="off"></label><label>Subagent Model<input id="subagentModel" value="${escapeHtml(env.CLAUDE_CODE_SUBAGENT_MODEL || '')}" placeholder="claude-haiku-4-5" autocomplete="off"></label><button class="primary" id="saveSettings" disabled>Save Settings</button></div>`;
-    if (p.type === 'ccr')
-        return `<div class="drawer-section"><p class="eyebrow">ccr router</p><label>模型路由<select id="route" required>${ccrRouteOptions(p.meta?.ccrRoute || '')}</select></label><div class="kv"><span>Preset</span><strong>${escapeHtml(p.meta?.ccrPreset || p.name)}</strong><span>Endpoint</span><strong>${escapeHtml(env.ANTHROPIC_BASE_URL || p.baseUrl || '')}</strong></div><p class="hint">保存后 multi-ccp 会根据模型路由重新生成该 CCR preset。provider/model 请在 <a href="#" id="openCcrUiFromDrawer">CCR UI</a> 中管理。</p><button class="primary" id="saveSettings">Save Route</button></div>`;
     if (p.type === 'gateway')
         return gatewaySettingsForm(p);
     return `<div class="drawer-section"><p class="eyebrow">settings</p><p class="hint">该 Profile 当前以只读方式展示。</p></div>`;
 }
-async function saveProfile(p) { let body; if (p.type === 'ccr')
-    body = { kind: 'ccr', route: $('route').value };
-else if (p.type === 'gateway') {
+async function saveProfile(p) { let body; if (p.type === 'gateway') {
     body = { kind: 'gateway', upstreamId: $('editGatewayUpstream').value, model: $('editGatewayModel').value };
 }
 else
@@ -342,60 +332,6 @@ async function revealSettings(name) { try {
 catch (err) {
     toast(err.message);
 } }
-async function openCcrUi() { const data = state.ccr || await api('/api/ccr/status'); window.open(data.uiUrl || data.endpoint, '_blank'); }
-function ccrChecklist(data, options = {}) { const items = [['Installed', data.installed], ['Config', data.configExists && data.hasProviders], ...(options.hideRoutes ? [] : [['Routes', Number(data.routeCount || 0) > 0]]), ['Running', data.running]]; return `<div class="ccr-checklist">${items.map(([label, ok]) => `<div class="check ${ok ? 'ok' : 'warn'}"><span>${ok ? '✓' : '!'}</span><strong>${label}</strong></div>`).join('')}</div>`; }
-function withBusyButton(buttonId, busyText, task) { const button = $(buttonId); if (!button)
-    return task(); if (button.dataset.pending === '1')
-    return Promise.resolve(); const prevText = button.textContent; let busyShown = false; button.dataset.pending = '1'; const busyTimer = setTimeout(() => { if ($(buttonId) !== button)
-    return; busyShown = true; button.disabled = true; button.dataset.busy = '1'; button.textContent = busyText; }, 140); return Promise.resolve().then(task).finally(() => { clearTimeout(busyTimer); const next = $(buttonId); if (next === button) {
-    next.disabled = false;
-    delete next.dataset.pending;
-    delete next.dataset.busy;
-    if (busyShown)
-        next.textContent = prevText;
-} }); }
-async function installCcrFromUi() { const pinnedVersion = state.ccr?.pinnedVersion || '2.0.0'; if (!confirm(`Install CCR globally now? This runs: npm install -g @musistudio/claude-code-router@${pinnedVersion}`))
-    return; try {
-    await withBusyButton('ccrInstall', 'Installing…', () => api('/api/ccr/install', { method: 'POST' }));
-    toast('CCR 已安装');
-    await load();
-    await openCcrPanel();
-}
-catch (err) {
-    toast(err.message);
-} }
-async function startCcrFromUi() { try {
-    await api('/api/ccr/start', { method: 'POST' });
-    toast('CCR 启动命令已发送');
-    await load();
-    await openCcrPanel();
-}
-catch (err) {
-    toast(err.message);
-} }
-async function restartCcrFromUi() { try {
-    await api('/api/ccr/restart', { method: 'POST' });
-    toast('CCR 重启命令已发送');
-    await load();
-    await openCcrPanel();
-}
-catch (err) {
-    toast(err.message);
-} }
-async function stopCcrFromUi() { try {
-    await api('/api/ccr/stop', { method: 'POST' });
-    toast('CCR 停止命令已发送');
-    await load();
-    await openCcrPanel();
-}
-catch (err) {
-    toast(err.message);
-} }
-async function openCcrPanel() { const data = await api('/api/ccr/status'); state.ccr = data; const primary = data.nextAction === 'install' ? '<button class="primary" id="ccrInstall">Install CCR</button>' : data.nextAction === 'start' ? '<button class="primary" id="ccrStart">Start CCR</button>' : `<button class="primary" id="ccrOpen">${data.nextAction === 'configure' ? 'Open CCR Setup' : 'Open CCR UI'}</button>`; $('ccrPanel').innerHTML = `<div class="modal-head"><div><p class="eyebrow">claude code router</p><h2>CCR ${escapeHtml(data.statusText || 'Unknown')}</h2></div><button class="icon-btn" onclick="ccrDialog.close()">×</button></div><div class="drawer-section"><div class="kv"><span>Endpoint</span><strong>${escapeHtml(data.endpoint)}</strong><span>Routes</span><strong>${escapeHtml(data.routeCount || 0)}</strong><span>Profiles</span><strong>${escapeHtml(data.profilesUsingCcr || 0)}</strong></div>${ccrChecklist(data)}</div><div class="ccr-version-notice"><span>CCR ${escapeHtml(data.supportedMajor || 2)}.x</span><div><strong>Version compatibility</strong><p>multi-ccp currently pins @musistudio/claude-code-router to ${escapeHtml(data.pinnedVersion || '2.0.0')}. CCR 3.x is a major rewrite and is not compatible; please do not upgrade this dependency independently.</p></div></div><div class="ccr-gateway-guide"><div><strong>Connecting an OpenAI-format provider?</strong><p>Use the built-in Gateway for services that expose OpenAI Responses or Chat Completions. It does not require CCR and supports reusable upstreams, model selection, and compatibility settings.</p></div><button class="ghost icon-action" id="ccrOpenGateway" type="button">${iconSvg('route')}<span>Open Gateway</span></button></div><p class="hint">CCR provider、model、route 配置请在 Claude Code Router UI 中修改。</p><menu class="modal-actions">${primary}<button class="ghost" id="ccrRestart">Restart</button><button class="ghost" id="ccrStop">Stop</button></menu>`; $('ccrDialog').showModal(); const install = $('ccrInstall'); if (install)
-    install.onclick = installCcrFromUi; const start = $('ccrStart'); if (start)
-    start.onclick = startCcrFromUi; const open = $('ccrOpen'); if (open)
-    open.onclick = openCcrUi; const gateway = $('ccrOpenGateway'); if (gateway)
-    gateway.onclick = () => { $('ccrDialog').close(); void openGatewayPanel(); }; $('ccrRestart').onclick = restartCcrFromUi; $('ccrStop').onclick = stopCcrFromUi; }
 function gatewayLogTime(value) { if (!value)
     return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
 function gatewayLogIsExpected(entry) { return entry.kind === 'request' && entry.outcome === 'expected_unsupported'; }
@@ -736,6 +672,35 @@ function bindGatewayCommonModels() {
         select.value = '';
         input.dispatchEvent(new Event('input'));
     };
+}
+function withBusyButton(buttonId, busyText, task) {
+    const button = $(buttonId);
+    if (!button)
+        return task();
+    if (button.dataset.pending === '1')
+        return Promise.resolve();
+    const prevText = button.textContent;
+    let busyShown = false;
+    button.dataset.pending = '1';
+    const busyTimer = setTimeout(() => {
+        if ($(buttonId) !== button)
+            return;
+        busyShown = true;
+        button.disabled = true;
+        button.dataset.busy = '1';
+        button.textContent = busyText;
+    }, 140);
+    return Promise.resolve().then(task).finally(() => {
+        clearTimeout(busyTimer);
+        const next = $(buttonId);
+        if (next === button) {
+            next.disabled = false;
+            delete next.dataset.pending;
+            delete next.dataset.busy;
+            if (busyShown)
+                next.textContent = prevText;
+        }
+    });
 }
 async function fetchUpstreamModels() {
     const button = $('upstreamFetchModels');
@@ -1369,18 +1334,17 @@ catch (err) {
 async function load() { const [d, p, upstreamData] = await Promise.all([api('/api/dashboard'), api('/api/profiles'), api('/api/gateway/upstreams')]); state.dashboard = d; state.profiles = p.profiles; state.upstreams = upstreamData.upstreams || []; renderSummary(); renderBoard(); }
 async function loadPresets() { if (state.presets.length)
     return; const data = await api('/api/presets'); state.presets = data.presets || []; renderPresetPicker(); }
-function presetHasProviderTemplate(preset) { return Boolean(preset?.type === 'ccr' && preset.providerTemplate); }
 function presetIcon(preset) {
-    const brand = preset.id === 'aicodemirror' || preset.id === 'ccr-gpt' ? 'aicodemirror'
+    const brand = preset.id === 'aicodemirror' ? 'aicodemirror'
         : preset.id === 'deepseek' ? 'deepseek'
             : preset.id === 'mimo' ? 'mimo'
                 : preset.type === 'login' ? 'claude' : '';
-    const fallback = iconSvg(preset.type === 'ccr' || preset.type === 'manual-ccr' || preset.type === 'gateway' ? 'route' : preset.type === 'login' ? 'user' : 'key');
+    const fallback = iconSvg(preset.type === 'gateway' ? 'route' : preset.type === 'login' ? 'user' : 'key');
     return brandIconMarkup(brand, fallback, 'preset-brand-logo');
 }
-function presetTypeLabel(type) { return type === 'custom-api' ? 'API' : type === 'manual-ccr' ? 'CCR' : String(type).toUpperCase(); }
-function presetCategory(p) { return p.category || (p.type === 'api' ? 'api' : p.type === 'ccr' ? 'ccr' : p.type === 'login' ? 'login' : 'custom'); }
-function filteredPresets() { const q = state.presetQuery.toLowerCase(); return [...state.presets].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.label.localeCompare(b.label)).filter(p => { const category = presetCategory(p); const okFilter = state.presetFilter === 'all' || category === state.presetFilter; const hay = [p.id, p.label, p.description, p.type, p.category, p.modelSummary, ...(p.tags || []), p.env?.ANTHROPIC_BASE_URL, p.ccrPreset, p.ccrRoute].join(' ').toLowerCase(); return okFilter && (!q || hay.includes(q)); }); }
+function presetTypeLabel(type) { return type === 'custom-api' ? 'API' : String(type).toUpperCase(); }
+function presetCategory(p) { return p.category || (p.type === 'api' ? 'api' : p.type === 'login' ? 'login' : p.type === 'gateway' ? 'gateway' : 'custom'); }
+function filteredPresets() { const q = state.presetQuery.toLowerCase(); return [...state.presets].sort((a, b) => (a.sortOrder ?? 999) - (b.sortOrder ?? 999) || a.label.localeCompare(b.label)).filter(p => { const category = presetCategory(p); const okFilter = state.presetFilter === 'all' || category === state.presetFilter; const hay = [p.id, p.label, p.description, p.type, p.category, p.modelSummary, ...(p.tags || []), p.env?.ANTHROPIC_BASE_URL].join(' ').toLowerCase(); return okFilter && (!q || hay.includes(q)); }); }
 function selectedPreset() { return state.presets.find(p => p.id === state.selectedPreset) || state.presets[0]; }
 function renderPresetPicker() { const list = $('presetList'); if (!list)
     return; const items = filteredPresets(); if (!items.find(p => p.id === state.selectedPreset))
@@ -1398,11 +1362,8 @@ function bindPresetControls() { const search = $('presetSearch'); if (search && 
     filters.onclick = e => { const value = e.target.dataset.presetFilter; if (!value)
         return; state.presetFilter = value; renderPresetPicker(); };
 } document.querySelectorAll('#presetFilters [data-preset-filter]').forEach(btn => btn.classList.toggle('active', btn.dataset.presetFilter === state.presetFilter)); }
-function ccrReadinessBlock(ccrUi = '', preset = null) { const c = state.ccr; if (!c)
-    return ''; const isTemplate = presetHasProviderTemplate(preset); const message = isTemplate ? '该模板会自动写入所需 CCR provider/model；你只需要填写 Provider API Key。' : state.ccrRoutesMessage || (c.ready ? 'CCR 已就绪' : '请先完成 CCR 环境准备'); return `<div class="ccr-readiness"><p class="eyebrow">CCR readiness</p>${ccrChecklist(c, { hideRoutes: isTemplate })}<p class="hint">${escapeHtml(message)}</p><a class="ghost tiny" href="${escapeHtml(ccrUi)}" target="_blank" rel="noreferrer">CCR UI ↗</a><button class="ghost tiny" type="button" id="ccrRefreshRoutes">刷新路由</button></div>`; }
 function presetFullConfig(preset) { const env = preset.env || {}; if (preset.type === 'api')
-    return { env: { ...env, ANTHROPIC_AUTH_TOKEN: '<API_KEY>' } }; if (preset.type === 'ccr')
-    return { ccr: { Providers: [{ ...(preset.providerTemplate || {}), api_key: '<PROVIDER_API_KEY>' }] }, ccp: { type: 'ccr', ccrPreset: preset.ccrPreset, ccrRoute: preset.ccrRoute }, env: { ANTHROPIC_BASE_URL: `http://127.0.0.1:3456/preset/${preset.ccrPreset}`, ANTHROPIC_AUTH_TOKEN: '<CCR_TOKEN>', NO_PROXY: '127.0.0.1,localhost', DISABLE_TELEMETRY: '1', DISABLE_COST_WARNINGS: '1', API_TIMEOUT_MS: '600000' } }; if (preset.type === 'gateway')
+    return { env: { ...env, ANTHROPIC_AUTH_TOKEN: '<API_KEY>' } }; if (preset.type === 'gateway')
     return { profile: { upstreamId: '<UPSTREAM_ID>', model: '<MODEL>', localToken: '<GENERATED>' } }; return {}; }
 function renderPresetDetail() {
     const preset = selectedPreset();
@@ -1413,23 +1374,14 @@ function renderPresetDetail() {
     document.querySelectorAll('[data-kind-fields]').forEach(el => { const active = el.dataset.kindFields === preset.type; el.hidden = !active; el.querySelectorAll('input,select,textarea,button').forEach(field => { field.disabled = !active; }); });
     const env = preset.env || {};
     const rows = [];
-    const ccrUi = state.dashboard?.ccr?.uiUrl || 'http://127.0.0.1:3456/ui/';
     if (env.ANTHROPIC_BASE_URL)
         rows.push(['Base URL', env.ANTHROPIC_BASE_URL]);
-    if (preset.ccrPreset)
-        rows.push(['CCR Preset', preset.ccrPreset]);
-    if (preset.ccrRoute)
-        rows.push(['CCR Route', preset.ccrRoute]);
-    if (preset.providerTemplate) {
-        rows.push(['Provider', preset.providerTemplate.name]);
-        rows.push(['Endpoint', preset.providerTemplate.api_base_url]);
-    }
     if (preset.chatCompletionsUrl)
         rows.push(['Endpoint', preset.chatCompletionsUrl]);
     if (preset.modelSummary)
         rows.push(['Model', preset.modelSummary]);
     const fullConfig = JSON.stringify(presetFullConfig(preset), null, 2);
-    $('presetSummary').innerHTML = `<p class="eyebrow">${escapeHtml(presetTypeLabel(preset.type))} preset</p><h3>${escapeHtml(preset.label)}</h3><p>${escapeHtml(preset.description || '')}</p>${preset.type === 'ccr' || preset.type === 'manual-ccr' ? ccrReadinessBlock(ccrUi, preset) : ''}${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>` : ''}${fullConfig !== '{}' ? `<details class="preset-config"><summary>完整配置</summary><pre>${escapeHtml(fullConfig)}</pre></details>` : ''}`;
+    $('presetSummary').innerHTML = `<p class="eyebrow">${escapeHtml(presetTypeLabel(preset.type))} preset</p><h3>${escapeHtml(preset.label)}</h3><p>${escapeHtml(preset.description || '')}</p>${rows.length ? `<dl>${rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('')}</dl>` : ''}${fullConfig !== '{}' ? `<details class="preset-config"><summary>完整配置</summary><pre>${escapeHtml(fullConfig)}</pre></details>` : ''}`;
     let canCreate = true;
     let unavailableMessage = '';
     if (preset.type === 'gateway') {
@@ -1442,9 +1394,6 @@ function renderPresetDetail() {
         button.hidden = canReturnToGateway;
         button.onclick = openGatewayPanel;
     });
-    const refresh = $('ccrRefreshRoutes');
-    if (refresh)
-        refresh.onclick = () => loadRoutes().then(() => toast('CCR 路由已刷新'));
 }
 function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(() => toast('已刷新')); $('topSyncWorkspace').onclick = () => openSyncWorkspace(state.selected || 'main'); $('drawerClose').onclick = closeDrawer; document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => { resetNewProfileForm(); const dialogId = btn.dataset.dialogClose; if (dialogId === 'newProfileDialog' || dialogId === 'gatewayDialog') closePrimaryModal(dialogId); else $(dialogId).close(); })); document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target !== dialog)
     return; if (dialog.id === 'syncConfirmDialog') {
@@ -1452,66 +1401,21 @@ function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(()
     return;
 } if (dialog.id === 'newProfileDialog')
     resetNewProfileForm(); if (dialog.id === 'newProfileDialog' || dialog.id === 'gatewayDialog') closePrimaryModal(dialog.id); else dialog.close(); })); ['newProfileDialog', 'gatewayDialog'].forEach(id => $(id).addEventListener('close', () => handlePrimaryModalClose(id))); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = () => void openNewProfileDialog(); $('createProfileSubmit').onclick = createProfile; }
-async function loadRoutes() { try {
-    const [status, data] = await Promise.all([api('/api/ccr/status'), api('/api/ccr/routes')]);
-    state.ccr = status;
-    state.ccrRoutes = data.routes || [];
-    state.ccrRoutesReason = data.reason || '';
-    state.ccrRoutesMessage = data.message || '';
-    const list = $('manualCcrRoute');
-    if (list)
-        list.innerHTML = ccrRouteOptions(list.value);
-    renderPresetDetail();
-}
-catch (err) {
-    state.ccrRoutes = [];
-    state.ccrRoutesReason = 'unknown';
-    state.ccrRoutesMessage = err.message;
-    const list = $('manualCcrRoute');
-    if (list)
-        list.innerHTML = '<option value="">无法加载 CCR 路由</option>';
-    renderPresetDetail();
-} }
 function resetNewProfileForm() { const formEl = $('newProfileForm'); if (!formEl)
     return; formEl.reset(); state.selectedPreset = 'custom-api'; state.presetQuery = ''; state.presetFilter = 'all'; if (state.presets.length)
     renderPresetPicker(); }
-async function ccrCreateBlocked(kind, preset) { if (kind !== 'ccr' && kind !== 'manual-ccr')
-    return false; let c = state.ccr; try {
-    c = await api('/api/ccr/status');
-    state.ccr = c;
-}
-catch (err) {
-    toast(err.message);
-    return true;
-} if (!c.installed) {
-    toast('请先安装 CCR');
-    openCcrPanel();
-    return true;
-} if (presetHasProviderTemplate(preset))
-    return false; if (!c.configExists || !c.hasProviders || !state.ccrRoutes.length) {
-    toast(state.ccrRoutesMessage || '请先在 CCR UI 中配置 provider/model');
-    return true;
-} return false; }
 async function createProfile() { const formEl = $('newProfileForm'); if (!formEl.reportValidity()) {
     const invalid = formEl.querySelector(':invalid');
     toast(invalid?.closest('label')?.textContent?.trim() ? `请检查：${invalid.closest('label').textContent.trim()}` : '请完善必填项');
     invalid?.focus();
     return;
-} const form = new FormData(formEl); const preset = selectedPreset(); const kind = preset?.type || form.get('kind'); if (await ccrCreateBlocked(kind, preset))
-    return; const raw = Object.fromEntries(form.entries()); let url = '/api/profiles/preset'; let body = { presetId: raw.presetId, name: raw.name, kind, token: raw.token }; if (kind === 'custom-api') {
+} const form = new FormData(formEl); const preset = selectedPreset(); const kind = preset?.type || form.get('kind'); const raw = Object.fromEntries(form.entries()); let url = '/api/profiles/preset'; let body = { presetId: raw.presetId, name: raw.name, kind, token: raw.token }; if (kind === 'custom-api') {
     url = '/api/profiles/api';
     body = { name: raw.name, baseUrl: raw.baseUrl, token: raw.customToken || '', model: raw.model || '' };
-}
-else if (kind === 'manual-ccr') {
-    url = '/api/profiles/ccr';
-    body = { name: raw.name, presetName: raw.manualCcrPreset || raw.name, route: raw.route, token: raw.manualCcrToken || '' };
 }
 else if (kind === 'login') {
     url = '/api/profiles/login';
     body = { name: raw.name };
-}
-else if (kind === 'ccr') {
-    body = { presetId: raw.presetId, name: raw.name, kind: 'ccr', token: raw.ccrToken || '', providerApiKey: raw.ccrProviderApiKey || '' };
 }
 else if (kind === 'gateway') {
     body = { presetId: raw.presetId, name: raw.name, kind: 'gateway', upstreamId: raw.gatewayUpstream || '', model: raw.gatewayModel || '' };
@@ -1521,11 +1425,6 @@ api(url, { method: 'POST', body: JSON.stringify(body) }).then(async () => {
     closePrimaryModal('newProfileDialog');
     resetNewProfileForm();
     toast('Profile 已创建');
-    if (kind === 'ccr' || kind === 'manual-ccr') {
-        const current = await api('/api/ccr/status');
-        if (current.installed && !current.running && current.routeCount > 0 && confirm('CCR 尚未运行，是否立即启动？'))
-            await api('/api/ccr/start', { method: 'POST' });
-    }
     if (kind === 'gateway') {
         const current = await api('/api/gateway/status');
         if (!current.running && confirm('Gateway 尚未运行，是否立即启动？'))

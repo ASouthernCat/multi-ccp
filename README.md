@@ -18,8 +18,6 @@ Use it when you want separate Claude Code sessions for work, personal projects, 
 - Keep each profile's Claude Code config, login state, environment variables, and project history isolated.
 - Create Anthropic-compatible API profiles with custom `ANTHROPIC_BASE_URL`, token, and model settings.
 - Create Claude login profiles that use Claude Code's normal account login flow without storing account passwords.
-- Create [Claude Code Router](https://github.com/musistudio/claude-code-router) preset profiles for multiple model providers and routes.
-- Manage [Claude Code Router](https://github.com/musistudio/claude-code-router) from the same CLI.
 - Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Responses and Chat Completions providers.
 - Run multiple gateway profiles concurrently through one local process while keeping upstream URLs, models, credentials, tools, streams, and cancellation state isolated per request.
 - Sync historical Claude Code sessions between profiles or between `main` and a profile.
@@ -59,7 +57,7 @@ Open the local Web UI to browse profiles and create configurations visually:
 ccp ui
 ```
 
-The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, inspect redacted request logs, and open CCR management shortcuts.
+The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, and inspect redacted request logs.
 
 Create a profile interactively:
 
@@ -68,7 +66,7 @@ ccp add
 ccp start <profile-name>
 ```
 
-`ccp add` lets you choose a built-in preset template or custom configuration, including Built-in Gateway, DeepSeek, AI CodeMirror, Mimo, CCR GPT, Manual CCR, Claude Login, or Custom API.
+`ccp add` lets you choose a built-in preset template or custom configuration, including Built-in Gateway, DeepSeek, AI CodeMirror, Mimo, Claude Login, or Custom API.
 
 Profile names may contain letters, numbers, periods, underscores, and hyphens, so names such as `gpt-5.6` are valid. Names must start with a letter or number, cannot end with a period, and cannot use Windows reserved device names.
 
@@ -171,23 +169,6 @@ ccp start personal
 
 `ccp add-login <profile>` remains available as a direct compatibility entrypoint.
 
-### Claude Code Router Profiles
-
-CCR profiles are bound to [Claude Code Router](https://github.com/musistudio/claude-code-router) presets. Claude Code Router is a separate open source project that can route Claude Code requests to different model providers. `multi-ccp` integrates with its config and preset system so each profile can use its own provider route.
-
-```bash
-ccp ccr status
-ccp ccr model
-ccp add
-ccp start <profile-name>
-```
-
-A CCR profile stores its route in `.ccp.json` and points Claude Code at a preset endpoint such as:
-
-```text
-http://127.0.0.1:3456/preset/gpt-route
-```
-
 ### Built-in Gateway
 
 The gateway translates Claude Code's Anthropic Messages protocol to either OpenAI Responses or OpenAI Chat Completions, depending on the selected upstream protocol. It uses three independent layers: one shared local service, reusable upstream provider records, and lightweight profiles that only select an upstream and model.
@@ -235,7 +216,11 @@ The local Web UI masks API keys by default. Opening an API profile or upstream e
 
 The gateway writes one redacted JSON line per profile request to `~/.claude-profiles/.gateway/gateway.log`. It records the profile, model, protocol, endpoint host, sanitized endpoint URL, Claude effort, upstream field names, status, duration, and available token usage, but never prompt or response content, authorization headers, API keys, URL userinfo, query strings, or fragments. Failures also include a stable `failureStage` / `failureCode`, the upstream HTTP status and bounded request ID when available, and SSE timing/terminal metadata. This distinguishes an upstream HTTP failure from a stream conversion error or an upstream stream that ended without a terminal event. If an SSE response has already started with HTTP 200 and later fails protocol conversion, the internal log status is `502`. Logs rotate to `gateway.log.1` at 10 MiB when the gateway starts.
 
-The gateway supports Messages requests, non-streaming and SSE responses, text, native image input, native image-bearing tool results, tool calls, parallel tool calls, `output_config.effort`, JSON Schema structured output, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Each Gateway Profile routes Claude Code's `Default` row through a display-aware default alias to the Profile Binding's default model and also lists every current-Upstream model as a selectable `From gateway` option alias. The local catalog pre-registers a Default display alias for every model on that Upstream, so changing the Binding refreshes the model name shown by `/model` in an existing session and switches sessions that use Default on their next request without restarting the gateway. An explicit `/model` selection remains fixed when that model is available on the chosen Upstream. Default remains readable, the same model can appear as a selectable entry, and the built-in Opus row is not exposed. multi-ccp pre-populates and refreshes Claude Code's local gateway model catalog when a Gateway Profile is created, repaired before startup, or rebound, so the readable provider model name is available on the first launch instead of briefly exposing the internal `claude-ccp-*` alias. Models outside the current Upstream return `400` instead of silently falling back, and the internal `claude-ccp-*` namespace is reserved for gateway aliases. When a model is added after a Claude Code session starts, rebinding the Profile hot-adds it through a temporary `anthropic.<model-id>` picker entry and updates Default through Claude's hot-reloaded tier setting so it displays and routes to the original provider model ID; the next `ccp start` restores the normal gateway catalog labels. A still-valid `/model` selection is preserved. Because provider-defined model IDs do not carry reliable context-window metadata, Gateway Profiles set `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`; this removes Claude Code's unknown-model warning, forced 200k-token pre-compaction, and automatic `[1m]` suffix. Exact context-limit and post-limit behavior remains governed by the gateway/upstream error contract. Optional token counting intentionally returns `404`, allowing Claude Code to use its fallback behavior, and the request log marks it as an expected compatibility fallback rather than an inference failure.
+The gateway supports Messages requests, non-streaming and SSE responses, text, native image input, native image-bearing tool results, tool calls, parallel tool calls, `output_config.effort`, JSON Schema structured output, usage conversion, client cancellation, and Claude Code's `?beta=true` and `HEAD` probes. Each Gateway Profile routes Claude Code's `Default` row through a display-aware default alias to the Profile Binding's default model and also lists every current-Upstream model as a selectable `From gateway` option alias. The local catalog pre-registers a Default display alias for every model on that Upstream, so changing the Binding refreshes the model name shown by `/model` in an existing session and switches sessions that use Default on their next request without restarting the gateway. An explicit `/model` selection remains fixed when that model is available on the chosen Upstream. Default remains readable, the same model can appear as a selectable entry, and the built-in Opus row is not exposed.
+
+multi-ccp pre-populates and refreshes Claude Code's local gateway model catalog when a Gateway Profile is created, repaired before startup, or rebound, so the readable provider model name is available on the first launch instead of briefly exposing an internal alias. Gateway aliases use only the reserved `anthropic.ccp-*` namespace; old `claude-ccp-*` aliases are not supported. Models outside the current Upstream return `400` instead of silently falling back. When a model is added after Claude Code starts, rebinding the Profile hot-adds it through a temporary `anthropic.<model-id>` picker entry and updates Default through Claude's hot-reloaded tier setting; the next `ccp start` restores the normal catalog labels. A still-valid `/model` selection is preserved.
+
+Because provider-defined model IDs do not carry reliable context-window metadata, Gateway Profiles set `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` and `CLAUDE_CODE_DISABLE_1M_CONTEXT=1`. They do not declare a fixed context window: startup repair removes legacy compact-window overrides and leaves `/autocompact` at Claude Code's default `auto`, while the gateway/upstream error contract governs the actual limit. The gateway accepts Claude Code 2.1.233 auto-mode classifier requests that explicitly disable thinking, while adaptive and enabled thinking remain unsupported. Optional token counting intentionally returns `404`, allowing Claude Code to use its fallback behavior, and the request log marks it as an expected compatibility fallback rather than an inference failure.
 
 ## Session Sync
 
@@ -272,7 +257,6 @@ ccp ui
 ccp add [profile]
 ccp add --preset <preset> [profile]
 ccp add-login <profile>
-ccp add-ccr <profile>
 ccp remove <profile>
 ccp status <profile|main>
 ccp start <profile> [claude args...]
@@ -293,22 +277,6 @@ ccp gateway edit <upstream-id>
 ccp gateway remove <upstream-id>
 ccp gateway use <profile> [upstream-id] [model]
 ```
-
-[Claude Code Router](https://github.com/musistudio/claude-code-router) commands:
-
-```bash
-ccp ccr status
-ccp ccr install
-ccp ccr start
-ccp ccr stop
-ccp ccr restart
-ccp ccr ui
-ccp ccr model
-```
-
-`ccp ccr install` pins CCR to `@musistudio/claude-code-router@2.0.0`. CCR 3.x is a rewrite and is not compatible with multi-ccp.
-
-If a provider exposes an OpenAI Responses or Chat Completions-compatible API, prefer the built-in Gateway instead of CCR. It requires no separate router installation and provides reusable upstreams, model selection, compatibility mappings, and request logs.
 
 Session sync commands:
 
@@ -344,7 +312,7 @@ ccp sync-session work to main
 ## Safety Notes
 
 - `ccp remove <profile>` asks you to type the profile name before deleting it.
-- `ccp add`, `ccp add-login`, and `ccp add-ccr` refuse to overwrite existing profiles.
+- `ccp add` and `ccp add-login` refuse to overwrite existing profiles.
 - `sync-session` detects conflicts with SHA-256 hashes and asks before overwriting target files.
 - Login profiles do not store Claude account passwords.
 - Gateway API keys are kept in upstream secret files and out of profile directories, `.ccp.json`, ordinary Web UI GET/list responses, logs, and upstream error envelopes. The local editor retrieves a key only through a UI-token-protected, non-cacheable POST endpoint, keeps it masked by default, and reveals it only when the user presses the eye control.

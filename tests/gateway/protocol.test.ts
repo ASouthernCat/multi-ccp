@@ -335,6 +335,21 @@ describe("Anthropic Messages source parser", () => {
       });
     }
   });
+
+  it("accepts Claude Code auto-mode requests with thinking disabled", () => {
+    expect(parseAnthropicMessagesRequest(baseRequest({
+      thinking: { type: "disabled" }
+    }))).toMatchObject({
+      clientModel: "claude-sonnet-test",
+      stream: false
+    });
+  });
+
+  it("rejects extra fields on disabled thinking", () => {
+    expect(() => parseAnthropicMessagesRequest(baseRequest({
+      thinking: { type: "disabled", budget_tokens: 0 }
+    }))).toThrow("thinking.budget_tokens: Extra inputs are not permitted");
+  });
 });
 
 const ONE_PIXEL_PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9Zl1sAAAAASUVORK5CYII=";

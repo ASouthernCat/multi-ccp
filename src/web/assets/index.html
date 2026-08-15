@@ -63,7 +63,6 @@
               <button class="chip active" type="button" data-preset-filter="all">All</button>
               <button class="chip" type="button" data-preset-filter="api">API</button>
               <button class="chip" type="button" data-preset-filter="gateway">Gateway</button>
-              <button class="chip" type="button" data-preset-filter="ccr">CCR</button>
               <button class="chip" type="button" data-preset-filter="custom">Custom</button>
               <button class="chip" type="button" data-preset-filter="login">Login</button>
             </div>
@@ -91,17 +90,6 @@
                 <span class="ui-icon" data-icon="route"></span><span>Manage Upstreams</span>
               </button>
             </div>
-            <div data-kind-fields="ccr" hidden>
-              <label>Provider API Key <input name="ccrProviderApiKey" type="password" placeholder="填写该 CCR 模板的 provider key" /></label>
-              <label>CCR Token <input name="ccrToken" type="password" placeholder="留空使用预设默认值" /></label>
-              <p class="hint">该模板会自动写入所需 CCR provider/model，并生成对应 CCR preset。</p>
-            </div>
-            <div data-kind-fields="manual-ccr" hidden>
-              <label>模型路由 <select name="route" id="manualCcrRoute" required><option value="">加载 CCR 路由中...</option></select></label>
-              <label>CCR Preset 名称 <input name="manualCcrPreset" placeholder="默认使用 Profile 名称" autocomplete="off" /></label>
-              <label>CCR Token <input name="manualCcrToken" type="password" placeholder="留空使用 ccr-local-secret" /></label>
-              <p class="hint">模型路由来自 Claude Code Router 的 provider/model 配置；如果没有想要的模型，请先打开 CCR UI 添加。</p>
-            </div>
             <div data-kind-fields="login" hidden>
               <p class="hint">Login Profile 不保存 Claude 账号密码，只隔离 Claude Code 的登录状态。</p>
             </div>
@@ -113,10 +101,6 @@
         </menu>
         <div class="dialog-toast-region"></div>
       </form>
-    </dialog>
-
-    <dialog id="ccrDialog" class="modal">
-      <div class="modal-card ccr-card" id="ccrPanel"></div>
     </dialog>
 
     <dialog id="gatewayDialog" class="modal">

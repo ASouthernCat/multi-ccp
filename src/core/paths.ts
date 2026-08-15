@@ -22,14 +22,6 @@ export function getHomeWorkDir(context: PathContext = {}): string {
   return path.join(getProfilesRoot(context), ".workdirs", "home");
 }
 
-export function getClaudeCodeRouterDir(context: PathContext = {}): string {
-  return path.join(getHomeDir(context), ".claude-code-router");
-}
-
-export function getClaudeCodeRouterConfigPath(context: PathContext = {}): string {
-  return path.join(getClaudeCodeRouterDir(context), "config.json");
-}
-
 export function getGatewayDir(context: PathContext = {}): string {
   return path.join(getProfilesRoot(context), ".gateway");
 }

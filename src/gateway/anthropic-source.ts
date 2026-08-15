@@ -26,6 +26,7 @@ const TOP_LEVEL_FIELDS = new Set([
   "stream",
   "tools",
   "tool_choice",
+  "thinking",
   "output_config",
   "metadata"
 ]);
@@ -553,16 +554,20 @@ function parseOutputConfig(value: unknown): CanonicalOutputConfig | undefined {
   };
 }
 
+function validateThinking(value: unknown): void {
+  const thinking = requireObject(value, "thinking");
+  rejectExtraFields(thinking, new Set(["type"]), "thinking.");
+  const type = requireString(thinking.type, "thinking.type");
+  if (type === "disabled") return;
+  throw invalidRequest(
+    `thinking.type: ${type === "adaptive" ? "adaptive thinking" : "thinking"} is not supported by this gateway profile; Extra inputs are not permitted`
+  );
+}
+
 export function parseAnthropicMessagesRequest(input: unknown): CanonicalRequest {
   const request = requireObject(input, "request");
 
-  if ("thinking" in request) {
-    const thinking = request.thinking;
-    const type = isObject(thinking) && typeof thinking.type === "string" ? thinking.type : "unknown";
-    throw invalidRequest(
-      `thinking.type: ${type === "adaptive" ? "adaptive thinking" : "thinking"} is not supported by this gateway profile; Extra inputs are not permitted`
-    );
-  }
+  if ("thinking" in request) validateThinking(request.thinking);
   for (const field of UNSUPPORTED_TOP_LEVEL_FIELDS) {
     if (field in request) {
       throw invalidRequest(`${field}: is not supported by this gateway profile; Extra inputs are not permitted`);

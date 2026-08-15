@@ -10,6 +10,7 @@ import { getProfilesRoot } from "../../src/core/paths.js";
 const homes: string[] = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.allSettled(homes.splice(0).map((home) => rm(home, { recursive: true, force: true })));
 });
 
@@ -23,6 +24,10 @@ async function createContext() {
 
 describe("launcher runtime dispatch", () => {
   it("ensures the built-in gateway only for gateway profiles", async () => {
+    vi.stubEnv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "300000");
+    vi.stubEnv("CLAUDE_CODE_MAX_CONTEXT_TOKENS", "1000000");
+    vi.stubEnv("DISABLE_AUTO_COMPACT", "1");
+    vi.stubEnv("DISABLE_COMPACT", "1");
     const context = await createContext();
     await createGatewayUpstream({
       id: "launcher-upstream",
@@ -37,7 +42,6 @@ describe("launcher runtime dispatch", () => {
       model: "model"
     }, context);
     const ensureGateway = vi.fn().mockResolvedValue({});
-    const ensureCcr = vi.fn().mockResolvedValue(undefined);
 
     const launch = await prepareClaudeLaunch({
       name: profile.name,
@@ -45,19 +49,27 @@ describe("launcher runtime dispatch", () => {
       cwd: context.cwd,
       claudeArgs: ["--resume"],
       runtimeDeps: {
-        ensureBuiltinGatewayProfile: ensureGateway,
-        ensureCcrProfileGateway: ensureCcr
+        ensureBuiltinGatewayProfile: ensureGateway
       }
     });
 
     expect(ensureGateway).toHaveBeenCalledWith(profile.dir, profile.name, context);
-    expect(ensureCcr).not.toHaveBeenCalled();
     expect(launch).toMatchObject({ command: "claude", args: ["--resume"], cwd: context.cwd });
     expect(launch.env.CLAUDE_CONFIG_DIR).toBe(profile.dir);
     expect(launch.env.CCP_PROFILE).toBe(profile.name);
+    expect(launch.env.CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT).toBe("1");
+    expect(launch.env.CLAUDE_CODE_DISABLE_1M_CONTEXT).toBe("1");
+    expect(launch.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBeUndefined();
+    expect(launch.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBeUndefined();
+    expect(launch.env.DISABLE_AUTO_COMPACT).toBeUndefined();
+    expect(launch.env.DISABLE_COMPACT).toBeUndefined();
   });
 
-  it("does not start CCR or the built-in gateway for API profiles", async () => {
+  it("does not start the built-in gateway for API profiles", async () => {
+    vi.stubEnv("CLAUDE_CODE_AUTO_COMPACT_WINDOW", "300000");
+    vi.stubEnv("CLAUDE_CODE_MAX_CONTEXT_TOKENS", "1000000");
+    vi.stubEnv("DISABLE_AUTO_COMPACT", "1");
+    vi.stubEnv("DISABLE_COMPACT", "1");
     const context = await createContext();
     const profile = await createApiProfile({
       name: "api-launch",
@@ -66,20 +78,21 @@ describe("launcher runtime dispatch", () => {
       model: "model"
     }, context);
     const ensureGateway = vi.fn();
-    const ensureCcr = vi.fn();
 
-    await prepareClaudeLaunch({
+    const launch = await prepareClaudeLaunch({
       name: profile.name,
       context,
       cwd: context.cwd,
       runtimeDeps: {
-        ensureBuiltinGatewayProfile: ensureGateway,
-        ensureCcrProfileGateway: ensureCcr
+        ensureBuiltinGatewayProfile: ensureGateway
       }
     });
 
     expect(ensureGateway).not.toHaveBeenCalled();
-    expect(ensureCcr).not.toHaveBeenCalled();
+    expect(launch.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("300000");
+    expect(launch.env.CLAUDE_CODE_MAX_CONTEXT_TOKENS).toBe("1000000");
+    expect(launch.env.DISABLE_AUTO_COMPACT).toBe("1");
+    expect(launch.env.DISABLE_COMPACT).toBe("1");
   });
 
   it("rejects stale empty profile directories instead of launching Claude Code", async () => {

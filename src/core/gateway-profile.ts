@@ -37,15 +37,13 @@ import {
 import {
   buildGatewayLiveModelAliases,
   buildGatewayModelCatalog,
-  CCP_DEFAULT_MODEL_ALIAS,
   decodeGatewayDefaultModelAlias,
   decodeGatewayLiveModelAlias,
-  decodeGatewayModelAlias,
   decodeGatewayModelOptionAlias,
   gatewayDefaultModelAlias,
-  gatewayModelAlias,
   gatewayModelOptionAlias
 } from "../gateway/models.js";
+import { applyGatewayContextPolicy } from "./gateway-claude.js";
 
 export const GATEWAY_SECRET_FILE = ".ccp-gateway.json";
 export const GATEWAY_MODEL_CACHE_FILE = "gateway-models.json";
@@ -75,7 +73,6 @@ const MODEL_ENV_NAMES = [
 interface GatewaySettingsModels {
   models: readonly string[];
   defaultModel: string;
-  legacyDefaultModel?: string;
   selectedModel?: string;
   liveKnownModels?: readonly string[];
 }
@@ -192,9 +189,10 @@ export function buildGatewaySettings(
 ): ClaudeSettings {
   const env = { ...(current?.env ?? {}) };
   for (const name of MODEL_ENV_NAMES) delete env[name];
+  applyGatewayContextPolicy(env);
   const knownModels = modelConfig.liveKnownModels ? new Set(modelConfig.liveKnownModels) : undefined;
-  const isLiveDefault = knownModels !== undefined && !knownModels.has(modelConfig.defaultModel);
-  const defaultTarget = isLiveDefault
+  const needsLiveDefaultAlias = knownModels !== undefined && !knownModels.has(modelConfig.defaultModel);
+  const defaultTarget = needsLiveDefaultAlias
     ? modelConfig.defaultModel
     : gatewayDefaultModelAlias(modelConfig.defaultModel);
   Object.assign(env, {
@@ -209,10 +207,6 @@ export function buildGatewaySettings(
     CLAUDE_CODE_DISABLE_THINKING: "1",
     CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING: "1",
     CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: "1",
-    CLAUDE_CODE_DISABLE_1M_CONTEXT: "1",
-    // Gateway model ids are provider-defined, so Claude Code cannot infer
-    // their context window from the id alone.
-    CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT: "1",
     MAX_THINKING_TOKENS: "0",
     ENABLE_TOOL_SEARCH: "false"
   });
@@ -232,11 +226,13 @@ export function buildGatewaySettings(
   const selectedModel = normalizeSelectedGatewayModel(modelConfig, availableModels);
   const modelOverrides = stringEntries(current?.modelOverrides);
   for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) delete modelOverrides[modelId];
-  if (!isLiveDefault) {
+  if (!needsLiveDefaultAlias) {
     for (const modelId of CLAUDE_CODE_DEFAULT_MODEL_IDS) modelOverrides[modelId] = defaultTarget;
   }
+  const settings = { ...(current ?? {}) };
+  delete settings.autoCompactWindow;
   return {
-    ...(current ?? {}),
+    ...settings,
     model: selectedModel,
     availableModels,
     modelOverrides,
@@ -346,7 +342,6 @@ export async function updateGatewayProfile(
     {
       models: upstream.models,
       defaultModel: binding.model,
-      legacyDefaultModel: currentBinding.model,
       selectedModel: typeof currentSettings?.model === "string" ? currentSettings.model : undefined,
       liveKnownModels
     }
@@ -400,9 +395,7 @@ function stringArray(value: unknown): string[] {
 
 function cachedGatewayModels(settings: ClaudeSettings | undefined, models: readonly string[]): string[] {
   const availableModels = new Set(stringArray(settings?.availableModels));
-  return models.filter((model) =>
-    availableModels.has(gatewayModelOptionAlias(model)) || availableModels.has(gatewayModelAlias(model))
-  );
+  return models.filter((model) => availableModels.has(gatewayModelOptionAlias(model)));
 }
 
 function normalizeSelectedGatewayModel(
@@ -413,7 +406,6 @@ function normalizeSelectedGatewayModel(
   if (
     !selectedModel ||
     selectedModel === "default" ||
-    selectedModel === CCP_DEFAULT_MODEL_ALIAS ||
     decodeGatewayDefaultModelAlias(selectedModel)
   ) return "default";
   if (availableModels.includes(selectedModel)) return selectedModel;
@@ -422,9 +414,5 @@ function normalizeSelectedGatewayModel(
   if (explicitModel && modelConfig.models.includes(explicitModel)) {
     return availableModels[modelConfig.models.indexOf(explicitModel)] ?? "default";
   }
-  const legacyModel = decodeGatewayModelAlias(selectedModel);
-  if (!legacyModel || !modelConfig.models.includes(legacyModel)) return "default";
-  const legacyDefaultModel = modelConfig.legacyDefaultModel ?? modelConfig.defaultModel;
-  if (legacyModel === legacyDefaultModel) return "default";
-  return availableModels[modelConfig.models.indexOf(legacyModel)] ?? "default";
+  return "default";
 }

@@ -16,7 +16,6 @@ import { readGatewayProfileSecret, updateGatewayProfile } from "../../src/core/g
 import { createGatewayServer, type GatewayRequestLog } from "../../src/gateway/server.js";
 import { getGatewayGeneratedDir } from "../../src/core/paths.js";
 import {
-  CCP_DEFAULT_MODEL_ALIAS,
   gatewayDefaultModelAlias,
   gatewayLiveModelAlias,
   gatewayModelOptionAlias
@@ -151,7 +150,7 @@ describe("gateway HTTP protocol", () => {
     expect(health).toMatchObject({
       ok: true,
       service: "multi-ccp-gateway",
-      protocolVersion: 4,
+      protocolVersion: 5,
       instanceId: "instance-test",
       endpoint,
       profileCount: 2
@@ -219,6 +218,7 @@ describe("gateway HTTP protocol", () => {
     expect(catalog.last_id).toBe(catalog.data.at(-1)?.id);
     expect(selected).toBeDefined();
     expect(selected!.id).toBe(gatewayModelOptionAlias("second-model"));
+    expect(selected!.id.startsWith("anthropic.ccp-option-")).toBe(true);
     expect(catalog.data.map((entry) => entry.id)).toEqual([
       gatewayDefaultModelAlias("first-model"),
       gatewayDefaultModelAlias("second-model"),
@@ -284,19 +284,17 @@ describe("gateway HTTP protocol", () => {
     }, context);
     expect((await call(firstDefaultAlias)).status).toBe(200);
     expect((await call(gatewayDefaultModelAlias("second-model"))).status).toBe(200);
-    expect((await call(CCP_DEFAULT_MODEL_ALIAS)).status).toBe(200);
     expect((await call(gatewayModelOptionAlias("first-model"))).status).toBe(200);
 
     expect(received).toEqual([
       "first-model",
       "second-model",
       "second-model",
-      "second-model",
       "first-model"
     ]);
   });
 
-  it("rejects a stale ccp model alias instead of silently using the profile default", async () => {
+  it("rejects an old ccp model alias instead of silently using the profile default", async () => {
     const context = await createContext();
     const profile = await createTestGatewayProfile({
       name: "stale-model",
@@ -314,7 +312,7 @@ describe("gateway HTTP protocol", () => {
     });
     const body = await response.json() as { error?: { message?: string } };
     expect(response.status).toBe(400);
-    expect(body.error?.message).toContain("no longer configured");
+    expect(body.error?.message).toContain("not configured");
   });
 
   it("rejects built-in Claude models instead of silently using the profile default", async () => {

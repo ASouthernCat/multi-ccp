@@ -5,7 +5,6 @@ import { launchClaude } from "../core/launcher.js";
 import { resolveConfigDir } from "../core/profiles.js";
 import {
   createApiProfile,
-  createCcrProfile,
   createGatewayProfile,
   createLoginProfile,
   listProfiles,
@@ -16,20 +15,7 @@ import {
 } from "../core/profiles.js";
 import { getMetaPath, getSettingsPath, readMeta } from "../core/settings.js";
 import {
-  CCR_INSTALL_COMMAND,
-  getCcrRouteChoices,
-  getCcrStatus,
-  installCcr,
-  readCcrConfig,
-  invokeCcrCli,
-  printCcrStatus,
-  restartCcrService,
-  startCcrService,
-  stopCcrService
-} from "../core/ccr.js";
-import {
   createApiProfileFromPreset,
-  createCcrProfileFromPreset,
   createGatewayProfileFromPreset,
   getProfilePreset,
   listProfilePresets,
@@ -126,31 +112,6 @@ async function selectProfilePreset(): Promise<BuiltinProfilePreset> {
   });
 }
 
-async function ensureCcrSetupForProfileCreation(options: { requireRoutes: boolean }): Promise<void> {
-  let status = await getCcrStatus();
-  if (!status.installed) {
-    console.log("CCR is required for this profile, but it is not installed.");
-    const ok = await confirm({ message: `Install CCR now? This runs: ${CCR_INSTALL_COMMAND}`, default: true });
-    if (!ok) {
-      throw new CcpError("CCR is not installed. Run 'ccp ccr install' first.");
-    }
-    const code = await installCcr();
-    if (code !== 0) {
-      throw new CcpError(`CCR install failed with exit code ${code}.`);
-    }
-    status = await getCcrStatus();
-  }
-
-  if (!options.requireRoutes) {
-    return;
-  }
-
-  if (!status.configExists || !status.hasProviders || status.routeCount === 0) {
-    printCcrStatus(status);
-    throw new CcpError("CCR has no usable routes. Run 'ccp ccr model' first, then create this profile again.");
-  }
-}
-
 function printCreatedProfile(created: Awaited<ReturnType<typeof summarizeProfile>>): void {
   console.log(`Created profile '${created.name}'.`);
   console.log(`Run: ccp start ${created.name}`);
@@ -174,32 +135,6 @@ async function createApiPresetProfile(profile: string | undefined, preset: Built
     return;
   }
   printCreatedProfile(await createApiProfileFromPreset({ presetId: preset.id, name: profileName, token }));
-}
-
-async function createCcrPresetProfile(profile: string | undefined, preset: BuiltinProfilePreset, options: { promptName: boolean }): Promise<void> {
-  if (preset.type !== "ccr") {
-    throw new CcpError(`Preset '${preset.id}' is not a CCR preset.`);
-  }
-
-  const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
-  if (!(await ensureProfileCanBeCreated(profileName))) return;
-  await ensureCcrSetupForProfileCreation({ requireRoutes: !preset.providerTemplate });
-  console.log(`Create CCR profile: ${profileName}`);
-  console.log(`Preset: ${preset.label}`);
-  console.log(`CCR Preset: ${preset.ccrPreset}`);
-  console.log(`Route:      ${preset.ccrRoute}`);
-  if (preset.providerTemplate) {
-    console.log(`Provider:   ${preset.providerTemplate.name}`);
-    console.log(`Endpoint:   ${preset.providerTemplate.api_base_url}`);
-  }
-  const providerApiKey = preset.providerTemplate ? await password({ message: `${preset.providerTemplate.name} API key for CCR provider (hidden)`, mask: "*" }) : "";
-  const token = await password({ message: "ANTHROPIC_AUTH_TOKEN for CCR (hidden, Enter to use preset default)", mask: "*" });
-  const ok = await confirm({ message: "Create this CCR profile?", default: true });
-  if (!ok) {
-    console.log("Cancelled.");
-    return;
-  }
-  printCreatedProfile(await createCcrProfileFromPreset({ presetId: preset.id, name: profileName, token, providerApiKey }));
 }
 
 async function createGatewayPresetProfile(
@@ -536,61 +471,6 @@ async function createCustomApiProfile(profile: string | undefined, preset: Built
   printCreatedProfile(await createApiProfile({ name: profileName, baseUrl, token, model }));
 }
 
-async function selectManualCcrRoute(config: Awaited<ReturnType<typeof readCcrConfig>>): Promise<string> {
-  const routes = getCcrRouteChoices(config);
-  if (!config) {
-    throw new CcpError("CCR config not found. Run 'ccp ccr model' first.");
-  }
-  if (routes.length === 0) {
-    console.log("No CCR routes found. Type a route as provider,model.");
-    return input({ message: "CCR route", required: true });
-  }
-
-  const selected = await select({
-    message: "Bind this profile to a CCR route",
-    choices: [
-      ...routes.map((value) => ({ name: value, value })),
-      { name: "Type route manually", value: "__manual__" }
-    ]
-  });
-  if (selected !== "__manual__") {
-    return selected;
-  }
-  return input({ message: "CCR route", required: true });
-}
-
-async function promptManualCcrToken(config: Awaited<ReturnType<typeof readCcrConfig>>): Promise<string> {
-  if (config?.APIKEY) {
-    const useExisting = await confirm({ message: "Use APIKEY from CCR config as ANTHROPIC_AUTH_TOKEN?", default: true });
-    if (useExisting) {
-      return String(config.APIKEY);
-    }
-  }
-  return password({ message: "ANTHROPIC_AUTH_TOKEN for CCR (hidden, Enter to use ccr-local-secret)", mask: "*" });
-}
-
-async function createManualCcrProfile(profile: string | undefined, preset: BuiltinProfilePreset, options: { promptName: boolean }): Promise<void> {
-  const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
-  if (!(await ensureProfileCanBeCreated(profileName))) return;
-  await ensureCcrSetupForProfileCreation({ requireRoutes: true });
-  const config = await readCcrConfig();
-  const route = await selectManualCcrRoute(config);
-  const token = await promptManualCcrToken(config);
-
-  console.log("");
-  console.log("Profile: " + profileName);
-  console.log("Type:    ccr");
-  console.log("Route:   " + route);
-  console.log("Token:   set");
-  const ok = await confirm({ message: "Create this CCR profile?", default: true });
-  if (!ok) {
-    console.log("Cancelled.");
-    return;
-  }
-
-  printCreatedProfile(await createCcrProfile({ name: profileName, route, token }));
-}
-
 async function createLoginPresetProfile(profile: string | undefined, preset: BuiltinProfilePreset, options: { promptName: boolean }): Promise<void> {
   const profileName = await promptProfileName(profile, preset.defaultProfileName, { promptWhenMissing: options.promptName });
   if (!(await ensureProfileCanBeCreated(profileName))) return;
@@ -612,14 +492,8 @@ async function createProfileFromPreset(profile: string | undefined, preset: Buil
     case "api":
       await createApiPresetProfile(profile, preset, options);
       break;
-    case "ccr":
-      await createCcrPresetProfile(profile, preset, options);
-      break;
     case "custom-api":
       await createCustomApiProfile(profile, preset, options);
-      break;
-    case "manual-ccr":
-      await createManualCcrProfile(profile, preset, options);
       break;
     case "login":
       await createLoginPresetProfile(profile, preset, options);
@@ -674,9 +548,6 @@ async function showStatus(name: string): Promise<void> {
   if (profile.meta) {
     console.log(`Type:    ${profile.meta.type}`);
     if (profile.meta.endpoint) console.log(`Endpoint: ${profile.meta.endpoint}`);
-    if (profile.meta.autoStart !== undefined) console.log(`AutoStart: ${profile.meta.autoStart}`);
-    if (profile.meta.ccrPreset) console.log(`CCR Preset: ${profile.meta.ccrPreset}`);
-    if (profile.meta.ccrRoute) console.log(`CCR Route: ${profile.meta.ccrRoute}`);
   } else {
     console.log(`Type:    ${profile.type}`);
   }
@@ -701,11 +572,7 @@ async function showStatus(name: string): Promise<void> {
   }
 
   console.log(`Base:    ${profile.baseUrl}`);
-  if (profile.type === "ccr" && !profile.model) {
-    console.log("Model:   (routed by CCR preset)");
-  } else {
-    console.log(`Model:   ${profile.model}`);
-  }
+  console.log(`Model:   ${profile.model}`);
   console.log(`Token:   ${profile.tokenStatus}`);
 }
 
@@ -906,85 +773,6 @@ export function createProgram(): Command {
     });
 
   program
-    .command("add-ccr")
-    .argument("[profile]")
-    .option("--preset <preset>", "Create from a built-in CCR preset")
-    .description("Create a CCR preset-bound profile")
-    .action(async (profile: string | undefined, options: { preset?: string }) => {
-      if (options.preset) {
-        const preset = getProfilePreset(options.preset);
-        if (preset.type !== "ccr") {
-          throw new CcpError(`Preset '${options.preset}' is not a CCR preset.`);
-        }
-        const profileName = profile || preset.defaultProfileName;
-        if (!(await ensureProfileCanBeCreated(profileName))) return;
-        await ensureCcrSetupForProfileCreation({ requireRoutes: !preset.providerTemplate });
-        console.log(`Create CCR profile: ${profileName}`);
-        console.log(`Preset: ${preset.label}`);
-        console.log(`CCR Preset: ${preset.ccrPreset}`);
-        console.log(`Route:      ${preset.ccrRoute}`);
-        if (preset.providerTemplate) {
-          console.log(`Provider:   ${preset.providerTemplate.name}`);
-          console.log(`Endpoint:   ${preset.providerTemplate.api_base_url}`);
-        }
-        const providerApiKey = preset.providerTemplate ? await password({ message: `${preset.providerTemplate.name} API key for CCR provider (hidden)`, mask: "*" }) : "";
-        const token = await password({ message: "ANTHROPIC_AUTH_TOKEN for CCR (hidden, Enter to use preset default)", mask: "*" });
-        const ok = await confirm({ message: "Create this CCR profile?", default: true });
-        if (!ok) {
-          console.log("Cancelled.");
-          return;
-        }
-        const created = await createCcrProfileFromPreset({ presetId: preset.id, name: profileName, token, providerApiKey });
-        console.log("Created CCR profile '" + created.name + "'.");
-        console.log("Run: ccp start " + created.name);
-        return;
-      }
-
-      if (!profile) {
-        throw new CcpError("Missing profile name. Use 'ccp add-ccr <profile>' or 'ccp add-ccr --preset <preset> [profile]'.");
-      }
-      if (!(await ensureProfileCanBeCreated(profile))) return;
-      await ensureCcrSetupForProfileCreation({ requireRoutes: true });
-      const config = await readCcrConfig();
-      const routes = getCcrRouteChoices(config);
-      if (routes.length === 0) {
-        throw new CcpError("No CCR routes found. Run 'ccp ccr model' first.");
-      }
-
-      const route = await select({
-        message: "Bind this profile to a CCR route",
-        choices: routes.map((value) => ({ name: value, value }))
-      });
-
-      let token = "";
-      if (config?.APIKEY) {
-        const useExisting = await confirm({ message: "Use APIKEY from CCR config as ANTHROPIC_AUTH_TOKEN?", default: true });
-        if (useExisting) {
-          token = String(config.APIKEY);
-        }
-      }
-
-      if (!token) {
-        token = await password({ message: "ANTHROPIC_AUTH_TOKEN for CCR (hidden, Enter to use ccr-local-secret)", mask: "*" });
-      }
-
-      console.log("");
-      console.log("Profile: " + profile);
-      console.log("Type:    ccr");
-      console.log("Route:   " + route);
-      console.log("Token:   set");
-      const ok = await confirm({ message: "Create this CCR profile?", default: true });
-      if (!ok) {
-        console.log("Cancelled.");
-        return;
-      }
-
-      const created = await createCcrProfile({ name: profile, route, token });
-      console.log("Created CCR profile '" + created.name + "'.");
-      console.log("Run: ccp start " + created.name);
-    });
-
-  program
     .command("remove")
     .argument("<profile>")
     .description("Delete a profile")
@@ -1115,47 +903,6 @@ export function createProgram(): Command {
     .argument("[model]")
     .description("Set a gateway profile's upstream and Default model")
     .action(useGatewayBinding);
-
-  program
-    .command("ccr")
-    .helpOption(false)
-    .argument("[action]")
-    .allowUnknownOption(true)
-    .argument("[extraArgs...]", "Arguments passed through to ccr")
-    .description("Manage Claude Code Router integration")
-    .action(async (action: string | undefined, extraArgs: string[]) => {
-      switch (action) {
-        case undefined:
-        case "status": {
-          printCcrStatus(await getCcrStatus());
-          break;
-        }
-        case "install": {
-          process.exitCode = await installCcr();
-          break;
-        }
-        case "start": {
-          await startCcrService();
-          break;
-        }
-        case "stop": {
-          await stopCcrService();
-          break;
-        }
-        case "restart": {
-          await restartCcrService();
-          break;
-        }
-        case "ui":
-        case "model": {
-          process.exitCode = await invokeCcrCli(action, extraArgs);
-          break;
-        }
-        default: {
-          throw new CcpError(`Unknown ccr command '${action}'. Use 'ccp ccr status|install|start|stop|restart|ui|model'.`);
-        }
-      }
-    });
 
   program
     .command("sync-session")
