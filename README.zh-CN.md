@@ -20,6 +20,8 @@
 - 创建 Claude 登录 profile，使用 Claude Code 正常账号登录流程，不保存账号密码。
 - 使用内置网关让 Claude Code 连接 OpenAI 或 OpenAI-compatible Responses / Chat Completions provider。
 - 多个 gateway profile 可以并发复用一个本地进程，同时按请求隔离上游 URL、模型、凭据、工具映射、流状态和取消信号。
+- 通过按实例寻址的 MCP 协作网络协调相互独立的 Agent CLI 窗口，并使用全局运行时共享黑板。
+- 在 Web UI Mesh 看板中查看 CLI 实例身份、PID、工作焦点、活动状态、派发任务和监管消息。
 - 在不同 profile 之间，或在 `main` 与 profile 之间同步 Claude Code 历史会话。
 
 ## 安装
@@ -57,7 +59,7 @@ How do I use multi-ccp to manage multiple Claude Code profiles? Refer to the REA
 ccp ui
 ```
 
-Web UI 是 CLI 的本地辅助界面，可用于查看 Profile、基于预设创建 Profile、编辑配置、管理共享网关服务与可复用 Upstream、实时切换模型、以及查看脱敏请求日志。
+Web UI 是 CLI 的本地辅助界面，可用于查看 Profile、基于预设创建 Profile、编辑配置、管理共享网关服务与可复用 Upstream、实时切换模型、查看脱敏请求日志，以及监控 Agent CLI 协作网络。
 
 交互式创建一个 profile：
 
@@ -92,6 +94,26 @@ ccp list
 ccp status work
 ccp path work
 ```
+
+## Agent CLI 协作
+
+0.4.0 新增面向独立 Agent CLI 窗口的实时协作网络。每个运行中的 Claude Code 窗口都会注册为一个独立 peer，默认 peer ID 为 `<profile>:<pid>`；即使两个窗口使用同一个 profile，也会被当作两个可以精确寻址的 Agent。Profile 名称只是配置和显示标签，不是协作作用域。
+
+协作网络的作用域是整个本地 Gateway 运行时，而不是项目目录。`projectKey` 和 `projectDir` 只作为本地会话诊断与上下文交接元数据保留，不参与消息路由或黑板隔离。共享黑板是所有已连接 Agent CLI 共用的一份内存键值空间，协作 Hub 重启后会清空。
+
+启动本地 Gateway，并从终端查看当前协作网络：
+
+```bash
+ccp gateway start
+ccp collab list
+ccp collab blackboard
+```
+
+启动 Profile 时，`multi-ccp` 会自动写入 `ccp-collab` MCP 服务、协作工具权限和 `multi-agent-collab` skill。之后 Claude Code 可以使用 `list_peers`、`ask_peer`、`send_task`、`reply_peer`、`check_inbox`、`update_focus`、`share_data`、`get_shared_data`、`read_peer_context` 和 `notify_supervisor`。
+
+当同一 Profile 同时运行多个窗口时，应使用 `list_peers` 返回的精确 `peerId`。`ask_peer` 的 45 秒默认值只是前台等待窗口，不是任务超时；返回 `deferred` 后，后台派发仍会继续，迟到的回复仍然有效。`processing`、`stalled` 和 `disconnected` 根据 peer 的输入、输出、工具调用和心跳活动判断，不会仅因模型思考时间较长就结束任务。只有在 peer 确实崩溃或不可用时，才使用 `read_peer_context` 读取有边界且已脱敏的交接上下文。
+
+`ccp ui` 的 Mesh 看板会展示每个 CLI 实例及其 PID、当前焦点、生命周期状态、活跃派发、消息流、全局共享黑板和 Web UI 监管台更新。
 
 ## Profile 类型
 
@@ -285,6 +307,13 @@ ccp sync-session <target-profile> [--all]
 ccp sync-session <source-profile|main> to <target-profile|main> [--all]
 ```
 
+Agent CLI 协作命令：
+
+```bash
+ccp collab list
+ccp collab blackboard
+```
+
 ## 配置目录
 
 Profiles 默认存放在：
@@ -294,6 +323,8 @@ Profiles 默认存放在：
 ```
 
 Gateway Profile 元数据只保存 `upstreamId` 和选中的模型；它的 `.ccp-gateway.json` 只保存生成的本地 token。可复用的上游配置会把所选 `protocol`、完整 `endpointUrl`、模型列表与兼容映射保存在 `~/.claude-profiles/.gateway/upstreams/`，供应商 API key 则单独保存在 `~/.claude-profiles/.gateway/secrets/`。Profile 的 `settings.json` 会在启动前自动派生和修复，不应作为网关路由配置的真相来源。
+
+Agent CLI 协作 Hub 会在本地 Gateway 进程的生命周期内，将 peer 注册、派发历史、监管消息和共享黑板保存在内存中。这些是运行时协作数据，不会写入 Profile 文件，也不按项目目录隔离。
 
 Claude Code 默认配置目录仍然可以通过 `main` 访问：
 

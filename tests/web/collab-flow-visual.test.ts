@@ -6,6 +6,7 @@ let css = "";
 
 beforeAll(async () => {
   css = await readFile(path.resolve("src/web/assets/collab.css"), "utf8");
+  css = css.replace(/\r\n/g, "\n");
 });
 
 describe("Collab Mesh flow-state visuals", () => {

@@ -20,6 +20,8 @@ Use it when you want separate Claude Code sessions for work, personal projects, 
 - Create Claude login profiles that use Claude Code's normal account login flow without storing account passwords.
 - Use the built-in gateway to run Claude Code against OpenAI or OpenAI-compatible Responses and Chat Completions providers.
 - Run multiple gateway profiles concurrently through one local process while keeping upstream URLs, models, credentials, tools, streams, and cancellation state isolated per request.
+- Coordinate independent Agent CLI windows through an instance-aware MCP collaboration mesh with a global runtime blackboard.
+- Inspect peer identity, PID, focus, activity, dispatch state, and supervisor messages from the Web UI Mesh dashboard.
 - Sync historical Claude Code sessions between profiles or between `main` and a profile.
 
 ## Install
@@ -57,7 +59,7 @@ Open the local Web UI to browse profiles and create configurations visually:
 ccp ui
 ```
 
-The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, and inspect redacted request logs.
+The Web UI is a local companion for the CLI. It helps you inspect profiles, create preset-based profiles, edit profile settings, manage the shared gateway service and reusable upstreams, switch profile models, inspect redacted request logs, and monitor the Agent CLI collaboration mesh.
 
 Create a profile interactively:
 
@@ -92,6 +94,26 @@ ccp list
 ccp status work
 ccp path work
 ```
+
+## Agent CLI Collaboration
+
+Version 0.4.0 adds a collaboration mesh for independent Agent CLI windows. Each running Claude Code window registers as its own peer. The default peer ID is `<profile>:<pid>`, so two windows launched with the same profile are still separate, addressable agents. A profile name is a label and configuration source; it is not a collaboration scope.
+
+The mesh is gateway-wide rather than project-scoped. `projectKey` and `projectDir` are retained only as local session metadata for diagnostics and context handoff. The shared blackboard is one in-memory key-value space for all connected Agent CLI peers and is cleared when the collaboration Hub restarts.
+
+Start the local gateway and inspect the running mesh from a terminal:
+
+```bash
+ccp gateway start
+ccp collab list
+ccp collab blackboard
+```
+
+When a profile starts, `multi-ccp` provisions the `ccp-collab` MCP server, approved collaboration tools, and the `multi-agent-collab` skill in that profile. Claude Code can then use `list_peers`, `ask_peer`, `send_task`, `reply_peer`, `check_inbox`, `update_focus`, `share_data`, `get_shared_data`, `read_peer_context`, and `notify_supervisor`.
+
+Use the exact `peerId` returned by `list_peers` when a profile has multiple running windows. `ask_peer` keeps a request in the foreground only for its wait window (45 seconds by default); a `deferred` result is not a task timeout. The background dispatch remains active, and a late reply is still delivered. `processing`, `stalled`, and `disconnected` are derived from peer activity, output, tool calls, and heartbeats rather than from a fixed thinking deadline. If a peer has actually crashed or become unavailable, use `read_peer_context` to inspect its bounded, redacted handoff context.
+
+The `ccp ui` Mesh dashboard visualizes every CLI instance, PID, current focus, lifecycle state, active dispatches, message flow, global blackboard entries, and Web UI supervisor updates.
 
 ## Profile Types
 
@@ -285,6 +307,13 @@ ccp sync-session <target-profile> [--all]
 ccp sync-session <source-profile|main> to <target-profile|main> [--all]
 ```
 
+Agent CLI collaboration commands:
+
+```bash
+ccp collab list
+ccp collab blackboard
+```
+
 ## Configuration Layout
 
 Profiles are stored under:
@@ -294,6 +323,8 @@ Profiles are stored under:
 ```
 
 Gateway profile metadata stores only `upstreamId` and the selected model. Its `.ccp-gateway.json` stores only the generated local token. Reusable upstream configs store the selected `protocol`, full `endpointUrl`, model list, and compatibility mapping under `~/.claude-profiles/.gateway/upstreams/`, while provider API keys are stored separately under `~/.claude-profiles/.gateway/secrets/`. The profile's `settings.json` is derived automatically before launch and should not be used as the source of truth for gateway routing.
+
+The Agent CLI collaboration Hub keeps peer registrations, dispatch history, supervisor messages, and the shared blackboard in memory for the lifetime of the local gateway process. These records are runtime coordination data, not profile files and not project-scoped state.
 
 Claude Code's default config directory is still available as:
 

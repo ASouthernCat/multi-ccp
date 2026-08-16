@@ -1,7 +1,7 @@
 {
   "name": "multi-ccp",
-  "version": "0.3.6",
-  "description": "Cross-platform Claude Code profile manager for API, login, and built-in gateway workflows.",
+  "version": "0.4.0",
+  "description": "Cross-platform Claude Code profile manager with API, login, built-in gateway, and Agent CLI collaboration workflows.",
   "type": "module",
   "bin": {
     "ccp": "dist/cli/index.js"
@@ -33,7 +33,10 @@
     "cli",
     "anthropic",
     "openai",
-    "gateway"
+    "gateway",
+    "mcp",
+    "agents",
+    "collaboration"
   ],
   "author": "asoutherncat",
   "license": "MIT",

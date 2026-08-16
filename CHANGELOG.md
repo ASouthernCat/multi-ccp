@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- 后续版本变更记录将在此处累积。
+
+## 0.4.0 - 2026-08-17
+
+- 新增面向独立 Agent CLI 窗口的实时协作网络。每个运行中的 CLI 都以独立 peer 注册，默认使用 `<profile>:<pid>` 作为实例 ID；同一 Profile 的多个窗口可以被精确寻址。
+- 协作路由按 Agent CLI 实例处理，不以项目目录建立作用域。`projectKey` / `projectDir` 仅保留为本地会话元数据；共享黑板是当前 Gateway 进程内对所有 Agent CLI 可见的一份全局运行时键值空间。
+- 新增 `list_peers`、`check_inbox`、`ask_peer`、`send_task`、`reply_peer`、`update_focus`、`share_data`、`get_shared_data`、`read_peer_context` 和 `notify_supervisor` MCP 工具，并在 Profile 启动时自动写入 MCP 配置、权限和协作 skill。
+- 协作状态改为基于输入、输出、工具调用和心跳活动判断，支持 `pending`、`waiting`、`processing`、`stalled`、`disconnected`、`completed` 和 `error`，不会仅凭固定等待时长判定模型思考失败。
+- `ask_peer` 的等待参数现在表示前台等待窗口；窗口结束返回 `deferred` 后，后台派发继续运行，迟到回复仍然有效。故障接管优先使用 `read_peer_context`，读取有边界且脱敏的会话交接上下文。
+- PTY / 控制台协作注入增加终端协作提示、活动上报和精确实例生命周期清理；`ccp ui` 新增 Mesh 看板，展示 CLI 实例、PID、焦点、状态、消息流、派发任务、共享黑板和监管收件箱。
+- 修复 Web UI 创建 Profile 时的 HTTP 方法处理，避免通过 UI 创建 Profile 返回 `Method not allowed`。
 - 移除 Claude Code Router（CCR）集成：不再提供 `ccp ccr` / `add-ccr`、CCR Profile 预设、Web UI CCR 面板与相关 API；OpenAI 兼容供应商请使用内置 Gateway。
 - Gateway Profile 统一只使用 `anthropic.ccp-*` 别名，不再兼容旧 `claude-ccp-*` 别名；启动时会移除固定上下文窗口和 compact 覆盖项，使 `/autocompact` 保持 Claude Code 默认的 `auto`，实际上下文限制由上游响应决定。
 - Gateway 接受 Claude Code 2.1.233 自动模式分类请求发送的 `thinking: { type: "disabled" }`，同时继续拒绝 adaptive、enabled thinking 及其他无效字段，避免本地 `400` 被客户端误报为模型暂时不可用。

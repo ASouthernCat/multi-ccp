@@ -10,6 +10,8 @@ beforeAll(async () => {
     readFile(path.resolve("src/web/assets/collab.css"), "utf8"),
     readFile(path.resolve("src/web/assets/app.js"), "utf8"),
   ]);
+  css = css.replace(/\r\n/g, "\n");
+  app = app.replace(/\r\n/g, "\n");
 });
 
 describe("Collab Mesh responsive CSS", () => {

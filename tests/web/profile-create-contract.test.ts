@@ -16,7 +16,7 @@ interface FakeForm {
 }
 
 async function loadCreateProfileFactory(): Promise<(...args: unknown[]) => () => Promise<void>> {
-  const source = await readFile(path.resolve("src/web/assets/app.js"), "utf8");
+  const source = (await readFile(path.resolve("src/web/assets/app.js"), "utf8")).replace(/\r\n/g, "\n");
   const start = source.indexOf("async function createProfile()");
   const end = source.indexOf("\n\nwindow.openCollabMesh", start);
   expect(start).toBeGreaterThanOrEqual(0);

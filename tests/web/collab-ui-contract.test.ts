@@ -8,6 +8,8 @@ let serverSource = "";
 beforeAll(async () => {
   source = await readFile(path.resolve("src/web/assets/app.js"), "utf8");
   serverSource = await readFile(path.resolve("src/web/server.ts"), "utf8");
+  source = source.replace(/\r\n/g, "\n");
+  serverSource = serverSource.replace(/\r\n/g, "\n");
 });
 
 function sliceFunction(startMarker: string, endMarker: string) {
