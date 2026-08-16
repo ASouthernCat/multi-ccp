@@ -899,6 +899,131 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
       return json(res, 200, await readGatewayLogTail());
     }
 
+    if (pathname === "/api/collab/mesh") {
+      if (req.method !== "GET") return methodNotAllowed(res);
+      const [peersRes, blackboardRes, supervisorRes, dispatchesRes] = await Promise.all([
+        fetch("http://127.0.0.1:3921/api/collab/peers")
+          .then(async (response) => response.ok
+            ? { online: true, data: await response.json() as Record<string, unknown> }
+            : { online: false, data: { peers: [] } })
+          .catch(() => ({ online: false, data: { peers: [] } })),
+        fetch("http://127.0.0.1:3921/api/collab/blackboard")
+          .then((response) => response.ok ? response.json() : { blackboard: [] })
+          .catch(() => ({ blackboard: [] })),
+        fetch("http://127.0.0.1:3921/api/collab/supervisor/messages?limit=100")
+          .then((response) => response.ok ? response.json() : { messages: [], unread: 0 })
+          .catch(() => ({ messages: [], unread: 0 })),
+        fetch("http://127.0.0.1:3921/api/collab/dispatches?limit=100")
+          .then((response) => response.ok ? response.json() : { dispatches: [], summary: {} })
+          .catch(() => ({ dispatches: [], summary: {} }))
+      ]);
+      return json(res, 200, {
+        ok: true,
+        gatewayOnline: peersRes.online,
+        peers: (peersRes.data as any).peers ?? [],
+        blackboard: (blackboardRes as any).blackboard ?? [],
+        dispatches: (dispatchesRes as any).dispatches ?? [],
+        dispatchSummary: (dispatchesRes as any).summary ?? {},
+        supervisorMessages: (supervisorRes as any).messages ?? [],
+        supervisorUnread: (supervisorRes as any).unread ?? 0
+      });
+    }
+
+    if (pathname === "/api/collab/send") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, unknown>>(req);
+      const from = body.from ? String(body.from).trim() : "web-ui";
+      const target = body.to ? String(body.to).trim() : undefined;
+      const targetPeerId = body.peerId ? String(body.peerId).trim() : undefined;
+      const sourcePeerId = body.sourcePeerId ? String(body.sourcePeerId).trim() : undefined;
+      const message = body.message ? String(body.message).trim() : undefined;
+      if (!target || !message) {
+        return json(res, 400, { ok: false, error: "Missing 'to' or 'message'." });
+      }
+      try {
+        const senderProfile = (from && from !== "__hub__" && from !== "web-ui") ? from : "web-ui";
+        const isRelay = senderProfile !== "web-ui";
+        const dispatchRes = await fetch("http://127.0.0.1:3921/api/collab/supervisor/dispatch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: isRelay ? "relay" : body.isAsk === true ? "ask" : "task",
+            to: isRelay ? senderProfile : target,
+            peerId: isRelay ? sourcePeerId : targetPeerId,
+            relayTo: isRelay ? target : undefined,
+            relayPeerId: isRelay ? targetPeerId : undefined,
+            message,
+            reportBack: body.reportBack === true || (!isRelay && body.reportBack !== false)
+          })
+        });
+        const dispatchJson = await dispatchRes.json() as Record<string, unknown>;
+        if (!dispatchRes.ok) {
+          const gatewayError = String((dispatchJson as any).error?.message ?? dispatchJson.error ?? "Gateway rejected the supervisor dispatch.");
+          return json(res, dispatchRes.status, { ok: false, error: gatewayError });
+        }
+
+        addActivity("info", isRelay
+          ? `Supervisor instructed @${senderProfile} to coordinate with @${target}.`
+          : `Supervisor dispatched work to @${target}.`);
+        return json(res, 200, { ok: true, result: dispatchJson });
+      } catch (error) {
+        return json(res, 502, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Failed to dispatch message to Gateway."
+        });
+      }
+    }
+
+    if (pathname === "/api/collab/blackboard") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, unknown>>(req);
+      const key = typeof body.key === "string" ? body.key.trim() : "";
+      if (!key || typeof body.value !== "string") {
+        return json(res, 400, {
+          ok: false,
+          error: "Blackboard writes require a non-empty string 'key' field and a string 'value'."
+        });
+      }
+      try {
+        const gatewayRes = await fetch("http://127.0.0.1:3921/api/collab/blackboard", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, value: body.value })
+        });
+        const gatewayJson = await gatewayRes.json() as Record<string, unknown>;
+        if (!gatewayRes.ok) {
+          const gatewayError = String((gatewayJson as any).error?.message ?? gatewayJson.error ?? "Gateway rejected the blackboard write.");
+          return json(res, gatewayRes.status, { ok: false, error: gatewayError });
+        }
+        addActivity("info", `Supervisor updated shared blackboard '${key}'.`);
+        return json(res, gatewayRes.status, gatewayJson);
+      } catch (error) {
+        return json(res, 502, {
+          ok: false,
+          error: error instanceof Error ? error.message : "Failed to update the Gateway blackboard."
+        });
+      }
+    }
+
+    if (pathname === "/api/collab/supervisor/read") {
+      if (req.method !== "POST") return methodNotAllowed(res);
+      const body = await readJsonBody<Record<string, unknown>>(req);
+      try {
+        const gatewayRes = await fetch("http://127.0.0.1:3921/api/collab/supervisor/messages", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ids: Array.isArray(body.ids) ? body.ids.map(String) : undefined,
+            all: body.all === true
+          })
+        });
+        const result = await gatewayRes.json();
+        return json(res, gatewayRes.ok ? 200 : gatewayRes.status, result);
+      } catch {
+        return json(res, 502, { ok: false, error: "Failed to update supervisor inbox." });
+      }
+    }
+
     if (pathname === "/api/gateway/upstreams") {
       if (req.method === "GET") return json(res, 200, { upstreams: await webGatewayUpstreams() });
       if (req.method === "POST") {

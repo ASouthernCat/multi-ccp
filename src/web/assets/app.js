@@ -48,7 +48,7 @@ function iconSvg(name) {
         circleHelp: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 1 1 5.8 1c-.8 1.1-1.9 1.3-2.4 2.5"/><path d="M12 17h.01"/></svg>',
         moon: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.8 13.3A8.5 8.5 0 1 1 10.7 3.2 6.7 6.7 0 0 0 20.8 13.3Z"/></svg>',
         sun: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
-        refresh: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 0 1-15.5 6.2"/><path d="M3 12A9 9 0 0 1 18.5 5.8"/><path d="M18.5 3.5v4.8h-4.8"/><path d="M5.5 20.5v-4.8h4.8"/></svg>',
+        refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>',
         plus: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>',
         search: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
         history: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>',
@@ -58,7 +58,25 @@ function iconSvg(name) {
         fileText: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>',
         pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg>',
         eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>',
-        eyeOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 6.2A10.6 10.6 0 0 1 12 6c6.5 0 10 6 10 6s-.8 1.4-2.1 2.8"/><path d="M6.6 6.6C3.6 8.4 2 12 2 12s3.5 6 10 6a10.2 10.2 0 0 0 4.1-.8"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'
+        eyeOff: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18"/><path d="M10.6 6.2A10.6 10.6 0 0 1 12 6c6.5 0 10 6 10 6s-.8 1.4-2.1 2.8"/><path d="M6.6 6.6C3.6 8.4 2 12 2 12s3.5 6 10 6a10.2 10.2 0 0 0 4.1-.8"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>',
+        cpu: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2"/><rect x="8" y="9" width="8" height="6" rx="1"/><path d="M8 2v3M16 2v3M8 19v3M16 19v3M2 9h3M2 15h3M19 9h3M19 15h3"/></svg>',
+        send: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>',
+        zap: '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>',
+        database: '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>',
+        activity: '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>',
+        maximize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>',
+        minimize: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>',
+        sparkles: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/><path d="M5 3v4M3 5h4M19 17v4M17 19h4"/></svg>',
+        target: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
+        copy: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+        check: '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>',
+        code: '<svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>',
+        bug: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect width="8" height="14" x="8" y="6" rx="4"/><path d="m19 7-3 2"/><path d="m5 7 3 2"/><path d="m19 19-3-2"/><path d="m5 19 3-2"/><path d="M20 13h-4"/><path d="M4 13h4"/><path d="m10 4 1 2"/><path d="m14 4-1 2"/></svg>',
+        flask: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2v7.31L4.29 19.3A2 2 0 0 0 6 22h12a2 2 0 0 0 1.71-2.7L14 9.31V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/></svg>',
+        users: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+        x: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+        shield: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 6v6c0 5 3.4 8.4 8 9.5 4.6-1.1 8-4.5 8-9.5V6l-8-3Z"/><path d="m9 12 2 2 4-4"/></svg>',
+        messageSquare: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
     };
     return icons[name] || icons.circleHelp;
 }
@@ -463,7 +481,7 @@ async function openNewProfileDialog(options = {}) {
         state.selectedPreset = options.presetId;
     if (options.presetFilter)
         state.presetFilter = options.presetFilter;
-    await Promise.all([loadRoutes(), loadPresets()]);
+    await loadPresets();
     if (options.presetId && state.presets.some(preset => preset.id === options.presetId))
         state.selectedPreset = options.presetId;
     renderPresetPicker();
@@ -1395,52 +1413,2982 @@ function renderPresetDetail() {
         button.onclick = openGatewayPanel;
     });
 }
-function bind() { hydrateIcons(); $('refreshBtn').onclick = () => load().then(() => toast('已刷新')); $('topSyncWorkspace').onclick = () => openSyncWorkspace(state.selected || 'main'); $('drawerClose').onclick = closeDrawer; document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => { resetNewProfileForm(); const dialogId = btn.dataset.dialogClose; if (dialogId === 'newProfileDialog' || dialogId === 'gatewayDialog') closePrimaryModal(dialogId); else $(dialogId).close(); })); document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => { if (event.target !== dialog)
-    return; if (dialog.id === 'syncConfirmDialog') {
-    closeSyncConfirm();
-    return;
-} if (dialog.id === 'newProfileDialog')
-    resetNewProfileForm(); if (dialog.id === 'newProfileDialog' || dialog.id === 'gatewayDialog') closePrimaryModal(dialog.id); else dialog.close(); })); ['newProfileDialog', 'gatewayDialog'].forEach(id => $(id).addEventListener('close', () => handlePrimaryModalClose(id))); $('themeToggle').onclick = () => { const dark = document.documentElement.dataset.theme === 'dark'; document.documentElement.dataset.theme = dark ? 'light' : 'dark'; localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark'); $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun'); $('themeToggle').title = dark ? '切换深色' : '切换浅色'; $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色'); }; const saved = localStorage.getItem('ccp-ui-theme') || 'light'; document.documentElement.dataset.theme = saved; $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon'); $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色'; $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色'); $('newProfileBtn').onclick = () => void openNewProfileDialog(); $('createProfileSubmit').onclick = createProfile; }
-function resetNewProfileForm() { const formEl = $('newProfileForm'); if (!formEl)
-    return; formEl.reset(); state.selectedPreset = 'custom-api'; state.presetQuery = ''; state.presetFilter = 'all'; if (state.presets.length)
-    renderPresetPicker(); }
-async function createProfile() { const formEl = $('newProfileForm'); if (!formEl.reportValidity()) {
-    const invalid = formEl.querySelector(':invalid');
-    toast(invalid?.closest('label')?.textContent?.trim() ? `请检查：${invalid.closest('label').textContent.trim()}` : '请完善必填项');
-    invalid?.focus();
-    return;
-} const form = new FormData(formEl); const preset = selectedPreset(); const kind = preset?.type || form.get('kind'); const raw = Object.fromEntries(form.entries()); let url = '/api/profiles/preset'; let body = { presetId: raw.presetId, name: raw.name, kind, token: raw.token }; if (kind === 'custom-api') {
-    url = '/api/profiles/api';
-    body = { name: raw.name, baseUrl: raw.baseUrl, token: raw.customToken || '', model: raw.model || '' };
-}
-else if (kind === 'login') {
-    url = '/api/profiles/login';
-    body = { name: raw.name };
-}
-else if (kind === 'gateway') {
-    body = { presetId: raw.presetId, name: raw.name, kind: 'gateway', upstreamId: raw.gatewayUpstream || '', model: raw.gatewayModel || '' };
-}
-api(url, { method: 'POST', body: JSON.stringify(body) }).then(async () => {
-    const createdName = String(raw.name || '').trim();
-    closePrimaryModal('newProfileDialog');
-    resetNewProfileForm();
-    toast('Profile 已创建');
-    if (kind === 'gateway') {
-        const current = await api('/api/gateway/status');
-        if (!current.running && confirm('Gateway 尚未运行，是否立即启动？'))
-            await api('/api/gateway/start', { method: 'POST' });
+
+let collabMeshState = {
+    loading: false,
+    gatewayOnline: true,
+    peers: [],
+    blackboard: [],
+    supervisorMessages: [],
+    supervisorUnread: 0,
+    dispatches: [],
+    dispatchSummary: {},
+    dispatchStateById: {},
+    dispatchSnapshotLoaded: false,
+    sending: false,
+    // Canvas & Viewport State
+    zoom: 1.0,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    isDraggingNode: false,
+    panStartX: 0,
+    panStartY: 0,
+    initialPanX: 0,
+    initialPanY: 0,
+    // Custom Node Positions: { [peerId]: { x: number, y: number } }
+    nodePositions: {},
+    hubPosition: { x: 60, y: 40 },
+    hubPositionManual: false,
+    layoutMode: '',
+    // Wire connection dragging:
+    activeWire: null,
+    tentativeLink: null, // { source, target, createdAt }
+    activeP2pLinks: [], // Array<{ source, target, status, isFlowing, expiresAt }>
+    hoveredDropTarget: null,
+    // Active flying particle animations:
+    transmissions: [],
+    // Drawers & HUDs (Unified Drawer)
+    blackboardOpen: false,
+    blackboardFilter: '',
+    activityOpen: false,
+    supervisorPanelOpen: true,
+    supervisorTab: 'inbox',
+    activeReplyTarget: '',
+    activityLogs: [
+        { time: new Date().toLocaleTimeString(), text: 'Multi-Agent Mesh 拓扑网络已就绪', type: 'info' }
+    ],
+    // Simulation / Demo Mode
+    simulationMode: false,
+    pollTimer: null,
+    // Target-Attached Floating Popover (Flyout beside target node)
+    nodeFlyout: {
+        open: false,
+        targetProfile: '',
+        message: '',
+        isAsk: false,
+        reportBack: true,
+        sourceProfile: null
+    },
+    // Global Broadcast & Batch Dispatch Modal
+    dispatchModal: {
+        open: false,
+        selectedTargets: new Set(),
+        message: '',
+        reportBack: true,
+        activePresetId: ''
+    },
+    // Preserve reply draft across silent panel refreshes
+    replyDraft: '',
+    hasInitialFit: false,
+    isFullscreen: false
+};
+
+const COLLAB_TASK_PRESETS = [
+    {
+        id: 'review',
+        label: '代码审查',
+        icon: '🔍',
+        prompt: '请审查当前代码库架构规范与潜在隐患，输出诊断报告：'
+    },
+    {
+        id: 'fix',
+        label: '排查修复',
+        icon: '🐛',
+        prompt: '请排查并修复当前未通过的错误与异常日志：'
+    },
+    {
+        id: 'tests',
+        label: '生成单测',
+        icon: '🧪',
+        prompt: '请为当前核心功能模块补充自动化单元测试用例：'
+    },
+    {
+        id: 'docs',
+        label: '接口文档',
+        icon: '📝',
+        prompt: '请梳理当前核心 API 与 MCP 工具定义并输出文档：'
+    },
+    {
+        id: 'custom',
+        label: '自定义指令...',
+        icon: '✍️',
+        prompt: '',
+        custom: true
     }
-    await load();
-    if ($('gatewayDialog')?.open)
-        await openGatewayPanel();
-    if (createdName) {
+];
+
+const COLLAB_DEMO_PEERS = [
+    {
+        peerId: 'grok-arch:14208',
+        profile: 'grok-arch',
+        model: 'grok-2',
+        status: 'idle',
+        currentFocus: '系统架构分析与多智能体解耦设计',
+        activeFiles: ['src/collab/hub.ts', 'src/gateway/server.ts'],
+        pid: 14208,
+        cwd: 'D:/CodingDev/multi-ccp'
+    },
+    {
+        peerId: 'ds-coder:28412',
+        profile: 'ds-coder',
+        model: 'deepseek-r1',
+        status: 'busy',
+        currentFocus: '重构 Collab Canvas 拓扑连线与粒子引擎',
+        activeFiles: ['src/web/assets/app.js', 'src/web/assets/gateway.css'],
+        pid: 28412,
+        cwd: 'D:/CodingDev/multi-ccp'
+    },
+    {
+        peerId: 'claude-qa:39104',
+        profile: 'claude-qa',
+        model: 'claude-3-7-sonnet',
+        status: 'idle',
+        currentFocus: '自动化单元测试与协作协议覆盖验证',
+        activeFiles: ['tests/collab/hub.test.ts'],
+        pid: 39104,
+        cwd: 'D:/CodingDev/multi-ccp'
+    }
+];
+
+const COLLAB_DEMO_BLACKBOARD = [
+    {
+        id: 'bb-1',
+        key: 'feature:collab-mesh-canvas',
+        value: 'Canvas-based topology mesh studio initialized with drag-and-drop wiring and animated particle curves.',
+        author: 'grok-arch',
+        timestamp: Date.now() - 180000
+    },
+    {
+        id: 'bb-2',
+        key: 'spec:mcp-stdio-bridge',
+        value: 'Standardized MCP communication stdio bridge running across all profiles via gateway proxy.',
+        author: 'ds-coder',
+        timestamp: Date.now() - 90000
+    }
+];
+
+function normalizeCollabIdentity(value) {
+    return String(value || '').trim().toLowerCase();
+}
+
+function collabNetworkSummaryText() {
+    const online = collabMeshState.gatewayOnline || collabMeshState.simulationMode;
+    const active = collabMeshState.dispatches.filter(item => ['pending', 'waiting', 'processing', 'stalled', 'disconnected'].includes(item.status)).length;
+    return `${online ? '网关已联通' : '网关离线'} · ${collabMeshState.peers.length} 个 Agent CLI · ${active} 个协作中 · ${collabMeshState.supervisorUnread} 条未读`;
+}
+
+function collabPeerKey(peer) {
+    if (!peer) return '';
+    const peerId = String(peer.peerId || '').trim();
+    if (peerId) return `peer:${encodeURIComponent(peerId)}`;
+    const profile = normalizeCollabIdentity(peer.profile);
+    const pid = String(peer.pid || 'unknown');
+    return `peer:${encodeURIComponent(`${profile}:${pid}`)}`;
+}
+
+function collabPeerByKey(key) {
+    if (!key) return null;
+    const peers = collabMeshState.peers.length ? collabMeshState.peers : (collabMeshState.simulationMode ? COLLAB_DEMO_PEERS : []);
+    return peers.find(peer => collabPeerKey(peer) === key) || null;
+}
+
+function collabPeerByIdentity(profile, peerId = '') {
+    const normalizedProfile = String(profile || '').trim().toLowerCase();
+    const peers = collabMeshState.peers.length ? collabMeshState.peers : (collabMeshState.simulationMode ? COLLAB_DEMO_PEERS : []);
+    const matches = peers.filter(peer => String(peer.profile || '').trim().toLowerCase() === normalizedProfile);
+    if (peerId) return matches.find(peer => String(peer.peerId || '') === String(peerId)) || null;
+    return matches.length === 1 ? matches[0] : null;
+}
+
+function collabDispatchNodeKey(profile, peerId) {
+    const normalized = normalizeCollabIdentity(profile);
+    if (!normalized || normalized === 'web-ui' || normalized === 'supervisor' || normalized === '__supervisor__') return '__hub__';
+    const peer = collabPeerByIdentity(profile, peerId);
+    return peer ? collabPeerKey(peer) : collabPeerKey({ profile, peerId });
+}
+
+function collabDispatchVisualState(dispatch) {
+    if (!dispatch) return 'idle';
+    if (dispatch.status === 'completed') return 'completed';
+    if (dispatch.status === 'error' || dispatch.status === 'timeout') return 'error';
+    if (dispatch.status === 'disconnected') return 'disconnected';
+    if (dispatch.status === 'stalled') return 'stalled';
+    if (dispatch.status === 'processing') return 'processing';
+    if (dispatch.status === 'pending') return 'pending';
+    if (dispatch.status === 'waiting') return 'waiting';
+    return 'idle';
+}
+
+function formatCollabElapsed(startAt, endAt = Date.now()) {
+    const seconds = Math.max(0, Math.floor((Number(endAt) - Number(startAt || endAt)) / 1000));
+    if (seconds < 60) return `${seconds}秒`;
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    if (minutes < 60) return `${minutes}分${String(remainder).padStart(2, '0')}秒`;
+    return `${Math.floor(minutes / 60)}小时${String(minutes % 60).padStart(2, '0')}分`;
+}
+
+function collabDispatchStatusText(dispatch) {
+    const state = collabDispatchVisualState(dispatch);
+    if (state === 'disconnected') return 'Agent CLI 已断开，任务仍保留';
+    if (state === 'pending') return '目标尚未连接，任务排队中';
+    if (state === 'waiting') {
+        const elapsed = formatCollabElapsed(dispatch.waitingSince || dispatch.createdAt);
+        return `已送达，等待开始处理 ${elapsed}`;
+    }
+    if (state === 'processing') return `正在处理 · 最近活动 ${formatCollabElapsed(dispatch.lastActivityAt || dispatch.updatedAt)}前`;
+    if (state === 'stalled') return `疑似卡住 · 已静默 ${formatCollabElapsed(dispatch.lastActivityAt || dispatch.waitingSince || dispatch.createdAt)}`;
+    if (state === 'completed') return `已完成 · ${formatCollabElapsed(dispatch.createdAt, dispatch.completedAt || dispatch.updatedAt)}`;
+    if (state === 'error') return dispatch.status === 'timeout' ? '已由人工或兼容逻辑终止' : '执行失败';
+    return '在线';
+}
+
+function collabDispatchBadgeText(dispatch) {
+    const state = collabDispatchVisualState(dispatch);
+    if (state === 'disconnected') return '已断连';
+    if (state === 'pending') return '排队中';
+    if (state === 'waiting') return `等待 ${formatCollabElapsed(dispatch.waitingSince || dispatch.createdAt)}`;
+    if (state === 'processing') return '处理中';
+    if (state === 'stalled') return '疑似卡住';
+    if (state === 'completed') return '已完成';
+    if (dispatch.status === 'error') return '失败';
+    if (dispatch.status === 'timeout') return '已终止';
+    return '在线';
+}
+
+function latestCollabDispatchForPeer(peer) {
+    const profile = normalizeCollabIdentity(peer?.profile);
+    const peerId = String(peer?.peerId || '');
+    const matches = (collabMeshState.dispatches || []).filter(dispatch => (
+        dispatch.toPeerId ? dispatch.toPeerId === peerId : normalizeCollabIdentity(dispatch.to) === profile
+    ));
+    const active = matches
+        .filter(dispatch => ['pending', 'waiting', 'processing', 'stalled', 'disconnected'].includes(dispatch.status))
+        .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0];
+    if (active) return active;
+    const terminal = matches.sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))[0];
+    if (!terminal) return null;
+    if (terminal.status === 'timeout' || terminal.status === 'error') return terminal;
+    const tracked = collabMeshState.dispatchStateById?.[terminal.id];
+    return tracked?.pulseUntil > Date.now() ? terminal : null;
+}
+
+function reconcileCollabDispatches(dispatches) {
+    const previous = collabMeshState.dispatchStateById || {};
+    const next = {};
+    const shouldAnimate = collabMeshState.dispatchSnapshotLoaded;
+    const now = Date.now();
+
+    dispatches.forEach(dispatch => {
+        const state = collabDispatchVisualState(dispatch);
+        const signature = `${dispatch.status}:${dispatch.deliveryStatus}:${dispatch.updatedAt || ''}`;
+        const previousEntry = previous[dispatch.id];
+        const completedTransition = shouldAnimate && previousEntry?.state !== 'completed' && state === 'completed';
+        next[dispatch.id] = {
+            signature,
+            state,
+            pulseUntil: completedTransition ? now + 3_000 : previousEntry?.pulseUntil
+        };
+        if (!shouldAnimate || previousEntry?.signature === signature) return;
+
+        const source = collabDispatchNodeKey(dispatch.from, dispatch.fromPeerId);
+        const target = collabDispatchNodeKey(dispatch.to, dispatch.toPeerId);
+        if (!previousEntry && now - Number(dispatch.createdAt || 0) < 12_000) {
+            triggerTransmissionAnimation(source, target, '', state === 'disconnected' ? 'disconnected' : 'sending');
+        } else if (state === 'completed' && previousEntry?.state !== 'completed') {
+            triggerTransmissionAnimation(target, source, '', 'completed');
+        } else if (state === 'error' && previousEntry?.state !== 'error') {
+            triggerTransmissionAnimation(target, source, '', 'error');
+        }
+
+    });
+
+    collabMeshState.dispatchStateById = next;
+    collabMeshState.dispatchSnapshotLoaded = true;
+    collabMeshState.activeP2pLinks = (collabMeshState.dispatches || [])
+        .filter(dispatch => ['pending', 'waiting', 'processing', 'stalled', 'disconnected'].includes(dispatch.status) || now - Number(dispatch.updatedAt || 0) < 8_000)
+        .map(dispatch => ({
+            source: collabDispatchNodeKey(dispatch.from, dispatch.fromPeerId),
+            target: collabDispatchNodeKey(dispatch.to, dispatch.toPeerId),
+            status: collabDispatchVisualState(dispatch),
+            isFlowing: dispatch.status === 'waiting' || dispatch.status === 'processing',
+            expiresAt: Number(dispatch.updatedAt || now) + 8_000,
+            dispatchId: dispatch.id
+        }));
+}
+
+async function openCollabMesh() {
+    renderCollabMeshPanel();
+    const dialog = $('collabMeshDialog');
+    if (dialog && typeof dialog.showModal === 'function') {
+        dialog.classList.remove('is-closing');
+        dialog.showModal();
+        // Force reflow so open animation plays even when dialog was previously open
+        void dialog.offsetWidth;
+        dialog.classList.add('is-open');
+    }
+    if (!collabMeshState.nodePositions) collabMeshState.nodePositions = {};
+    collabMeshState.hasInitialFit = false;
+    await loadCollabMeshData();
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            fitCollabMeshView(true);
+            collabMeshState.hasInitialFit = true;
+        });
+    });
+    startCollabLivePolling();
+}
+
+function closeCollabMesh() {
+    stopCollabLivePolling();
+    closeNodeFlyout();
+    closeBroadcastDispatchModal();
+    const dialog = $('collabMeshDialog');
+    if (!dialog) {
+        collabMeshState.isFullscreen = false;
+        return;
+    }
+
+    const finishClose = () => {
+        if (dialog.open && typeof dialog.close === 'function') dialog.close();
+        dialog.classList.remove('is-fullscreen', 'is-open', 'is-closing');
+        collabMeshState.isFullscreen = false;
+    };
+
+    if (!dialog.open) {
+        finishClose();
+        return;
+    }
+
+    dialog.classList.add('is-closing');
+    dialog.classList.remove('is-open');
+    const onEnd = (e) => {
+        if (e && e.target !== dialog) return;
+        dialog.removeEventListener('animationend', onEnd);
+        finishClose();
+    };
+    dialog.addEventListener('animationend', onEnd);
+    // Fallback if animation is disabled
+    setTimeout(onEnd, 280);
+}
+
+function startCollabLivePolling() {
+    stopCollabLivePolling();
+    collabMeshState.pollTimer = setInterval(() => {
+        if ($('collabMeshDialog')?.open && !collabMeshState.isPanning && !collabMeshState.activeWire && !collabMeshState.isDraggingNode && !collabMeshState.dispatchModal.open && !collabMeshState.nodeFlyout.open) {
+            loadCollabMeshData(true);
+        }
+    }, 4000);
+}
+
+function stopCollabLivePolling() {
+    if (collabMeshState.pollTimer) {
+        clearInterval(collabMeshState.pollTimer);
+        collabMeshState.pollTimer = null;
+    }
+}
+
+async function loadCollabMeshData(silent = false) {
+    if (!silent) {
+        collabMeshState.loading = true;
+    }
+    try {
+        const res = await api('/api/collab/mesh');
+        collabMeshState.gatewayOnline = res.gatewayOnline !== false;
+
+        let peers = (res.peers || []).map(peer => ({ ...peer }));
+        let blackboard = (res.blackboard || []).map(entry => ({ ...entry }));
+        let supervisorMessages = (res.supervisorMessages || []).map(message => ({
+            ...message,
+            content: message.content ?? message.message ?? '',
+            timestamp: message.timestamp ?? message.createdAt ?? Date.now()
+        }));
+        let dispatches = (res.dispatches || []).map(dispatch => ({
+            ...dispatch,
+            createdAt: Number(dispatch.createdAt || Date.now()),
+            updatedAt: Number(dispatch.updatedAt || dispatch.createdAt || Date.now())
+        }));
+
+        if (collabMeshState.simulationMode) {
+            peers = COLLAB_DEMO_PEERS.map(peer => {
+                const live = collabMeshState.peers.find(p => collabPeerKey(p) === collabPeerKey(peer));
+                return live ? { ...peer, ...live, profile: peer.profile, peerId: peer.peerId } : { ...peer };
+            });
+            // Keep demo blackboard mutations (e.g. sync chips) instead of resetting every poll
+            if (!collabMeshState.blackboard?.length) {
+                blackboard = COLLAB_DEMO_BLACKBOARD.map(item => ({ ...item }));
+            } else {
+                blackboard = collabMeshState.blackboard;
+            }
+            supervisorMessages = collabMeshState.supervisorMessages;
+            dispatches = collabMeshState.dispatches;
+            collabMeshState.gatewayOnline = true;
+            // Never let live gateway inbox wipe simulated supervisor messages
+        }
+
+        collabMeshState.peers = peers;
+        collabMeshState.blackboard = blackboard;
+        collabMeshState.supervisorMessages = supervisorMessages;
+        collabMeshState.supervisorUnread = supervisorMessages.filter(message => !message.readAt).length;
+        collabMeshState.dispatches = dispatches;
+        collabMeshState.dispatchSummary = res.dispatchSummary || {};
+        reconcileCollabDispatches(collabMeshState.dispatches);
+        if (!collabPeerByKey(collabMeshState.activeReplyTarget)) {
+            collabMeshState.activeReplyTarget = collabMeshState.peers[0] ? collabPeerKey(collabMeshState.peers[0]) : '';
+        }
+        collabMeshState.lastSyncTime = Date.now();
+
+        reconcileNodePositions();
+        syncCollabNodesDom();
+        updateCollabWires();
+        syncSupervisorPanelDom({ preserveReplyDraft: true });
+        if (!collabMeshState.hasInitialFit && $('collabMeshDialog')?.open) {
+            requestAnimationFrame(() => fitCollabMeshView(true));
+            collabMeshState.hasInitialFit = true;
+        }
+    } catch (err) {
+        if (collabMeshState.simulationMode) {
+            if (!collabMeshState.peers.length) {
+                collabMeshState.peers = COLLAB_DEMO_PEERS.map(peer => ({ ...peer }));
+            }
+            if (!collabMeshState.blackboard.length) {
+                collabMeshState.blackboard = COLLAB_DEMO_BLACKBOARD.map(item => ({ ...item }));
+            }
+            collabMeshState.gatewayOnline = true;
+            reconcileNodePositions();
+            syncCollabNodesDom();
+            updateCollabWires();
+            syncSupervisorPanelDom({ preserveReplyDraft: true });
+        } else {
+            collabMeshState.gatewayOnline = false;
+            syncCollabNodesDom();
+            updateCollabWires();
+        }
+    } finally {
+        collabMeshState.loading = false;
+    }
+}
+
+function fitCollabMeshView(instant = false) {
+    const fit = computeFitViewParams();
+    if (instant) {
+        collabMeshState.panX = fit.panX;
+        collabMeshState.panY = fit.panY;
+        collabMeshState.zoom = fit.zoom;
+        applyCollabCameraTransform();
+        return;
+    }
+    animateViewportCamera(fit.panX, fit.panY, fit.zoom, 320);
+}
+
+function computeAutoLayout() {
+    collabMeshState.nodePositions = {};
+    collabMeshState.hubPosition = { x: 60, y: 40 };
+    collabMeshState.hubPositionManual = false;
+    reconcileNodePositions();
+    syncCollabNodesDom();
+    updateCollabWires();
+    fitCollabMeshView(false);
+    toast('已自动排布节点布局');
+}
+
+function reconcileNodePositions() {
+    if (!collabMeshState.nodePositions) collabMeshState.nodePositions = {};
+
+    const viewportWidth = $('collabCanvasViewport')?.clientWidth || window.innerWidth || 900;
+    const layoutMode = viewportWidth <= 600 ? 'compact' : 'wide';
+    if (collabMeshState.layoutMode && collabMeshState.layoutMode !== layoutMode) {
+        collabMeshState.nodePositions = {};
+        collabMeshState.hubPositionManual = false;
+    }
+    collabMeshState.layoutMode = layoutMode;
+
+    if (layoutMode === 'compact') {
+        if (!collabMeshState.hubPositionManual) {
+            collabMeshState.hubPosition = { x: 130, y: 28 };
+        }
+
+        if (!collabMeshState.nodePositions['__blackboard__']) {
+            collabMeshState.nodePositions['__blackboard__'] = { x: 24, y: 172 };
+        }
+
+        if (!collabMeshState.peers.length) {
+            if (!collabMeshState.nodePositions['__onboarding__']) {
+                collabMeshState.nodePositions['__onboarding__'] = { x: 111, y: 324 };
+            }
+            return;
+        }
+
+        collabMeshState.peers.forEach((peer, index) => {
+            const peerKey = collabPeerKey(peer);
+            if (!collabMeshState.nodePositions[peerKey]) {
+                collabMeshState.nodePositions[peerKey] = { x: 111, y: 324 + index * 196 };
+            }
+        });
+        return;
+    }
+
+    if (!collabMeshState.hubPositionManual) {
+        collabMeshState.hubPosition = { x: 60, y: 40 };
+    }
+
+    if (!collabMeshState.nodePositions['__blackboard__']) {
+        collabMeshState.nodePositions['__blackboard__'] = { x: 380, y: 40 };
+    }
+
+    const peers = collabMeshState.peers;
+    if (!peers.length) {
+        if (!collabMeshState.nodePositions['__onboarding__']) {
+            collabMeshState.nodePositions['__onboarding__'] = { x: 380, y: 230 };
+        }
+        return;
+    }
+
+    const startY = 230;
+    const cardWidth = 290;
+    const cardHeight = 210;
+    const gapX = 36;
+    const gapY = 32;
+    const cols = Math.max(1, Math.min(3, peers.length));
+
+    peers.forEach((peer, index) => {
+        const peerKey = collabPeerKey(peer);
+        if (!collabMeshState.nodePositions[peerKey]) {
+            const col = index % cols;
+            const row = Math.floor(index / cols);
+            const posX = 60 + col * (cardWidth + gapX);
+            const posY = startY + row * (cardHeight + gapY);
+            collabMeshState.nodePositions[peerKey] = { x: posX, y: posY };
+        }
+    });
+}
+
+function computeFitViewParams() {
+    const viewport = $('collabCanvasViewport');
+    if (!viewport) return { panX: 0, panY: 0, zoom: 1.0 };
+    const vpW = viewport.clientWidth || 900;
+    const vpH = viewport.clientHeight || 600;
+    const compactLayout = vpW <= 600;
+
+    const nodeEls = Array.from(document.querySelectorAll('.collab-node'));
+    if (!nodeEls.length) return { panX: 0, panY: 0, zoom: 1.0 };
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    nodeEls.forEach(el => {
+        const id = el.dataset.nodeId;
+        const pos = id === '__hub__' ? collabMeshState.hubPosition : collabMeshState.nodePositions[id];
+        if (pos) {
+            const w = el.offsetWidth || (id === '__hub__' ? 240 : 290);
+            const h = el.offsetHeight || (id === '__hub__' ? 76 : 210);
+            minX = Math.min(minX, pos.x);
+            minY = Math.min(minY, pos.y);
+            maxX = Math.max(maxX, pos.x + w);
+            maxY = Math.max(maxY, pos.y + h);
+        }
+    });
+
+    if (!isFinite(minX)) return { panX: 0, panY: 0, zoom: 1.0 };
+
+    const dockEl = $('collabTaskDock');
+    const dockHeight = dockEl ? (dockEl.offsetHeight + 18) : 96;
+    const topInset = compactLayout ? 24 : 36;
+    const bottomInset = dockHeight + 20;
+    const leftInset = compactLayout ? 18 : 48;
+    const rightInset = compactLayout ? 18 : (collabMeshState.supervisorPanelOpen ? 404 : 48);
+
+    const availW = Math.max(320, vpW - leftInset - rightInset);
+    const availH = Math.max(260, vpH - topInset - bottomInset);
+
+    const contentW = maxX - minX;
+    const contentH = maxY - minY;
+
+    const zoomX = availW / (contentW + 40);
+    const zoomY = availH / (contentH + 30);
+    const minimumZoom = compactLayout ? 0.62 : 0.38;
+    const targetZoom = Math.min(1.15, Math.max(minimumZoom, Math.min(zoomX, zoomY)));
+
+    const contentCenterX = (minX + maxX) / 2;
+    const contentCenterY = (minY + maxY) / 2;
+
+    const safeCenterX = leftInset + availW / 2;
+    const safeCenterY = topInset + availH / 2;
+
+    const targetPanX = safeCenterX - contentCenterX * targetZoom;
+    const targetPanY = safeCenterY - contentCenterY * targetZoom;
+
+    return { panX: targetPanX, panY: targetPanY, zoom: targetZoom };
+}
+
+function getNodePortCoords(nodeId, portType = 'output') {
+    const nodeEl = document.getElementById(`collab-node-${nodeId}`);
+    const fallbackPos = nodeId === '__hub__'
+        ? (collabMeshState.hubPosition || { x: 0, y: 0 })
+        : (collabMeshState.nodePositions[nodeId] || { x: 0, y: 0 });
+    const nodeWidth = nodeEl?.offsetWidth || (nodeId === '__blackboard__' ? 460 : (nodeId === '__hub__' ? 248 : 286));
+    const nodeHeight = nodeEl?.offsetHeight || (nodeId === '__blackboard__' ? 140 : (nodeId === '__hub__' ? 84 : 210));
+    const posX = nodeEl ? nodeEl.offsetLeft : fallbackPos.x;
+    const posY = nodeEl ? nodeEl.offsetTop : fallbackPos.y;
+
+    // Prefer measuring the actual port handle so wires dock to the visible ring/handle.
+    // Use getBoundingClientRect deltas (÷ zoom) because ports use CSS transforms.
+    if (nodeEl) {
+        let portEl = null;
+        if (portType === 'output') {
+            portEl = nodeEl.querySelector('.collab-port.port-output');
+        } else if (portType === 'input') {
+            portEl = nodeEl.querySelector('.collab-port.port-input');
+        } else if (portType === 'top') {
+            portEl = nodeEl.querySelector('.collab-port.port-top');
+        } else if (portType === 'bottom') {
+            portEl = nodeEl.querySelector('.collab-port.port-bottom');
+        }
+
+        const handle = portEl?.querySelector('.port-handle, .port-ring') || portEl;
+        if (handle) {
+            const nodeRect = nodeEl.getBoundingClientRect();
+            const handleRect = handle.getBoundingClientRect();
+            const scale = collabMeshState.zoom || 1;
+            return {
+                x: posX + (handleRect.left - nodeRect.left + handleRect.width / 2) / scale,
+                y: posY + (handleRect.top - nodeRect.top + handleRect.height / 2) / scale
+            };
+        }
+    }
+
+    if (portType === 'top') {
+        return { x: posX + nodeWidth / 2, y: posY };
+    }
+    if (portType === 'bottom') {
+        return { x: posX + nodeWidth / 2, y: posY + nodeHeight };
+    }
+    if (portType === 'output') {
+        return { x: posX + nodeWidth, y: posY + nodeHeight / 2 };
+    }
+    return { x: posX, y: posY + nodeHeight / 2 };
+}
+
+function clientToCanvasWorld(clientX, clientY) {
+    const viewport = $('collabCanvasViewport');
+    if (!viewport) return { x: 0, y: 0 };
+    const rect = viewport.getBoundingClientRect();
+    return {
+        x: (clientX - rect.left - collabMeshState.panX) / collabMeshState.zoom,
+        y: (clientY - rect.top - collabMeshState.panY) / collabMeshState.zoom
+    };
+}
+
+function findDropTargetAtWorldPoint(worldX, worldY, excludeId = null) {
+    let hovered = null;
+    document.querySelectorAll('.collab-node.agent-node').forEach(nodeEl => {
+        const profile = nodeEl.dataset.nodeId;
+        if (!profile || profile === excludeId) {
+            nodeEl.classList.remove('drop-target');
+            return;
+        }
+        const pos = collabMeshState.nodePositions[profile] || {
+            x: nodeEl.offsetLeft,
+            y: nodeEl.offsetTop
+        };
+        const w = nodeEl.offsetWidth || 286;
+        const h = nodeEl.offsetHeight || 210;
+        const hit = worldX >= pos.x - 18 && worldX <= pos.x + w + 18
+            && worldY >= pos.y - 18 && worldY <= pos.y + h + 18;
+        nodeEl.classList.toggle('drop-target', hit);
+        if (hit) hovered = profile;
+    });
+    return hovered;
+}
+
+function renderTaskCapsulesHtml(options = {}) {
+    const {
+        selectedId = '',
+        interactive = true,
+        forModal = false
+    } = options;
+    return COLLAB_TASK_PRESETS.map(preset => {
+        const activeClass = selectedId === preset.id ? ' is-active' : '';
+        const dragAttr = interactive && !forModal && !preset.custom ? ' draggable="true"' : '';
+        const customClass = preset.custom ? ' custom-capsule' : '';
+        const modalClass = forModal ? ' modal-capsule' : '';
+        const title = preset.custom
+            ? '打开自定义指令'
+            : (forModal ? `切换到「${preset.label}」模板` : '拖到 Agent 节点立即派发；点击打开派发弹窗');
+        return `
+            <button class="task-capsule-item${customClass}${modalClass}${activeClass}" type="button"
+                data-task-preset-id="${escapeHtml(preset.id)}"
+                data-task-preset="${escapeHtml(preset.prompt)}"
+                ${dragAttr}
+                title="${escapeHtml(title)}">
+                <span class="capsule-icon">${preset.icon}</span>
+                <span class="capsule-label">${escapeHtml(preset.label)}</span>
+            </button>
+        `;
+    }).join('');
+}
+
+function applyCollabCameraTransform() {
+    const container = $('collabTransformLayer');
+    if (container) {
+        container.style.transform = `translate3d(${collabMeshState.panX}px, ${collabMeshState.panY}px, 0) scale(${collabMeshState.zoom})`;
+    }
+    const indicator = $('collabZoomIndicator');
+    if (indicator) {
+        indicator.textContent = `${Math.round(collabMeshState.zoom * 100)}%`;
+    }
+}
+
+let cameraAnimationId = null;
+function animateViewportCamera(targetPanX, targetPanY, targetZoom, duration = 300) {
+    if (cameraAnimationId) {
+        cancelAnimationFrame(cameraAnimationId);
+        cameraAnimationId = null;
+    }
+
+    const startPanX = collabMeshState.panX;
+    const startPanY = collabMeshState.panY;
+    const startZoom = collabMeshState.zoom;
+    const startTime = performance.now();
+
+    function step(now) {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, elapsed / duration);
+        const ease = 1 - Math.pow(1 - progress, 3); // Cubic ease out
+
+        collabMeshState.panX = startPanX + (targetPanX - startPanX) * ease;
+        collabMeshState.panY = startPanY + (targetPanY - startPanY) * ease;
+        collabMeshState.zoom = startZoom + (targetZoom - startZoom) * ease;
+
+        applyCollabCameraTransform();
+
+        if (progress < 1) {
+            cameraAnimationId = requestAnimationFrame(step);
+        } else {
+            cameraAnimationId = null;
+        }
+    }
+
+    cameraAnimationId = requestAnimationFrame(step);
+}
+
+function stopCollabCameraAnimation() {
+    if (cameraAnimationId) {
+        cancelAnimationFrame(cameraAnimationId);
+        cameraAnimationId = null;
+    }
+}
+
+function renderCollabMeshPanel() {
+    const dialog = $('collabMeshDialog');
+    if (!dialog) return;
+
+    dialog.innerHTML = `
+        <div class="collab-studio-container" id="collabStudioContainer">
+            <!-- Studio Header -->
+            <header class="collab-studio-header">
+                <div class="collab-header-left">
+                    <span class="collab-studio-badge">
+                        <span class="pulse-dot"></span>
+                        <strong>AGENT OPERATIONS</strong>
+                    </span>
+                    <span class="collab-network-summary" id="collabNetworkSummary">
+                        ${collabNetworkSummaryText()}
+                    </span>
+                </div>
+                <div class="collab-header-right">
+                    <div class="collab-tool-group">
+                        <button class="collab-tool-btn" id="collabToggleBlackboardBtn" type="button" title="查看共享黑板">
+                            ${iconSvg('database')}<span>共享黑板 (${collabMeshState.blackboard.length})</span>
+                        </button>
+                        <button class="collab-tool-btn ${collabMeshState.supervisorPanelOpen ? 'active' : ''}" id="collabToggleSupervisorBtn" type="button" title="监管收件箱">
+                            ${iconSvg('activity')}<span>监管消息 (${collabMeshState.supervisorUnread})</span>
+                        </button>
+                    </div>
+                    <span class="collab-tool-divider"></span>
+                    <div class="collab-tool-group">
+                        <button class="collab-tool-btn" id="collabAutoLayoutBtn" type="button" title="自动排布节点并居中">
+                            ${iconSvg('zap')}<span>自动排布</span>
+                        </button>
+                        <button class="collab-tool-btn" id="collabToggleDemoBtn" type="button" title="切换模拟演示数据">
+                            ${iconSvg('sparkles')}<span>${collabMeshState.simulationMode ? '退出演示' : '演示模式'}</span>
+                        </button>
+                    </div>
+                    <span class="collab-tool-divider"></span>
+                    <div class="collab-tool-group">
+                        <button class="collab-tool-btn" id="collabRefreshBtn" type="button" title="刷新拓扑状态">${iconSvg('refresh')}</button>
+                        <button class="collab-tool-btn" id="collabToggleFullscreenBtn" type="button" title="全屏最大化">${iconSvg('maximize')}</button>
+                        <button class="collab-tool-btn close-btn" id="collabCloseBtn" type="button" title="关闭画布 (ESC)">${iconSvg('x')}</button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Main Canvas Viewport -->
+            <div class="collab-studio-viewport ${collabMeshState.supervisorPanelOpen ? 'has-supervisor-panel' : ''}" id="collabCanvasViewport">
+                <div class="collab-canvas-grid-bg" aria-hidden="true"></div>
+                <div class="collab-transform-layer" id="collabTransformLayer">
+                    <!-- SVG Wire Layer -->
+                    <svg class="collab-wires-svg" id="collabWiresSvg">
+                        <defs>
+                            <linearGradient id="wireGradientHub" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="var(--accent)" />
+                                <stop offset="100%" stop-color="var(--ink)" />
+                            </linearGradient>
+                            <linearGradient id="wireGradientBusy" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" stop-color="var(--blue)" />
+                                <stop offset="100%" stop-color="var(--green)" />
+                            </linearGradient>
+                        </defs>
+                        <g id="collabWiresGroup"></g>
+                        <g id="collabActiveWireGroup"></g>
+                        <g id="collabTransmissionsGroup"></g>
+                    </svg>
+
+                    <!-- Dynamic Node Layer -->
+                    <div class="collab-nodes-container" id="collabNodesContainer">
+                        ${renderCollabNodesHtml()}
+                    </div>
+
+                    <!-- Target-Attached Flyout Popover -->
+                    <div id="collabNodeFlyoutHost">
+                        ${renderCollabNodeFlyoutHtml()}
+                    </div>
+                </div>
+
+                <!-- Floating Canvas Zoom HUD -->
+                <div class="collab-zoom-hud">
+                    <button class="collab-hud-btn" id="collabZoomInBtn" type="button" title="放大画布 (Ctrl +)">+</button>
+                    <span class="collab-zoom-indicator" id="collabZoomIndicator">100%</span>
+                    <button class="collab-hud-btn" id="collabZoomOutBtn" type="button" title="缩小画布 (Ctrl -)">−</button>
+                    <button class="collab-hud-btn" id="collabResetViewBtn" type="button" title="重置视角 (1:1)">${iconSvg('maximize')}</button>
+                    <button class="collab-hud-btn collab-hud-fit-btn" id="collabFitViewBtn" type="button" title="自适应居中">1:1</button>
+                </div>
+
+                <!-- Draggable Task Capsule Dock -->
+                <div class="collab-task-dock" id="collabTaskDock">
+                    <div class="task-dock-title">
+                        <span class="pulse-dot"></span>
+                        <span>监管任务模板</span>
+                    </div>
+                    <div class="task-capsules-row" id="collabTaskCapsulesRow">
+                        ${renderTaskCapsulesHtml()}
+                    </div>
+                </div>
+
+                <!-- Unified Side Drawer -->
+                <aside class="collab-supervisor-panel ${collabMeshState.supervisorPanelOpen ? 'open' : ''}" id="collabSupervisorPanel">
+                    <div class="supervisor-panel-header">
+                        <div class="supervisor-panel-title-area">
+                            <span class="eyebrow">AGENT OPS STUDIO</span>
+                            <h3>${collabMeshState.supervisorTab === 'blackboard' ? 'Agent CLI 共享黑板' : (collabMeshState.supervisorTab === 'activity' ? '协同调度动态' : '监管收件箱')}</h3>
+                        </div>
+                        <button class="collab-tool-btn close-btn" id="collabCloseSupervisorBtn" type="button" title="收起面板">${iconSvg('x')}</button>
+                    </div>
+                    <div class="supervisor-tabs">
+                        <button class="supervisor-tab ${collabMeshState.supervisorTab === 'inbox' ? 'active' : ''}" data-supervisor-tab="inbox" type="button">
+                            ${iconSvg('activity')}<span>监管消息 (${collabMeshState.supervisorUnread})</span>
+                        </button>
+                        <button class="supervisor-tab ${collabMeshState.supervisorTab === 'blackboard' ? 'active' : ''}" data-supervisor-tab="blackboard" type="button">
+                            ${iconSvg('database')}<span>共享黑板 (${collabMeshState.blackboard.length})</span>
+                        </button>
+                        <button class="supervisor-tab ${collabMeshState.supervisorTab === 'activity' ? 'active' : ''}" data-supervisor-tab="activity" type="button">
+                            <span>调度动态</span>
+                        </button>
+                    </div>
+                    <div class="supervisor-panel-body" id="collabSupervisorPanelBody">
+                        ${renderSupervisorDrawerContentHtml()}
+                    </div>
+                    ${collabMeshState.supervisorTab === 'inbox' ? renderSupervisorReplyDockHtml() : ''}
+                </aside>
+            </div>
+
+            <!-- Global Broadcast & Batch Dispatch Modal -->
+            <dialog class="collab-dispatch-modal" id="collabBroadcastDispatchModal">
+                <div class="dispatch-modal-card">
+                    <div class="dispatch-modal-header">
+                        <div class="modal-title-wrap">
+                            <span class="modal-eyebrow">BROADCAST MISSION</span>
+                            <h3>向协同网络派发任务</h3>
+                        </div>
+                        <button class="collab-tool-btn close-btn" id="collabCloseBroadcastModalBtn" type="button">${iconSvg('x')}</button>
+                    </div>
+                    <div class="dispatch-modal-body">
+                        <div class="task-preset-box">
+                            <label class="section-label">任务模板：</label>
+                            <div class="task-capsules-row modal-presets-row" id="collabModalTaskPresets"></div>
+                        </div>
+                        <div class="target-selection-box">
+                            <label class="section-label">选择接收任务的 Agent：</label>
+                            <div class="target-chips-container" id="collabModalTargetChips"></div>
+                        </div>
+                        <div class="task-input-box">
+                            <label class="section-label" for="collabModalTaskInput">任务描述 / 监管指令：</label>
+                            <textarea class="task-textarea" id="collabModalTaskInput" rows="3" placeholder="输入要派发的协同任务描述..."></textarea>
+                        </div>
+                    </div>
+                    <div class="dispatch-modal-footer">
+                        <button class="ghost btn-sm" id="collabDismissDispatchBtn" type="button">取消</button>
+                        <button class="primary btn-sm" id="collabSubmitDispatchBtn" type="button">
+                            ${iconSvg('send')}<span>立即广播派发</span>
+                        </button>
+                    </div>
+                </div>
+            </dialog>
+        </div>
+    `;
+
+    bindCollabMeshEvents();
+    bindNodeElementEvents();
+    bindSupervisorPanelEvents();
+    bindBlackboardPreviewClicks();
+}
+
+function renderCollabNodesHtml() {
+    let html = '';
+    const hubPos = collabMeshState.hubPosition || { x: 60, y: 40 };
+
+    // 1. Web UI Supervisor Desk Node (Top-Left Tier 1)
+    const hubOnline = collabMeshState.gatewayOnline || collabMeshState.simulationMode;
+    html += `
+        <div class="collab-node hub-node ${hubOnline ? 'online' : 'offline'}" id="collab-node-__hub__" data-node-id="__hub__" style="left: ${hubPos.x}px; top: ${hubPos.y}px;">
+            <div class="collab-node-inner hub-inner">
+                <div class="node-avatar hub-avatar">
+                    ${iconSvg('shield')}
+                </div>
+                <div class="node-identity">
+                    <div class="node-name-row">
+                        <strong class="node-profile-name">Web UI 监管台</strong>
+                    </div>
+                    <div class="node-desc-row">
+                        <span class="hub-status-text">Gateway 通讯层 · ${hubOnline ? '已联通' : '离线'}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="collab-port port-output" data-port-source="__hub__" title="从监管台发起广播/指派">
+                <span class="port-handle"></span>
+                <span class="port-label">发起任务</span>
+            </div>
+            <div class="collab-port port-bottom" data-port-source="__hub__" title="下发监管任务指令">
+                <span class="port-ring"></span>
+            </div>
+        </div>
+    `;
+
+    // 2. Shared Blackboard Canvas Node (Top-Right Tier 1)
+    const bbPos = collabMeshState.nodePositions['__blackboard__'] || { x: 380, y: 40 };
+    const bb = collabMeshState.blackboard || [];
+    html += `
+        <div class="collab-node blackboard-node" id="collab-node-__blackboard__" data-node-id="__blackboard__" style="left: ${bbPos.x}px; top: ${bbPos.y}px;">
+            <div class="collab-port port-input" data-port-target="__blackboard__" title="写入共享黑板">
+                <span class="port-ring"></span>
+            </div>
+            <div class="blackboard-node-inner">
+                <div class="blackboard-node-header">
+                    <div class="blackboard-node-title">
+                        <span class="blackboard-icon-wrap">${iconSvg('database')}</span>
+                        <strong>Agent CLI 共享黑板</strong>
+                        <span class="blackboard-node-count-chip">${bb.length} 条共享上下文</span>
+                    </div>
+                    <div class="blackboard-node-actions">
+                        <button class="blackboard-node-action-btn blackboard-node-write-btn" id="collabCanvasWriteBbBtn" type="button" title="写入共享黑板" aria-label="写入共享黑板">
+                            ${iconSvg('plus')}
+                        </button>
+                        <button class="blackboard-node-action-btn" id="collabCanvasViewBbBtn" type="button" title="在侧边栏查看完整黑板">
+                            <span>查看全貌 →</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="blackboard-items-preview">
+                    ${bb.length === 0 ? `
+                        <div class="bb-empty-hint">暂无黑板共享记录，Agent 协同产出将同步在此</div>
+                    ` : bb.slice(0, 3).map(item => `
+                        <div class="blackboard-preview-card" data-bb-key="${escapeHtml(item.key)}" title="${escapeHtml(item.value || '')}">
+                            <div class="bb-preview-head">
+                                <span class="bb-preview-key">${escapeHtml(item.key)}</span>
+                                <span class="bb-preview-author">@${escapeHtml(item.author || 'system')}</span>
+                            </div>
+                            <div class="bb-preview-text">${escapeHtml(item.value || '')}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="collab-port port-bottom" data-port-target="__blackboard__" title="Agent 共享记忆汇聚端口">
+                <span class="port-ring"></span>
+            </div>
+        </div>
+    `;
+
+    // 3. Agent CLI Nodes (Tier 2 Bottom Row)
+    if (!collabMeshState.peers.length) {
+        const onbPos = collabMeshState.nodePositions['__onboarding__'] || { x: 380, y: 230 };
+        html += `
+            <div class="collab-node onboarding-node" id="collab-node-onboarding" data-node-id="__onboarding__" style="left: ${onbPos.x}px; top: ${onbPos.y}px;">
+                <div class="collab-node-inner onboarding-inner">
+                    <div class="onboarding-icon">${iconSvg('terminal')}</div>
+                    <h4 class="onboarding-title">暂无在线 Agent CLI</h4>
+                    <p class="onboarding-desc">在终端启动 Claude Code 会话即可自动接入协同网络：</p>
+                    <code class="onboarding-cmd">ccp start &lt;profile-name&gt;</code>
+                    <button class="onboarding-demo-btn" id="collabLaunchDemoPromptBtn" type="button">
+                        ${iconSvg('sparkles')}<span>启动演示拓扑网络</span>
+                    </button>
+                </div>
+            </div>
+        `;
+        return html;
+    }
+
+    collabMeshState.peers.forEach(peer => {
+        const peerKey = collabPeerKey(peer);
+        const pos = collabMeshState.nodePositions[peerKey] || { x: 60, y: 230 };
+        const glyph = (peer.profile.charAt(0) || 'A').toUpperCase();
+        const activeFiles = peer.activeFiles || [];
+        const isActiveTarget = collabMeshState.nodeFlyout.open && collabMeshState.nodeFlyout.targetProfile === peerKey;
+        const activeDispatch = latestCollabDispatchForPeer(peer);
+        const lifecycleState = activeDispatch ? collabDispatchVisualState(activeDispatch) : (peer.responseState || peer.status || 'idle');
+        const nodeState = lifecycleState === 'idle' ? (peer.status || 'idle') : lifecycleState;
+        const statusLabel = activeDispatch
+            ? collabDispatchBadgeText(activeDispatch)
+            : (peer.status === 'busy' ? '处理中' : (peer.status === 'waiting' ? '等待中' : '在线'));
+        const focusLabel = activeDispatch ? '协作状态' : '工作焦点';
+        const focusContent = activeDispatch ? collabDispatchStatusText(activeDispatch) : (peer.currentFocus || '空闲等待协作任务');
+
+        html += `
+            <div class="collab-node agent-node ${escapeHtml(nodeState)} ${isActiveTarget ? 'is-active-target' : ''}" id="collab-node-${escapeHtml(peerKey)}" data-node-id="${escapeHtml(peerKey)}" data-collab-state="${escapeHtml(nodeState)}" style="left: ${pos.x}px; top: ${pos.y}px;">
+                <div class="collab-port port-input" data-port-target="${escapeHtml(peerKey)}" title="任务接入端口">
+                    <span class="port-ring"></span>
+                </div>
+                <div class="collab-port port-top" data-port-target="${escapeHtml(peerKey)}" title="监管下发 / 记忆同步">
+                    <span class="port-ring"></span>
+                </div>
+
+                <div class="collab-node-inner">
+                    <div class="node-header">
+                        <div class="node-avatar ${escapeHtml(nodeState)}">
+                            <span class="avatar-glyph">${glyph}</span>
+                        </div>
+                        <div class="node-identity">
+                            <div class="node-name-row">
+                                <strong class="node-profile-name" title="@${escapeHtml(peer.profile)}">@${escapeHtml(peer.profile)}</strong>
+                                <span class="node-status-badge ${escapeHtml(nodeState)}">
+                                    <span class="status-dot-indicator"></span>
+                                    <span>${statusLabel}</span>
+                                </span>
+                            </div>
+                            <div class="node-model-row">
+                                <span class="node-model-chip" title="模型: ${escapeHtml(peer.model || 'default')}">${escapeHtml(peer.model || 'default')}</span>
+                                <span class="node-model-chip" title="CLI 实例: ${escapeHtml(peer.peerId || peerKey)}">${escapeHtml(peer.peerId || peerKey)}</span>
+                                ${peer.pid ? `<span class="node-pid-chip">PID:${peer.pid}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="node-body">
+                        <div class="node-focus-box">
+                            <div class="focus-label">${iconSvg('target')}<span>${focusLabel}</span></div>
+                            <div class="focus-content" title="${escapeHtml(activeDispatch?.error || peer.currentFocus || statusLabel)}">
+                                ${escapeHtml(focusContent)}
+                            </div>
+                        </div>
+
+                        ${activeFiles.length > 0 ? `
+                            <div class="node-files-box">
+                                <div class="files-label">活跃文件:</div>
+                                <div class="node-file-chips">
+                                    ${activeFiles.slice(0, 2).map(f => {
+                                        const fname = f.split('/').pop().split('\\').pop();
+                                        return `<span class="file-chip" title="${escapeHtml(f)}">${iconSvg('fileText')} ${escapeHtml(fname)}</span>`;
+                                    }).join('')}
+                                    ${activeFiles.length > 2 ? `<span class="file-chip more">+${activeFiles.length - 2}</span>` : ''}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="node-footer">
+                        <button class="node-action-btn primary-action" type="button" data-action="dispatch-to" data-peer-key="${escapeHtml(peerKey)}">
+                            ${iconSvg('zap')}<span>指派任务</span>
+                        </button>
+                        <button class="node-action-btn ghost-action" type="button" data-action="ask-peer" data-peer-key="${escapeHtml(peerKey)}" title="向 @${escapeHtml(peer.profile)} 快速提问">
+                            ${iconSvg('messageSquare')}<span>提问</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="collab-port port-output" data-port-source="${escapeHtml(peerKey)}" title="从 @${escapeHtml(peer.profile)} 发起 Agent 协作">
+                    <span class="port-handle"></span>
+                    <span class="port-label">发起协作</span>
+                </div>
+            </div>
+        `;
+    });
+
+    return html;
+}
+
+function renderCollabNodeFlyoutHtml() {
+    const flyout = collabMeshState.nodeFlyout;
+    if (!flyout.open || !flyout.targetProfile) return '';
+
+    const targetKey = flyout.targetProfile;
+    const pos = collabMeshState.nodePositions[targetKey] || { x: 500, y: 160 };
+    const flyoutLeft = targetKey === '__blackboard__' ? pos.x + 52 : pos.x + 304;
+    const flyoutTop = targetKey === '__blackboard__' ? pos.y + 150 : Math.max(10, pos.y - 10);
+    const sourceKey = flyout.sourceProfile;
+    const sourcePeer = collabPeerByKey(sourceKey);
+
+    if (targetKey === '__blackboard__') {
+        return `
+            <div class="collab-node-flyout" id="collabNodeFlyout" style="left: ${flyoutLeft}px; top: ${flyoutTop}px;">
+                <div class="flyout-header">
+                    <div class="flyout-target-badge">
+                        <span class="flyout-avatar">${iconSvg('database')}</span>
+                        <div class="flyout-target-meta">
+                            <strong>写入 Agent CLI 共享黑板</strong>
+                            <span class="flyout-sub">${sourcePeer ? `来源 @${escapeHtml(sourcePeer.profile)}` : '来源 Web UI 监管台'}</span>
+                        </div>
+                    </div>
+                    <button class="collab-tool-btn close-btn" id="collabCloseFlyoutBtn" type="button" title="关闭">${iconSvg('x')}</button>
+                </div>
+                <div class="flyout-body">
+                    <label class="flyout-field-label" for="collabBlackboardKeyInput">键</label>
+                    <input class="flyout-input" id="collabBlackboardKeyInput" value="${escapeHtml(flyout.blackboardKey || '')}" placeholder="例如 release:plan" />
+                    <label class="flyout-field-label" for="collabBlackboardValueInput">内容</label>
+                    <textarea class="flyout-textarea" id="collabBlackboardValueInput" placeholder="输入要共享给 Agent CLI 网络的上下文..." rows="4">${escapeHtml(flyout.message || '')}</textarea>
+                </div>
+                <div class="flyout-footer">
+                    <button class="ghost btn-sm" id="collabDismissFlyoutBtn" type="button">取消</button>
+                    <button class="primary btn-sm" id="collabSubmitBlackboardBtn" type="button">
+                        ${iconSvg('database')}<span>写入黑板</span>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    const peer = collabPeerByKey(targetKey);
+    if (!peer) return '';
+    const targetGlyph = (peer.profile.charAt(0) || 'A').toUpperCase();
+    const isPeerToPeer = Boolean(sourcePeer && sourceKey !== targetKey);
+    const sourceGlyph = isPeerToPeer ? (sourcePeer.profile.charAt(0) || 'S').toUpperCase() : '';
+
+    return `
+        <div class="collab-node-flyout" id="collabNodeFlyout" style="left: ${flyoutLeft}px; top: ${flyoutTop}px;">
+            <div class="flyout-header">
+                <div class="flyout-target-badge">
+                    ${isPeerToPeer ? `
+                        <span class="flyout-avatar source">${sourceGlyph}</span>
+                        <span class="flyout-arrow">→</span>
+                    ` : ''}
+                    <span class="flyout-avatar">${targetGlyph}</span>
+                    <div class="flyout-target-meta">
+                        <strong>${isPeerToPeer ? `@${escapeHtml(sourcePeer.profile)} → @${escapeHtml(peer.profile)}` : `@${escapeHtml(peer.profile)}`}</strong>
+                        <span class="flyout-sub">${isPeerToPeer ? `Peer-to-Peer 协作 · ${escapeHtml(peer.peerId || '')}` : `${flyout.isAsk ? '提问咨询' : '协同任务派发'} · ${escapeHtml(peer.peerId || '')}`}</span>
+                    </div>
+                </div>
+                <button class="collab-tool-btn close-btn" id="collabCloseFlyoutBtn" type="button" title="关闭">${iconSvg('x')}</button>
+            </div>
+            <div class="flyout-body">
+                <div class="flyout-prompt-chips">
+                    <button class="flyout-chip" type="button" data-prompt="请协助完成当前任务模块并同步上下文：">⚡ 协同开发</button>
+                    <button class="flyout-chip" type="button" data-prompt="请根据当前架构方案提供评审意见：">🔍 架构评审</button>
+                    <button class="flyout-chip" type="button" data-prompt="请为此功能模块补充自动化单测：">🧪 补充单测</button>
+                </div>
+                <textarea class="flyout-textarea" id="collabFlyoutTaskInput" placeholder="输入要派发的协同指令..." rows="3">${escapeHtml(flyout.message || '')}</textarea>
+            </div>
+            <div class="flyout-footer">
+                <button class="ghost btn-sm" id="collabDismissFlyoutBtn" type="button">取消</button>
+                <button class="primary btn-sm" id="collabSubmitFlyoutBtn" type="button">
+                    ${iconSvg('send')}<span>${flyout.isAsk ? '发送提问' : '确认派发'}</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function renderCollabBlackboardItemsHtml() {
+    let items = collabMeshState.blackboard || [];
+    if (collabMeshState.blackboardFilter) {
+        const q = collabMeshState.blackboardFilter.toLowerCase();
+        items = items.filter(it => (it.key || '').toLowerCase().includes(q) || (it.value || '').toLowerCase().includes(q) || (it.author || '').toLowerCase().includes(q));
+    }
+    if (!items.length) {
+        return `<div class="collab-empty-state">暂无符合条件的共享上下文记录</div>`;
+    }
+    return items.map(item => `
+        <div class="collab-bb-item" data-bb-key="${escapeHtml(item.key)}">
+            <div class="bb-item-header">
+                <strong class="bb-key">${escapeHtml(item.key)}</strong>
+                <span class="bb-author">@${escapeHtml(item.author || 'system')}</span>
+            </div>
+            <div class="bb-value">${escapeHtml(item.value || '')}</div>
+            <div class="bb-footer">
+                <button class="ghost btn-xs copy-bb-btn" type="button" data-copy-val="${escapeHtml(item.value || '')}">复制内容</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderSupervisorMessagesHtml() {
+    const messages = collabMeshState.supervisorMessages || [];
+    if (!messages.length) {
+        return `<div class="collab-empty-state">暂无监管回报消息</div>`;
+    }
+    return messages.map(msg => {
+        const isUnread = !msg.readAt;
+        const kind = msg.kind || 'result';
+        return `
+            <div class="supervisor-message kind-${kind} ${isUnread ? 'is-unread' : 'is-read'}" data-supervisor-message-id="${escapeHtml(msg.id)}">
+                <div class="supervisor-msg-head">
+                    <span class="msg-author">@${escapeHtml(msg.from || 'agent')}</span>
+                    ${isUnread ? '<span class="supervisor-unread-badge">NEW</span>' : ''}
+                    ${msg.late ? '<span class="supervisor-unread-badge is-late">迟到回复</span>' : ''}
+                    <span class="msg-time">${new Date(msg.timestamp || Date.now()).toLocaleTimeString()}</span>
+                </div>
+                <h4>${escapeHtml(msg.title || '任务回报')}</h4>
+                <p>${escapeHtml(msg.content || '')}</p>
+                <div class="msg-footer">
+                    ${isUnread ? `<button class="ghost btn-xs supervisor-mark-read-btn" type="button" data-supervisor-message-id="${escapeHtml(msg.id)}">标记已读</button>` : ''}
+                    <button class="ghost btn-xs supervisor-continue-btn" type="button" data-supervisor-agent="${escapeHtml(msg.from)}" data-supervisor-peer-id="${escapeHtml(msg.fromPeerId || '')}" data-supervisor-title="${escapeHtml(msg.title || '')}" data-supervisor-message-id="${escapeHtml(msg.id)}">💬 回复</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function renderCollabActivityLogsHtml() {
+    const logs = collabMeshState.activityLogs || [];
+    const dispatchRows = (collabMeshState.dispatches || [])
+        .slice()
+        .sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0))
+        .slice(0, 25)
+        .map(dispatch => {
+            const state = collabDispatchVisualState(dispatch);
+            const from = normalizeCollabIdentity(dispatch.from) === 'web-ui' ? '监管台' : `@${dispatch.from}`;
+            const route = dispatch.relayTo
+                ? `${from} → @${dispatch.to} → @${dispatch.relayTo}`
+                : `${from} → @${dispatch.to}`;
+            return `
+                <div class="collab-act-item state-${escapeHtml(state)}" data-collab-state="${escapeHtml(state)}" title="${escapeHtml(dispatch.error || '')}">
+                    <span class="act-time">${new Date(dispatch.updatedAt || dispatch.createdAt || Date.now()).toLocaleTimeString()}</span>
+                    <span class="act-text">${escapeHtml(route)} · ${escapeHtml(collabDispatchStatusText(dispatch))}</span>
+                </div>
+            `;
+        }).join('');
+    if (!dispatchRows && !logs.length) {
+        return `<div class="collab-empty-state">暂无协同动态日志</div>`;
+    }
+    const localRows = logs.slice(0, 25).map(l => `
+        <div class="collab-act-item ${l.state ? `state-${escapeHtml(l.state)}` : ''} ${l.type ? `type-${escapeHtml(l.type)}` : ''}" ${l.state ? `data-collab-state="${escapeHtml(l.state)}"` : ''}>
+            <span class="act-time">${escapeHtml(l.time)}</span>
+            <span class="act-text">${escapeHtml(l.text)}</span>
+        </div>
+    `).join('');
+    return dispatchRows + localRows;
+}
+
+function renderSupervisorDrawerContentHtml() {
+    if (collabMeshState.supervisorTab === 'blackboard') {
+        return `
+            <div class="side-hud-search">
+                ${iconSvg('search')}
+                <input id="collabBbSearchInput" placeholder="搜索黑板键值或作者..." value="${escapeHtml(collabMeshState.blackboardFilter)}" />
+            </div>
+            <div class="collab-bb-list" id="collabBbList">
+                ${renderCollabBlackboardItemsHtml()}
+            </div>
+        `;
+    }
+    if (collabMeshState.supervisorTab === 'activity') {
+        return renderCollabActivityLogsHtml();
+    }
+    return `
+        <div class="supervisor-toolbar">
+            <span>${collabMeshState.supervisorUnread ? `${collabMeshState.supervisorUnread} 条未读消息` : '全部消息已读'}</span>
+            <button class="ghost btn-sm" id="collabMarkSupervisorReadBtn" type="button" ${collabMeshState.supervisorUnread ? '' : 'disabled'}>全部已读</button>
+        </div>
+        <div class="supervisor-messages-list" id="supervisorMessagesList">
+            ${renderSupervisorMessagesHtml()}
+        </div>
+    `;
+}
+
+function renderSupervisorReplyDockHtml() {
+    const peers = collabMeshState.peers.length ? collabMeshState.peers : (collabMeshState.simulationMode ? COLLAB_DEMO_PEERS : []);
+    const target = collabMeshState.activeReplyTarget || (peers[0] ? collabPeerKey(peers[0]) : '');
+    const targetPeer = collabPeerByKey(target) || peers[0];
+    const targetProfile = targetPeer?.profile || '';
+
+    return `
+        <div class="supervisor-reply-dock" id="supervisorReplyDock">
+            <div class="reply-target-row">
+                <div class="reply-target-label">
+                    <span>回复目标:</span>
+                </div>
+                <div class="reply-peer-pills" id="collabReplyPeerPills">
+                    ${peers.map(p => `
+                        <button class="reply-peer-pill ${collabPeerKey(p) === target ? 'active' : ''}" type="button" data-reply-agent="${escapeHtml(collabPeerKey(p))}" title="切换回复至 @${escapeHtml(p.profile)} · ${escapeHtml(p.peerId || '')}">
+                            <span class="pill-avatar">${(p.profile.charAt(0) || 'A').toUpperCase()}</span>
+                            <span>@${escapeHtml(p.profile)} <small>${escapeHtml(p.peerId || '')}</small></span>
+                        </button>
+                    `).join('')}
+                </div>
+            </div>
+            <div class="reply-chips-row">
+                <button class="reply-prompt-chip" type="button" data-reply-prompt="请汇报当前任务进度与遇到的阻碍：">🔍 追问进度</button>
+                <button class="reply-prompt-chip" type="button" data-reply-prompt="请根据审查意见执行针对性修复：">🐛 针对修复</button>
+                <button class="reply-prompt-chip" type="button" data-reply-prompt="请为最新代码补充自动化单元测试用例：">🧪 补充单测</button>
+                <button class="reply-prompt-chip" type="button" data-reply-prompt="请梳理当前设计方案并同步到共享黑板：">📝 同步黑板</button>
+            </div>
+            <div class="reply-input-wrap">
+                <textarea class="reply-textarea" id="collabReplyInput" placeholder="输入监管回复指令回复 @${escapeHtml(targetProfile)} (Ctrl+Enter 发送)..." rows="2"></textarea>
+                <button class="reply-send-btn" id="collabSendReplyBtn" type="button" title="发送监管回复 (Ctrl+Enter)">
+                    ${iconSvg('send')}<span>发送</span>
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function syncCollabNodesDom() {
+    const container = $('collabNodesContainer');
+    if (container) {
+        container.innerHTML = renderCollabNodesHtml();
+    }
+    bindNodeElementEvents();
+    bindBlackboardPreviewClicks();
+    bindTaskCapsuleDragEvents();
+    bindOnboardingDemoButton();
+}
+
+function syncSupervisorPanelDom(options = {}) {
+    const preserveReplyDraft = options.preserveReplyDraft !== false;
+    const existingReply = $('collabReplyInput');
+    if (existingReply && preserveReplyDraft) {
+        collabMeshState.replyDraft = existingReply.value;
+    }
+
+    const body = $('collabSupervisorPanelBody');
+    if (body) {
+        body.innerHTML = renderSupervisorDrawerContentHtml();
+    }
+    const dockHost = $('supervisorReplyDock');
+    if (collabMeshState.supervisorTab === 'inbox') {
+        if (!dockHost) {
+            $('collabSupervisorPanel')?.insertAdjacentHTML('beforeend', renderSupervisorReplyDockHtml());
+        } else {
+            dockHost.outerHTML = renderSupervisorReplyDockHtml();
+        }
+        const restored = $('collabReplyInput');
+        if (restored && preserveReplyDraft && collabMeshState.replyDraft) {
+            restored.value = collabMeshState.replyDraft;
+        }
+    } else {
+        if (dockHost) dockHost.remove();
+    }
+
+    const summary = $('collabNetworkSummary');
+    if (summary) {
+        summary.textContent = collabNetworkSummaryText();
+        summary.title = '当前 Agent CLI 协作网络状态';
+    }
+
+    const panelTitle = document.querySelector('#collabSupervisorPanel h3');
+    if (panelTitle) {
+        panelTitle.textContent = collabMeshState.supervisorTab === 'blackboard'
+            ? 'Agent CLI 共享黑板'
+            : (collabMeshState.supervisorTab === 'activity' ? '协同调度动态' : '监管收件箱');
+    }
+
+    document.querySelectorAll('[data-supervisor-tab]').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.supervisorTab === collabMeshState.supervisorTab);
+    });
+
+    const supervisorBtn = $('collabToggleSupervisorBtn');
+    if (supervisorBtn) {
+        supervisorBtn.classList.toggle('active', collabMeshState.supervisorPanelOpen && collabMeshState.supervisorTab === 'inbox');
+        supervisorBtn.innerHTML = `${iconSvg('activity')}<span>监管消息 (${collabMeshState.supervisorUnread})</span>`;
+    }
+
+    const blackboardBtn = $('collabToggleBlackboardBtn');
+    if (blackboardBtn) {
+        blackboardBtn.classList.toggle('active', collabMeshState.supervisorPanelOpen && collabMeshState.supervisorTab === 'blackboard');
+        blackboardBtn.innerHTML = `${iconSvg('database')}<span>共享黑板 (${collabMeshState.blackboard.length})</span>`;
+    }
+
+    const demoBtn = $('collabToggleDemoBtn');
+    if (demoBtn) {
+        demoBtn.innerHTML = `${iconSvg('sparkles')}<span>${collabMeshState.simulationMode ? '退出演示' : '演示模式'}</span>`;
+        demoBtn.classList.toggle('active', collabMeshState.simulationMode);
+    }
+
+    $('collabSupervisorPanel')?.classList.toggle('open', collabMeshState.supervisorPanelOpen);
+    $('collabCanvasViewport')?.classList.toggle('has-supervisor-panel', collabMeshState.supervisorPanelOpen);
+
+    bindSupervisorMessageActions();
+    bindSupervisorReplyDockEvents();
+    bindBlackboardCopyButtons();
+}
+
+function updateCollabWires() {
+    const wiresGroup = $('collabWiresGroup');
+    if (!wiresGroup) return;
+
+    const hubRight = getNodePortCoords('__hub__', 'output');
+    const hubBottom = getNodePortCoords('__hub__', 'bottom');
+    const bbTarget = getNodePortCoords('__blackboard__', 'input');
+    const bbBottom = getNodePortCoords('__blackboard__', 'bottom');
+
+    let wiresHtml = '';
+
+    // 1. Hub to Blackboard Bridge
+    if ($('collab-node-__blackboard__')) {
+        const hubToBbPath = `M ${hubRight.x} ${hubRight.y} C ${hubRight.x + 40} ${hubRight.y}, ${bbTarget.x - 40} ${bbTarget.y}, ${bbTarget.x} ${bbTarget.y}`;
+        wiresHtml += `<path class="collab-wire hub-bb-wire" d="${hubToBbPath}" />`;
+    }
+
+    // 2. Hub to Agents (Downward S-curves docking into Agent top ports)
+    collabMeshState.peers.forEach((peer, idx) => {
+        const peerKey = collabPeerKey(peer);
+        const agentTop = getNodePortCoords(peerKey, 'top');
+        const srcX = hubBottom.x + (idx - (collabMeshState.peers.length - 1) / 2) * 16;
+        const srcY = hubBottom.y;
+        const tgtX = agentTop.x;
+        const tgtY = agentTop.y;
+        const dy = Math.max(30, tgtY - srcY);
+
+        const pathD = `M ${srcX} ${srcY} C ${srcX} ${srcY + dy * 0.45}, ${tgtX} ${tgtY - dy * 0.45}, ${tgtX} ${tgtY}`;
+
+        const activeDispatch = latestCollabDispatchForPeer(peer);
+        const status = activeDispatch ? collabDispatchVisualState(activeDispatch) : (['busy', 'waiting'].includes(peer.status) ? peer.status : 'idle');
+        const linkOnline = (collabMeshState.gatewayOnline || collabMeshState.simulationMode) && status !== 'disconnected';
+        const availability = linkOnline ? 'online' : 'offline';
+        const shouldFlow = linkOnline && ['sending', 'transmitting', 'processing', 'busy', 'waiting'].includes(status);
+        const flow = shouldFlow
+            ? `<path class="collab-wire-flow status-${status} hub-agent-flow" d="${pathD}" />`
+            : '';
+        wiresHtml += `<path class="collab-wire status-${status} ${availability}" d="${pathD}" />${flow}`;
+
+        // 3. Agent to Blackboard
+        if ($('collab-node-__blackboard__')) {
+            const bbPortX = bbBottom.x + (idx - (collabMeshState.peers.length - 1) / 2) * 48;
+            const bbPortY = bbBottom.y;
+            const memDy = Math.max(30, agentTop.y - bbPortY);
+            const agentToBbPath = `M ${agentTop.x} ${agentTop.y} C ${agentTop.x} ${agentTop.y - memDy * 0.45}, ${bbPortX} ${bbPortY + memDy * 0.45}, ${bbPortX} ${bbPortY}`;
+            wiresHtml += `<path class="collab-wire memory-link" d="${agentToBbPath}" />`;
+        }
+    });
+
+    // 4. Peer-to-Peer collaborative links
+    const p2pLinks = [...(collabMeshState.activeP2pLinks || [])];
+    if (collabMeshState.tentativeLink) {
+        p2pLinks.push({ ...collabMeshState.tentativeLink, status: 'tentative' });
+    }
+
+    p2pLinks.forEach(link => {
+        const p1Port = getNodePortCoords(link.source, 'output');
+        const p2Port = getNodePortCoords(link.target, 'input');
+        const dx = Math.max(30, Math.abs(p2Port.x - p1Port.x));
+        const p2pPath = `M ${p1Port.x} ${p1Port.y} C ${p1Port.x + dx * 0.45} ${p1Port.y}, ${p2Port.x - dx * 0.45} ${p2Port.y}, ${p2Port.x} ${p2Port.y}`;
+        const isTentative = link.status === 'tentative';
+        const isFlowing = ['sending', 'transmitting', 'processing', 'busy', 'waiting'].includes(link.status) || link.isFlowing;
+        const cls = isTentative ? 'p2p-wire tentative' : 'p2p-wire';
+        wiresHtml += `<path class="collab-wire ${cls} status-${escapeHtml(link.status || 'idle')}" d="${p2pPath}" />`;
+        if (isFlowing) {
+            wiresHtml += `<path class="collab-wire-flow status-${escapeHtml(link.status || 'busy')}" d="${p2pPath}" />`;
+        }
+    });
+
+    wiresGroup.innerHTML = wiresHtml;
+}
+
+function updateActiveWireSvg() {
+    const activeWireGroup = $('collabActiveWireGroup');
+    if (!activeWireGroup) return;
+
+    const wire = collabMeshState.activeWire;
+    if (!wire) {
+        activeWireGroup.innerHTML = '';
+        return;
+    }
+
+    const startX = wire.startX;
+    const startY = wire.startY;
+    const endX = wire.currentX;
+    const endY = wire.currentY;
+
+    const dx = Math.max(30, Math.abs(endX - startX));
+    const pathD = `M ${startX} ${startY} C ${startX + dx * 0.45} ${startY}, ${endX - dx * 0.45} ${endY}, ${endX} ${endY}`;
+
+    activeWireGroup.innerHTML = `
+        <path class="collab-active-wire-path" d="${pathD}" />
+        <circle cx="${endX}" cy="${endY}" r="4" fill="var(--green)" />
+    `;
+}
+
+function buildTransmissionPath(fromProfile, toProfile) {
+    const fromId = !fromProfile || fromProfile === 'web-ui' ? '__hub__' : fromProfile;
+    const toId = toProfile;
+
+    let fromPort;
+    let toPort;
+    if (fromId === '__hub__' && toId !== '__blackboard__') {
+        // Supervisor dispatch travels hub bottom → agent top
+        fromPort = getNodePortCoords('__hub__', 'bottom');
+        toPort = getNodePortCoords(toId, 'top');
+        const dy = Math.max(36, toPort.y - fromPort.y);
+        return `M ${fromPort.x} ${fromPort.y} C ${fromPort.x} ${fromPort.y + dy * 0.45}, ${toPort.x} ${toPort.y - dy * 0.45}, ${toPort.x} ${toPort.y}`;
+    }
+
+    fromPort = fromId === '__hub__'
+        ? getNodePortCoords('__hub__', 'output')
+        : getNodePortCoords(fromId, 'output');
+    toPort = toId === '__blackboard__'
+        ? getNodePortCoords('__blackboard__', 'input')
+        : getNodePortCoords(toId, 'input');
+
+    const dx = Math.max(36, Math.abs(toPort.x - fromPort.x));
+    return `M ${fromPort.x} ${fromPort.y} C ${fromPort.x + dx * 0.45} ${fromPort.y}, ${toPort.x - dx * 0.45} ${toPort.y}, ${toPort.x} ${toPort.y}`;
+}
+
+function triggerTransmissionAnimation(fromProfile, toProfile, message, status = 'sending') {
+    const transmissionGroup = $('collabTransmissionsGroup');
+    if (!transmissionGroup) return;
+
+    // Blackboard is shared context only — never animate outbound dispatches from it
+    if (fromProfile === '__blackboard__') return;
+
+    const pathD = buildTransmissionPath(fromProfile, toProfile);
+    const id = 'tx-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const visualStatus = ['sending', 'transmitting', 'processing', 'waiting', 'stalled', 'pending', 'completed', 'error', 'timeout', 'disconnected'].includes(status)
+        ? status
+        : 'sending';
+    el.setAttribute('class', `collab-transmission-pulse status-${visualStatus}`);
+    el.setAttribute('d', pathD);
+    el.setAttribute('id', id);
+    el.setAttribute('pathLength', '100');
+    transmissionGroup.appendChild(el);
+
+    const targetId = toProfile;
+    const targetEl = document.getElementById(`collab-node-${targetId}`);
+    if (targetEl) {
+        targetEl.classList.add('is-receiving');
+        setTimeout(() => targetEl.classList.remove('is-receiving'), 1800);
+    }
+
+    setTimeout(() => {
+        el.remove();
+    }, 2600);
+}
+
+function simulateAgentExecution(sender, targets, message, isAsk = false) {
+    const peers = collabMeshState.peers.length ? collabMeshState.peers : COLLAB_DEMO_PEERS;
+    targets.forEach(targetKey => {
+        const peer = peers.find(p => collabPeerKey(p) === targetKey);
+        if (peer) {
+            peer.status = 'busy';
+            peer.currentFocus = `正在处理: ${message.slice(0, 24)}...`;
+        }
+    });
+
+    syncCollabNodesDom();
+    updateCollabWires();
+
+    setTimeout(() => {
+        targets.forEach(targetKey => {
+            const peer = peers.find(p => collabPeerKey(p) === targetKey);
+            const targetName = peer?.profile || targetKey;
+            if (peer) {
+                peer.status = 'idle';
+                peer.currentFocus = '任务执行完成，等待新指令';
+            }
+
+            let replyContent = '';
+            if (message.includes('审查') || message.includes('review')) {
+                replyContent = '已完成代码审查：架构模块解耦良好，已补充边界条件校验，未发现安全隐患。';
+            } else if (message.includes('修复') || message.includes('bug') || message.includes('fix')) {
+                replyContent = '已定位问题并完成修复：修复了状态同步时可能导致的事件丢失，单测已全部通过。';
+            } else if (message.includes('单测') || message.includes('test')) {
+                replyContent = '已自动生成并补充 12 个单元测试用例，覆盖率提升至 96.4%，全部断言执行成功。';
+            } else if (message.includes('黑板') || message.includes('同步')) {
+                replyContent = '已将最新接口规范与架构上下文同步至共享黑板。';
+                collabMeshState.blackboard.unshift({
+                    id: 'bb-sim-' + Date.now(),
+                    key: `sync:${targetName}:${Date.now() % 1000}`,
+                    value: `由 @${targetName} 同步的最新协同上下文：${message.slice(0, 30)}`,
+                    author: targetName,
+                    timestamp: Date.now()
+                });
+            } else {
+                replyContent = `已顺利执行完成指令：“${message.slice(0, 32)}”，当前会话与工作区状态正常。`;
+            }
+
+            collabMeshState.supervisorMessages.unshift({
+                id: 'sim-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+                from: targetName,
+                fromPeerId: peer?.peerId,
+                to: 'web-ui',
+                title: isAsk ? `回答监管提问 (@${targetName})` : `任务成果回报 (@${targetName})`,
+                content: replyContent,
+                kind: 'result',
+                timestamp: Date.now(),
+                readAt: null
+            });
+
+            collabMeshState.supervisorUnread++;
+
+            collabMeshState.activityLogs.unshift({
+                time: new Date().toLocaleTimeString(),
+                text: `@${targetName} ➔ 监管收件箱: ${replyContent.slice(0, 32)}...`,
+                type: 'receive'
+            });
+        });
+
+        if (collabMeshState.activeP2pLinks && collabMeshState.activeP2pLinks.length) {
+            collabMeshState.activeP2pLinks = [];
+        }
+
+        syncCollabNodesDom();
+        updateCollabWires();
+        syncSupervisorPanelDom();
+         toast(`[演示] ${targets.map(targetKey => '@' + (peers.find(p => collabPeerKey(p) === targetKey)?.profile || targetKey)).join(', ')} 已提交任务处理成果！`);
+    }, 2200);
+}
+
+async function executeSendCollabTask(targetList, message, fromProfile = null, isAsk = false, reportBack = true) {
+    if (!Array.isArray(targetList)) {
+        targetList = targetList ? [targetList] : [];
+    }
+    if (!targetList.length || !message.trim()) {
+        toast('请选择至少一个目标 Agent 并输入任务内容');
+        return;
+    }
+
+    collabMeshState.sending = true;
+    const submitBtn = $('collabSubmitDispatchBtn');
+    if (submitBtn) submitBtn.disabled = true;
+    const flyoutSubmitBtn = $('collabSubmitFlyoutBtn');
+    if (flyoutSubmitBtn) flyoutSubmitBtn.disabled = true;
+
+    const senderKey = (fromProfile && fromProfile !== '__hub__') ? fromProfile : '';
+    const senderPeer = collabPeerByKey(senderKey);
+    const sender = senderPeer?.profile || 'web-ui';
+    const targetPeers = targetList.map(targetKey => collabPeerByKey(targetKey));
+    if (targetPeers.some(peer => !peer)) {
+        toast('目标 Agent CLI 已离线或实例身份已变化，请刷新拓扑后重试');
+        collabMeshState.sending = false;
+        if (submitBtn) submitBtn.disabled = false;
+        if (flyoutSubmitBtn) flyoutSubmitBtn.disabled = false;
+        return;
+    }
+    const targetNames = targetPeers.map(peer => peer.profile);
+
+    if (senderPeer) {
+        triggerTransmissionAnimation('__hub__', senderKey, message, 'sending');
+    } else {
+        targetList.forEach(target => {
+            triggerTransmissionAnimation('__hub__', target, message, 'sending');
+        });
+    }
+
+    try {
+        if (collabMeshState.simulationMode) {
+            simulateAgentExecution(sender, targetList, message.trim(), isAsk);
+            if (collabMeshState.tentativeLink) {
+                collabMeshState.activeP2pLinks.push({
+                    source: collabMeshState.tentativeLink.source,
+                    target: collabMeshState.tentativeLink.target,
+                    status: 'busy',
+                    isFlowing: true,
+                    expiresAt: Date.now() + 4000
+                });
+                collabMeshState.tentativeLink = null;
+            }
+            toast(sender !== 'web-ui'
+                ? `[演示模式] 已向 @${sender} 注入联系 @${targetNames.join(', @')} 的协作指令`
+                : `[演示模式] 已向 ${targetList.length} 个 Agent 派发任务`);
+        } else {
+            await Promise.all(targetList.map((targetKey, index) => {
+                const targetPeer = targetPeers[index];
+                return api('/api/collab/send', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        from: sender,
+                        sourcePeerId: senderPeer?.peerId,
+                        to: targetPeer.profile,
+                        peerId: targetPeer.peerId,
+                        message: message.trim(),
+                        isAsk,
+                        reportBack
+                    })
+                });
+            })
+            );
+            toast(sender !== 'web-ui'
+                ? `监管指令已注入 @${sender}，由其联系 @${targetNames.join(', @')}`
+                : (isAsk ? '提问' : '任务') + '已发送至 ' + targetList.length + ' 个 Agent');
+        }
+
+        targetList.forEach((target, index) => {
+            const targetName = targetNames[index];
+            collabMeshState.activityLogs.push({
+                time: new Date().toLocaleTimeString(),
+                text: sender !== 'web-ui'
+                    ? `监管台 ➔ @${sender}: 联系 @${targetName} · "${message.trim().slice(0, 32)}"`
+                    : `监管台 ➔ @${targetName}: "${message.trim().slice(0, 32)}"`,
+                type: 'send'
+            });
+
+            const activeKey = senderPeer ? senderKey : target;
+            const p = collabPeerByKey(activeKey);
+            if (p) {
+                p.status = 'busy';
+                p.currentFocus = sender !== 'web-ui'
+                    ? `协调 @${targetName}: ${message.trim().slice(0, 20)}...`
+                    : `${isAsk ? '回答监管提问' : '处理监管任务'}: ${message.trim().slice(0, 24)}...`;
+            }
+        });
+
+        collabMeshState.messageInput = '';
+        closeNodeFlyout();
+        closeBroadcastDispatchModal();
+
+        syncCollabNodesDom();
+        updateCollabWires();
+    } catch (err) {
+        toast('派发失败: ' + err.message);
+    } finally {
+        collabMeshState.sending = false;
+        if (submitBtn) submitBtn.disabled = false;
+        if (flyoutSubmitBtn) flyoutSubmitBtn.disabled = false;
+    }
+}
+
+function openNodeFlyout(targetProfile, presetMessage = '', isAsk = false, sourceProfile = null) {
+    collabMeshState.nodeFlyout = {
+        open: true,
+        targetProfile,
+        message: presetMessage,
+        isAsk,
+        reportBack: true,
+        sourceProfile,
+        blackboardKey: ''
+    };
+
+    document.querySelectorAll('.collab-node.agent-node').forEach(nodeEl => {
+        nodeEl.classList.toggle('is-active-target', nodeEl.dataset.nodeId === targetProfile);
+    });
+
+    const host = $('collabNodeFlyoutHost');
+    if (host) host.innerHTML = renderCollabNodeFlyoutHtml();
+
+    bindFlyoutEvents();
+
+    const input = $('collabFlyoutTaskInput');
+    if (input) {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }
+}
+
+function closeNodeFlyout() {
+    collabMeshState.nodeFlyout.open = false;
+    document.querySelectorAll('.collab-node.is-active-target').forEach(nodeEl => {
+        nodeEl.classList.remove('is-active-target');
+    });
+    if (collabMeshState.tentativeLink) {
+        collabMeshState.tentativeLink = null;
+        updateCollabWires();
+    }
+    const host = $('collabNodeFlyoutHost');
+    if (host) host.innerHTML = '';
+}
+
+function bindFlyoutEvents() {
+    const closeBtn = $('collabCloseFlyoutBtn');
+    if (closeBtn) closeBtn.onclick = closeNodeFlyout;
+
+    const dismissBtn = $('collabDismissFlyoutBtn');
+    if (dismissBtn) dismissBtn.onclick = closeNodeFlyout;
+
+    const submitBtn = $('collabSubmitFlyoutBtn');
+    const input = $('collabFlyoutTaskInput');
+
+    if (collabMeshState.nodeFlyout.targetProfile === '__blackboard__') {
+        const blackboardSubmit = $('collabSubmitBlackboardBtn');
+        const keyInput = $('collabBlackboardKeyInput');
+        const valueInput = $('collabBlackboardValueInput');
+        if (valueInput) valueInput.oninput = () => { collabMeshState.nodeFlyout.message = valueInput.value; };
+        if (keyInput) keyInput.oninput = () => { collabMeshState.nodeFlyout.blackboardKey = keyInput.value; };
+        if (blackboardSubmit) {
+            blackboardSubmit.onclick = async () => {
+                const key = keyInput?.value.trim() || '';
+                const value = valueInput?.value.trim() || '';
+                if (!key || !value) {
+                    toast('请填写键和值');
+                    return;
+                }
+                blackboardSubmit.disabled = true;
+                try {
+                    triggerTransmissionAnimation(collabMeshState.nodeFlyout.sourceProfile || '__hub__', '__blackboard__', value);
+                    if (collabMeshState.simulationMode) {
+                        collabMeshState.blackboard.unshift({
+                            id: 'bb-web-sim-' + Date.now(),
+                            key,
+                            value,
+                            author: 'web-ui',
+                            timestamp: Date.now()
+                        });
+                    } else {
+                        await api('/api/collab/blackboard', {
+                            method: 'POST',
+                            body: JSON.stringify({ key, value, author: 'web-ui' })
+                        });
+                        await loadCollabMeshData(true);
+                    }
+                    collabMeshState.activityLogs.unshift({
+                        time: new Date().toLocaleTimeString(),
+                        text: `监管台 ➔ Agent CLI 共享黑板: ${key}`,
+                        type: 'send'
+                    });
+                    closeNodeFlyout();
+                    syncCollabNodesDom();
+                    updateCollabWires();
+                    syncSupervisorPanelDom();
+                    toast(collabMeshState.simulationMode ? '[演示模式] 已写入共享黑板' : '已写入共享黑板');
+                } catch (err) {
+                    toast('黑板写入失败: ' + err.message);
+                } finally {
+                    blackboardSubmit.disabled = false;
+                }
+            };
+        }
+        return;
+    }
+
+    if (submitBtn && input) {
+        submitBtn.onclick = () => {
+            const flyout = collabMeshState.nodeFlyout;
+            if (!flyout.targetProfile) return;
+            executeSendCollabTask([flyout.targetProfile], input.value, flyout.sourceProfile, flyout.isAsk, flyout.reportBack);
+        };
+
+        input.onkeydown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                const flyout = collabMeshState.nodeFlyout;
+                if (!flyout.targetProfile) return;
+                executeSendCollabTask([flyout.targetProfile], input.value, flyout.sourceProfile, flyout.isAsk, flyout.reportBack);
+            }
+        };
+    }
+
+    document.querySelectorAll('.flyout-chip').forEach(chip => {
+        chip.onclick = () => {
+            const prompt = chip.dataset.prompt;
+            if (input && prompt) {
+                input.value = prompt;
+                input.focus();
+            }
+        };
+    });
+}
+
+function resolveTaskPreset(presetIdOrMessage = '') {
+    if (!presetIdOrMessage) {
+        return COLLAB_TASK_PRESETS.find(p => p.custom) || COLLAB_TASK_PRESETS[0];
+    }
+    const byId = COLLAB_TASK_PRESETS.find(p => p.id === presetIdOrMessage);
+    if (byId) return byId;
+    const byPrompt = COLLAB_TASK_PRESETS.find(p => p.prompt === presetIdOrMessage);
+    if (byPrompt) return byPrompt;
+    return {
+        id: 'custom',
+        label: '自定义指令...',
+        icon: '✍️',
+        prompt: presetIdOrMessage,
+        custom: true
+    };
+}
+
+function bindDispatchModalPresetEvents() {
+    const presetsHost = $('collabModalTaskPresets');
+    const input = $('collabModalTaskInput');
+    if (!presetsHost) return;
+
+    presetsHost.querySelectorAll('.task-capsule-item').forEach(cap => {
+        cap.onclick = () => {
+            const presetId = cap.dataset.taskPresetId || 'custom';
+            const preset = resolveTaskPreset(presetId);
+            collabMeshState.dispatchModal.activePresetId = preset.id;
+            presetsHost.querySelectorAll('.task-capsule-item').forEach(item => {
+                item.classList.toggle('is-active', item.dataset.taskPresetId === preset.id);
+            });
+            if (input) {
+                if (preset.custom && !preset.prompt) {
+                    // keep current text when switching to empty custom
+                    input.focus();
+                } else {
+                    input.value = preset.prompt || '';
+                    collabMeshState.dispatchModal.message = input.value;
+                    input.focus();
+                    input.setSelectionRange(input.value.length, input.value.length);
+                }
+            }
+        };
+    });
+
+    if (input) {
+        input.oninput = () => {
+            collabMeshState.dispatchModal.message = input.value;
+            // typing custom content marks custom preset active
+            const matched = COLLAB_TASK_PRESETS.find(p => p.prompt && p.prompt === input.value);
+            collabMeshState.dispatchModal.activePresetId = matched ? matched.id : 'custom';
+            presetsHost.querySelectorAll('.task-capsule-item').forEach(item => {
+                item.classList.toggle('is-active', item.dataset.taskPresetId === collabMeshState.dispatchModal.activePresetId);
+            });
+        };
+    }
+}
+
+function openBroadcastDispatchModal(presetIdOrMessage = '') {
+    const peers = collabMeshState.peers.length
+        ? collabMeshState.peers
+        : (collabMeshState.simulationMode ? COLLAB_DEMO_PEERS : []);
+    const preset = resolveTaskPreset(presetIdOrMessage);
+
+    collabMeshState.dispatchModal = {
+        open: true,
+        selectedTargets: new Set(peers.map(p => collabPeerKey(p))),
+        message: preset.prompt || (typeof presetIdOrMessage === 'string' && !COLLAB_TASK_PRESETS.some(p => p.id === presetIdOrMessage) ? presetIdOrMessage : ''),
+        reportBack: true,
+        activePresetId: preset.id
+    };
+
+    const presetsHost = $('collabModalTaskPresets');
+    if (presetsHost) {
+        presetsHost.innerHTML = renderTaskCapsulesHtml({
+            selectedId: collabMeshState.dispatchModal.activePresetId,
+            forModal: true,
+            interactive: true
+        });
+    }
+
+    const chipsContainer = $('collabModalTargetChips');
+    if (chipsContainer) {
+        if (!peers.length) {
+            chipsContainer.innerHTML = `<div class="collab-empty-state">暂无在线 Agent，请先启动 CLI 或开启演示模式</div>`;
+        } else {
+            chipsContainer.innerHTML = peers.map(p => `
+                <button class="target-chip active" data-peer-key="${escapeHtml(collabPeerKey(p))}" type="button">
+                    <span>@${escapeHtml(p.profile)} · ${escapeHtml(p.peerId || '')}</span>
+                </button>
+            `).join('');
+
+            chipsContainer.querySelectorAll('.target-chip').forEach(chip => {
+                chip.onclick = () => {
+                    const peerKey = chip.dataset.peerKey;
+                    if (collabMeshState.dispatchModal.selectedTargets.has(peerKey)) {
+                        collabMeshState.dispatchModal.selectedTargets.delete(peerKey);
+                        chip.classList.remove('active');
+                    } else {
+                        collabMeshState.dispatchModal.selectedTargets.add(peerKey);
+                        chip.classList.add('active');
+                    }
+                };
+            });
+        }
+    }
+
+    const input = $('collabModalTaskInput');
+    if (input) {
+        input.value = collabMeshState.dispatchModal.message || '';
+    }
+
+    bindDispatchModalPresetEvents();
+
+    const modal = $('collabBroadcastDispatchModal');
+    if (modal && typeof modal.showModal === 'function') {
+        modal.classList.remove('is-closing');
+        if (!modal.open) modal.showModal();
+        void modal.offsetWidth;
+        modal.classList.add('is-open');
+        if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+        }
+    }
+}
+
+function closeBroadcastDispatchModal() {
+    collabMeshState.dispatchModal.open = false;
+    const modal = $('collabBroadcastDispatchModal');
+    if (!modal) return;
+
+    const finish = () => {
+        if (modal.open && typeof modal.close === 'function') modal.close();
+        modal.classList.remove('is-open', 'is-closing');
+    };
+
+    if (!modal.open) {
+        finish();
+        return;
+    }
+
+    modal.classList.add('is-closing');
+    modal.classList.remove('is-open');
+    const onEnd = (e) => {
+        if (e && e.target !== modal && e.target !== modal.querySelector('.dispatch-modal-card')) return;
+        modal.removeEventListener('animationend', onEnd);
+        finish();
+    };
+    modal.addEventListener('animationend', onEnd);
+    setTimeout(onEnd, 260);
+}
+
+function bindOnboardingDemoButton() {
+    const launchDemoPromptBtn = $('collabLaunchDemoPromptBtn');
+    if (!launchDemoPromptBtn) return;
+    launchDemoPromptBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        collabMeshState.simulationMode = true;
+        collabMeshState.hasInitialFit = false;
+        loadCollabMeshData().then(() => {
+            requestAnimationFrame(() => {
+                fitCollabMeshView(false);
+                collabMeshState.hasInitialFit = true;
+            });
+            toast('已启动演示拓扑网络');
+        });
+    };
+}
+
+function clearCapsuleDropTargets() {
+    document.querySelectorAll('.collab-node.drop-target').forEach(el => el.classList.remove('drop-target'));
+}
+
+function removeCapsuleGhost() {
+    document.querySelectorAll('.collab-capsule-ghost').forEach(el => el.remove());
+}
+
+function bindTaskCapsuleDragEvents() {
+    const dock = $('collabTaskDock');
+    const viewport = $('collabCanvasViewport');
+    if (!dock) return;
+
+    // Clean previous drag state bindings
+    removeCapsuleGhost();
+    clearCapsuleDropTargets();
+
+    dock.querySelectorAll('.task-capsule-item').forEach(cap => {
+        const presetId = cap.dataset.taskPresetId || 'custom';
+        const preset = resolveTaskPreset(presetId);
+        const isCustom = !!preset.custom;
+        let suppressClick = false;
+
+        // Prefer pointer-based drag so it works even when HTML5 DnD is blocked by canvas transforms
+        cap.onpointerdown = (e) => {
+            if (isCustom) return;
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            const startX = e.clientX;
+            const startY = e.clientY;
+            let dragging = false;
+            let ghost = null;
+            let dropTarget = null;
+
+            const ensureGhost = () => {
+                if (ghost) return ghost;
+                ghost = document.createElement('div');
+                ghost.className = 'collab-capsule-ghost';
+                ghost.innerHTML = `<span class="capsule-icon">${preset.icon}</span><span class="capsule-label">${escapeHtml(preset.label)}</span>`;
+                document.body.appendChild(ghost);
+                return ghost;
+            };
+
+            const onMove = (moveEvt) => {
+                const dx = moveEvt.clientX - startX;
+                const dy = moveEvt.clientY - startY;
+                if (!dragging && Math.hypot(dx, dy) < 6) return;
+
+                if (!dragging) {
+                    dragging = true;
+                    suppressClick = true;
+                    cap.classList.add('is-capsule-dragging');
+                    collabMeshState.isDraggingNode = true; // pause polling while dragging capsule
+                    ensureGhost();
+                }
+
+                const g = ensureGhost();
+                g.style.left = `${moveEvt.clientX + 12}px`;
+                g.style.top = `${moveEvt.clientY + 12}px`;
+
+                const world = clientToCanvasWorld(moveEvt.clientX, moveEvt.clientY);
+                dropTarget = findDropTargetAtWorldPoint(world.x, world.y, null);
+                g.classList.toggle('has-target', !!dropTarget);
+            };
+
+            const onUp = (upEvt) => {
+                window.removeEventListener('pointermove', onMove, true);
+                window.removeEventListener('pointerup', onUp, true);
+                window.removeEventListener('pointercancel', onUp, true);
+                try {
+                    if (cap.hasPointerCapture?.(e.pointerId)) cap.releasePointerCapture(e.pointerId);
+                } catch { /* ignore */ }
+
+                cap.classList.remove('is-capsule-dragging');
+                collabMeshState.isDraggingNode = false;
+                removeCapsuleGhost();
+
+                if (!dragging) {
+                    // Treat as click → open dispatch modal with this preset
+                    openBroadcastDispatchModal(preset.id);
+                    return;
+                }
+
+                const world = clientToCanvasWorld(upEvt.clientX, upEvt.clientY);
+                const target = findDropTargetAtWorldPoint(world.x, world.y, null) || dropTarget;
+                clearCapsuleDropTargets();
+
+                if (target === '__blackboard__') {
+                    openNodeFlyout(target, preset.prompt || '', false, '__hub__');
+                } else if (target && preset.prompt) {
+                    executeSendCollabTask([target], preset.prompt, '__hub__', false, true);
+                } else if (target) {
+                    openNodeFlyout(target, '', false, '__hub__');
+                }
+
+                setTimeout(() => { suppressClick = false; }, 0);
+            };
+
+            try {
+                cap.setPointerCapture(e.pointerId);
+            } catch { /* ignore */ }
+            window.addEventListener('pointermove', onMove, true);
+            window.addEventListener('pointerup', onUp, true);
+            window.addEventListener('pointercancel', onUp, true);
+        };
+
+        cap.onclick = (e) => {
+            if (suppressClick) {
+                e.preventDefault();
+                e.stopPropagation();
+                return;
+            }
+            e.preventDefault();
+            e.stopPropagation();
+            openBroadcastDispatchModal(preset.id);
+        };
+
+        // Disable native HTML5 drag to avoid double-handlers
+        cap.removeAttribute('draggable');
+        cap.ondragstart = (e) => e.preventDefault();
+    });
+
+    // Still allow HTML5 drop as a fallback when browser fires it
+    document.querySelectorAll('.collab-node.agent-node').forEach(nodeEl => {
+        nodeEl.ondragover = (e) => {
+            e.preventDefault();
+            nodeEl.classList.add('drop-target');
+        };
+        nodeEl.ondragleave = (e) => {
+            if (!nodeEl.contains(e.relatedTarget)) nodeEl.classList.remove('drop-target');
+        };
+        nodeEl.ondrop = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            nodeEl.classList.remove('drop-target');
+            const profile = nodeEl.dataset.nodeId;
+            if (!profile) return;
+            let prompt = e.dataTransfer.getData('text/plain') || '';
+            const raw = e.dataTransfer.getData('application/x-collab-task');
+            if (raw) {
+                try { prompt = JSON.parse(raw).prompt || prompt; } catch { /* ignore */ }
+            }
+            if (!prompt.trim()) {
+                openNodeFlyout(profile, '', false, '__hub__');
+                return;
+            }
+            executeSendCollabTask([profile], prompt, '__hub__', false, true);
+        };
+    });
+
+    // Prevent canvas panning while interacting with dock
+    if (viewport) {
+        dock.onpointerdown = (e) => e.stopPropagation();
+    }
+}
+
+function bindBlackboardPreviewClicks() {
+    const writeBbBtn = $('collabCanvasWriteBbBtn');
+    if (writeBbBtn) {
+        writeBbBtn.onclick = (e) => {
+            e.stopPropagation();
+            openNodeFlyout('__blackboard__', '', false, '__hub__');
+        };
+    }
+
+    const viewBbBtn = $('collabCanvasViewBbBtn');
+    if (viewBbBtn) {
+        viewBbBtn.onclick = (e) => {
+            e.stopPropagation();
+            collabMeshState.supervisorPanelOpen = true;
+            collabMeshState.supervisorTab = 'blackboard';
+            $('collabSupervisorPanel')?.classList.add('open');
+            $('collabCanvasViewport')?.classList.add('has-supervisor-panel');
+            syncSupervisorPanelDom();
+        };
+    }
+
+    const bbNodeEl = $('collab-node-__blackboard__');
+    if (bbNodeEl) {
+        bbNodeEl.onclick = (e) => {
+            if (e.target.closest('.collab-port') || e.target.closest('button')) return;
+            collabMeshState.supervisorPanelOpen = true;
+            collabMeshState.supervisorTab = 'blackboard';
+            $('collabSupervisorPanel')?.classList.add('open');
+            $('collabCanvasViewport')?.classList.add('has-supervisor-panel');
+            syncSupervisorPanelDom();
+        };
+    }
+
+    document.querySelectorAll('.blackboard-preview-card').forEach(card => {
+        card.onclick = (e) => {
+            e.stopPropagation();
+            const key = card.dataset.bbKey;
+            collabMeshState.supervisorPanelOpen = true;
+            collabMeshState.supervisorTab = 'blackboard';
+            if (key) collabMeshState.blackboardFilter = key;
+            $('collabSupervisorPanel')?.classList.add('open');
+            $('collabCanvasViewport')?.classList.add('has-supervisor-panel');
+            syncSupervisorPanelDom();
+        };
+    });
+}
+
+function bindBlackboardCopyButtons() {
+    document.querySelectorAll('.copy-bb-btn').forEach(btn => {
+        btn.onclick = async () => {
+            const val = btn.dataset.copyVal || '';
+            try {
+                await navigator.clipboard.writeText(val);
+                toast('黑板内容已复制到剪贴板');
+            } catch {
+                toast('复制失败');
+            }
+        };
+    });
+}
+
+async function markSupervisorMessagesRead(ids = []) {
+    const targetIds = (ids || []).filter(Boolean);
+    if (!targetIds.length) return 0;
+
+    let marked = 0;
+    targetIds.forEach(id => {
+        const message = collabMeshState.supervisorMessages.find(entry => entry.id === id);
+        if (message && !message.readAt) {
+            message.readAt = Date.now();
+            marked += 1;
+        }
+    });
+    if (marked) {
+        collabMeshState.supervisorUnread = Math.max(0, collabMeshState.supervisorUnread - marked);
+    }
+
+    if (!collabMeshState.simulationMode) {
         try {
-            await selectProfile(createdName);
-        }
-        catch (err) {
-            toast(err.message);
+            await api('/api/collab/supervisor/read', {
+                method: 'POST',
+                body: JSON.stringify({ ids: targetIds })
+            });
+        } catch {
+            // Ignore read acknowledgement failures; local state already updated
         }
     }
-}).catch(err => toast(err.message)); }
+    return marked;
+}
+
+function bindSupervisorMessageActions() {
+    document.querySelectorAll('.supervisor-mark-read-btn').forEach(button => {
+        button.onclick = async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = button.dataset.supervisorMessageId
+                || button.closest('[data-supervisor-message-id]')?.dataset.supervisorMessageId;
+            if (!id) return;
+            await markSupervisorMessagesRead([id]);
+            syncSupervisorPanelDom({ preserveReplyDraft: true });
+            toast('已标记为已读');
+        };
+    });
+
+    document.querySelectorAll('.supervisor-continue-btn').forEach(button => {
+        button.onclick = async () => {
+            const profile = button.dataset.supervisorAgent;
+            if (!profile || profile === 'web-ui') return;
+            const peer = collabPeerByIdentity(profile, button.dataset.supervisorPeerId || '');
+            if (!peer) {
+                toast('对应 Agent 已离线或同名身份存在歧义，请刷新拓扑后重试');
+                return;
+            }
+            const title = button.dataset.supervisorTitle || '监管消息';
+            const id = button.dataset.supervisorMessageId
+                || button.closest('[data-supervisor-message-id]')?.dataset.supervisorMessageId;
+            if (id) {
+                await markSupervisorMessagesRead([id]);
+            }
+            collabMeshState.activeReplyTarget = collabPeerKey(peer);
+            syncSupervisorPanelDom({ preserveReplyDraft: false });
+            const replyInput = $('collabReplyInput');
+            if (replyInput) {
+                replyInput.value = `关于“${title}”：`;
+                collabMeshState.replyDraft = replyInput.value;
+                replyInput.focus();
+            }
+        };
+    });
+}
+
+function bindSupervisorPanelEvents() {
+    const toggle = $('collabToggleSupervisorBtn');
+    if (toggle) {
+        toggle.onclick = () => {
+            if (collabMeshState.supervisorPanelOpen && collabMeshState.supervisorTab === 'inbox') {
+                collabMeshState.supervisorPanelOpen = false;
+            } else {
+                collabMeshState.supervisorPanelOpen = true;
+                collabMeshState.supervisorTab = 'inbox';
+            }
+            $('collabSupervisorPanel')?.classList.toggle('open', collabMeshState.supervisorPanelOpen);
+            $('collabCanvasViewport')?.classList.toggle('has-supervisor-panel', collabMeshState.supervisorPanelOpen);
+            syncSupervisorPanelDom();
+            const fit = computeFitViewParams();
+            animateViewportCamera(fit.panX, fit.panY, fit.zoom, 280);
+        };
+    }
+
+    const bbToggle = $('collabToggleBlackboardBtn');
+    if (bbToggle) {
+        bbToggle.onclick = () => {
+            if (collabMeshState.supervisorPanelOpen && collabMeshState.supervisorTab === 'blackboard') {
+                collabMeshState.supervisorPanelOpen = false;
+            } else {
+                collabMeshState.supervisorPanelOpen = true;
+                collabMeshState.supervisorTab = 'blackboard';
+            }
+            $('collabSupervisorPanel')?.classList.toggle('open', collabMeshState.supervisorPanelOpen);
+            $('collabCanvasViewport')?.classList.toggle('has-supervisor-panel', collabMeshState.supervisorPanelOpen);
+            syncSupervisorPanelDom();
+            const fit = computeFitViewParams();
+            animateViewportCamera(fit.panX, fit.panY, fit.zoom, 280);
+        };
+    }
+
+    const close = $('collabCloseSupervisorBtn');
+    if (close) {
+        close.onclick = () => {
+            collabMeshState.supervisorPanelOpen = false;
+            $('collabSupervisorPanel')?.classList.remove('open');
+            $('collabCanvasViewport')?.classList.remove('has-supervisor-panel');
+            $('collabToggleSupervisorBtn')?.classList.remove('active');
+            $('collabToggleBlackboardBtn')?.classList.remove('active');
+            const fit = computeFitViewParams();
+            animateViewportCamera(fit.panX, fit.panY, fit.zoom, 280);
+        };
+    }
+
+    document.querySelectorAll('[data-supervisor-tab]').forEach(tab => {
+        tab.onclick = () => {
+            collabMeshState.supervisorTab = tab.dataset.supervisorTab || 'inbox';
+            document.querySelectorAll('[data-supervisor-tab]').forEach(candidate => {
+                candidate.classList.toggle('active', candidate === tab);
+            });
+            syncSupervisorPanelDom();
+        };
+    });
+
+    const markAll = $('collabMarkSupervisorReadBtn');
+    if (markAll) {
+        markAll.onclick = async () => {
+            try {
+                await api('/api/collab/supervisor/read', {
+                    method: 'POST',
+                    body: JSON.stringify({ all: true })
+                });
+                const now = Date.now();
+                collabMeshState.supervisorMessages.forEach(message => {
+                    if (!message.readAt) message.readAt = now;
+                });
+                collabMeshState.supervisorUnread = 0;
+                syncSupervisorPanelDom();
+            } catch (err) {
+                toast('更新监管收件箱失败: ' + err.message);
+            }
+        };
+    }
+
+    bindSupervisorMessageActions();
+    bindSupervisorReplyDockEvents();
+}
+
+function bindSupervisorReplyDockEvents() {
+    document.querySelectorAll('[data-reply-agent]').forEach(pill => {
+        pill.onclick = () => {
+            const peerKey = pill.dataset.replyAgent;
+            const peer = collabPeerByKey(peerKey);
+            if (!peer) return;
+            collabMeshState.activeReplyTarget = peerKey;
+            document.querySelectorAll('[data-reply-agent]').forEach(p => {
+                p.classList.toggle('active', p.dataset.replyAgent === peerKey);
+            });
+            const input = $('collabReplyInput');
+            if (input) {
+                input.placeholder = `输入监管回复指令回复 @${peer.profile} (Ctrl+Enter 发送)...`;
+                input.focus();
+            }
+        };
+    });
+
+    document.querySelectorAll('[data-reply-prompt]').forEach(chip => {
+        chip.onclick = () => {
+            const input = $('collabReplyInput');
+            if (input) {
+                input.value = chip.dataset.replyPrompt || '';
+                collabMeshState.replyDraft = input.value;
+                input.focus();
+            }
+        };
+    });
+
+    const sendBtn = $('collabSendReplyBtn');
+    const replyInput = $('collabReplyInput');
+
+    if (replyInput) {
+        replyInput.oninput = () => {
+            collabMeshState.replyDraft = replyInput.value;
+        };
+    }
+
+    const handleSend = async () => {
+        const peers = collabMeshState.peers.length ? collabMeshState.peers : (collabMeshState.simulationMode ? COLLAB_DEMO_PEERS : []);
+        const target = collabMeshState.activeReplyTarget || (peers[0] ? collabPeerKey(peers[0]) : '');
+        const targetPeer = collabPeerByKey(target);
+        const text = replyInput ? replyInput.value.trim() : '';
+        if (!targetPeer || !text) {
+            toast('请输入回复内容');
+            return;
+        }
+
+        triggerTransmissionAnimation('__hub__', target, text);
+        collabMeshState.activityLogs.unshift({
+            time: new Date().toLocaleTimeString(),
+            text: `已向 @${targetPeer.profile} 发送监管指令: ${text.slice(0, 36)}...`,
+            type: 'dispatch'
+        });
+
+        if (replyInput) replyInput.value = '';
+        collabMeshState.replyDraft = '';
+
+        if (collabMeshState.simulationMode) {
+            simulateAgentExecution('web-ui', [target], text, false);
+            toast(`[演示] 已向 @${targetPeer.profile} 发送回复指令`);
+            // simulateAgentExecution will refresh inbox when replies arrive; keep draft empty
+            return;
+        }
+
+        try {
+            await api('/api/collab/send', {
+                method: 'POST',
+                body: JSON.stringify({
+                    from: 'web-ui',
+                    to: targetPeer.profile,
+                    peerId: targetPeer.peerId,
+                    message: text,
+                    isAsk: false,
+                    reportBack: true
+                })
+            });
+
+            toast(`已发送指令给 @${targetPeer.profile}`);
+        } catch (err) {
+            toast('发送失败: ' + err.message);
+        }
+    };
+
+    if (sendBtn) sendBtn.onclick = handleSend;
+    if (replyInput) {
+        replyInput.onkeydown = (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                handleSend();
+            }
+        };
+    }
+}
+
+function bindNodeElementEvents() {
+    const viewport = $('collabCanvasViewport');
+
+    // Dragging Nodes
+    document.querySelectorAll('.collab-node').forEach(nodeEl => {
+        const nodeId = nodeEl.dataset.nodeId;
+        if (!nodeId) return;
+
+        nodeEl.onpointerdown = (e) => {
+            if (e.target.closest('button') || e.target.closest('.collab-port') || e.target.closest('input') || e.target.closest('textarea')) {
+                return;
+            }
+            e.stopPropagation();
+
+            let isNodeDragging = true;
+            collabMeshState.isDraggingNode = true;
+            nodeEl.classList.add('is-dragging');
+            nodeEl.setPointerCapture(e.pointerId);
+
+            const startClientX = e.clientX;
+            const startClientY = e.clientY;
+            const initialX = parseFloat(nodeEl.style.left) || (nodeId === '__hub__' ? collabMeshState.hubPosition.x : (collabMeshState.nodePositions[nodeId]?.x || 0));
+            const initialY = parseFloat(nodeEl.style.top) || (nodeId === '__hub__' ? collabMeshState.hubPosition.y : (collabMeshState.nodePositions[nodeId]?.y || 0));
+
+            nodeEl.onpointermove = (moveEvt) => {
+                if (!isNodeDragging) return;
+                const dx = (moveEvt.clientX - startClientX) / collabMeshState.zoom;
+                const dy = (moveEvt.clientY - startClientY) / collabMeshState.zoom;
+
+                const newX = Math.round(initialX + dx);
+                const newY = Math.round(initialY + dy);
+
+                if (nodeId === '__hub__' || nodeId === '__onboarding__') {
+                    if (nodeId === '__hub__') {
+                        collabMeshState.hubPosition = { x: newX, y: newY };
+                        collabMeshState.hubPositionManual = true;
+                    }
+                    else collabMeshState.nodePositions['__onboarding__'] = { x: newX, y: newY };
+                } else {
+                    collabMeshState.nodePositions[nodeId] = { x: newX, y: newY };
+                }
+
+                nodeEl.style.left = `${newX}px`;
+                nodeEl.style.top = `${newY}px`;
+
+                if (collabMeshState.nodeFlyout.open && collabMeshState.nodeFlyout.targetProfile === nodeId) {
+                    const flyoutEl = $('collabNodeFlyout');
+                    if (flyoutEl) {
+                        flyoutEl.style.left = `${nodeId === '__blackboard__' ? newX + 52 : newX + 304}px`;
+                        flyoutEl.style.top = `${nodeId === '__blackboard__' ? newY + 150 : Math.max(10, newY - 10)}px`;
+                    }
+                }
+
+                updateCollabWires();
+            };
+
+            const stopNodeDrag = () => {
+                isNodeDragging = false;
+                collabMeshState.isDraggingNode = false;
+                nodeEl.classList.remove('is-dragging');
+                nodeEl.onpointermove = null;
+                nodeEl.onpointerup = null;
+                nodeEl.onpointercancel = null;
+            };
+
+            nodeEl.onpointerup = stopNodeDrag;
+            nodeEl.onpointercancel = stopNodeDrag;
+        };
+    });
+
+    // Dragging source ports (output / bottom with data-port-source) to connect wire
+    document.querySelectorAll('.collab-port[data-port-source]').forEach(portEl => {
+        portEl.onpointerdown = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const sourceId = portEl.dataset.portSource;
+            // Blackboard is shared context only — no outbound wiring / dispatch
+            if (!sourceId || sourceId === '__blackboard__' || !viewport) return;
+
+            const portType = portEl.classList.contains('port-bottom')
+                ? 'bottom'
+                : (portEl.classList.contains('port-top') ? 'top' : 'output');
+            const startPort = getNodePortCoords(sourceId, portType);
+            const world = clientToCanvasWorld(e.clientX, e.clientY);
+
+            collabMeshState.activeWire = {
+                sourceId,
+                portType,
+                startX: startPort.x,
+                startY: startPort.y,
+                currentX: world.x,
+                currentY: world.y,
+                targetId: null
+            };
+
+            try {
+                portEl.setPointerCapture(e.pointerId);
+            } catch {
+                // ignore capture failures
+            }
+            updateActiveWireSvg();
+
+            const onMove = (moveEvt) => {
+                if (!collabMeshState.activeWire) return;
+                const point = clientToCanvasWorld(moveEvt.clientX, moveEvt.clientY);
+                collabMeshState.activeWire.currentX = point.x;
+                collabMeshState.activeWire.currentY = point.y;
+                collabMeshState.activeWire.targetId = findDropTargetAtWorldPoint(
+                    point.x,
+                    point.y,
+                    collabMeshState.activeWire.sourceId
+                );
+                updateActiveWireSvg();
+            };
+
+            const onUp = () => {
+                portEl.removeEventListener('pointermove', onMove);
+                portEl.removeEventListener('pointerup', onUp);
+                portEl.removeEventListener('pointercancel', onUp);
+                try {
+                    if (portEl.hasPointerCapture?.(e.pointerId)) {
+                        portEl.releasePointerCapture(e.pointerId);
+                    }
+                } catch {
+                    // ignore
+                }
+
+                if (!collabMeshState.activeWire) return;
+                const target = collabMeshState.activeWire.targetId;
+                const source = collabMeshState.activeWire.sourceId;
+                document.querySelectorAll('.collab-node').forEach(el => el.classList.remove('drop-target'));
+                collabMeshState.activeWire = null;
+                updateActiveWireSvg();
+
+                if (target) {
+                    if (source && source !== '__hub__' && source !== '__blackboard__' && source !== target) {
+                        collabMeshState.tentativeLink = {
+                            source,
+                            target,
+                            createdAt: Date.now()
+                        };
+                        updateCollabWires();
+                    }
+                    openNodeFlyout(target, '', false, source);
+                }
+            };
+
+            portEl.addEventListener('pointermove', onMove);
+            portEl.addEventListener('pointerup', onUp);
+            portEl.addEventListener('pointercancel', onUp);
+        };
+    });
+
+    // Node Footer Direct Action Buttons -> Open Flyout
+    document.querySelectorAll('[data-action="dispatch-to"]').forEach(btn => {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const peerKey = btn.dataset.peerKey;
+            openNodeFlyout(peerKey, '', false, '__hub__');
+        };
+    });
+
+    document.querySelectorAll('[data-action="ask-peer"]').forEach(btn => {
+        btn.onclick = (e) => {
+            e.stopPropagation();
+            const peerKey = btn.dataset.peerKey;
+            const peer = collabPeerByKey(peerKey);
+            if (!peer) return;
+            openNodeFlyout(peerKey, `请问 @${peer.profile}，当前工作区进度如何？是否有需要协同解决的问题？`, true, '__hub__');
+        };
+    });
+}
+
+function bindCollabMeshEvents() {
+    const closeBtn = $('collabCloseBtn');
+    if (closeBtn) closeBtn.onclick = closeCollabMesh;
+
+    const refreshBtn = $('collabRefreshBtn');
+    if (refreshBtn) refreshBtn.onclick = () => loadCollabMeshData().then(() => toast('已刷新拓扑状态'));
+
+    const toggleFullscreenBtn = $('collabToggleFullscreenBtn');
+    if (toggleFullscreenBtn) {
+        toggleFullscreenBtn.onclick = () => {
+            collabMeshState.isFullscreen = !collabMeshState.isFullscreen;
+            const dialog = $('collabMeshDialog');
+            if (dialog) {
+                dialog.classList.toggle('is-fullscreen', collabMeshState.isFullscreen);
+            }
+            toggleFullscreenBtn.innerHTML = iconSvg(collabMeshState.isFullscreen ? 'minimize' : 'maximize');
+            toggleFullscreenBtn.title = collabMeshState.isFullscreen ? '还原窗口' : '全屏最大化';
+
+            setTimeout(() => {
+                const fit = computeFitViewParams();
+                animateViewportCamera(fit.panX, fit.panY, fit.zoom, 300);
+            }, 260);
+        };
+    }
+
+    const autoLayoutBtn = $('collabAutoLayoutBtn');
+    if (autoLayoutBtn) autoLayoutBtn.onclick = computeAutoLayout;
+
+    const toggleDemoBtn = $('collabToggleDemoBtn');
+    if (toggleDemoBtn) {
+        toggleDemoBtn.onclick = () => {
+            collabMeshState.simulationMode = !collabMeshState.simulationMode;
+            collabMeshState.hasInitialFit = false;
+            if (collabMeshState.simulationMode) {
+                // Seed demo data once when entering simulation
+                if (!collabMeshState.peers.length) {
+                    collabMeshState.peers = COLLAB_DEMO_PEERS.map(peer => ({ ...peer }));
+                }
+                if (!collabMeshState.blackboard.length) {
+                    collabMeshState.blackboard = COLLAB_DEMO_BLACKBOARD.map(item => ({ ...item }));
+                }
+            }
+            loadCollabMeshData().then(() => {
+                requestAnimationFrame(() => {
+                    fitCollabMeshView(false);
+                    collabMeshState.hasInitialFit = true;
+                });
+            });
+            toast(collabMeshState.simulationMode ? '已切换至演示拓扑网络' : '已返回实时网关数据');
+        };
+    }
+
+    bindOnboardingDemoButton();
+
+    // Zoom & Pan Canvas Controls
+    const viewport = $('collabCanvasViewport');
+
+    const zoomAroundCenter = (factor) => {
+        const vp = $('collabCanvasViewport');
+        const cx = vp ? vp.clientWidth / 2 : 450;
+        const cy = vp ? vp.clientHeight / 2 : 300;
+        const nextZoom = Math.min(2.2, Math.max(0.35, collabMeshState.zoom * factor));
+        const scaleChange = nextZoom / collabMeshState.zoom;
+        const nextPanX = cx - (cx - collabMeshState.panX) * scaleChange;
+        const nextPanY = cy - (cy - collabMeshState.panY) * scaleChange;
+        animateViewportCamera(nextPanX, nextPanY, nextZoom, 280);
+    };
+
+    const zoomInBtn = $('collabZoomInBtn');
+    if (zoomInBtn) zoomInBtn.onclick = () => zoomAroundCenter(1.22);
+    const zoomOutBtn = $('collabZoomOutBtn');
+    if (zoomOutBtn) zoomOutBtn.onclick = () => zoomAroundCenter(0.82);
+    const resetViewBtn = $('collabResetViewBtn');
+    if (resetViewBtn) {
+        resetViewBtn.onclick = () => {
+            animateViewportCamera(0, 0, 1.0, 320);
+        };
+    }
+    const fitViewBtn = $('collabFitViewBtn');
+    if (fitViewBtn) {
+        fitViewBtn.onclick = () => fitCollabMeshView(false);
+    }
+
+    // Canvas Background Panning (wire drag is handled on ports themselves)
+    if (viewport) {
+        viewport.onpointerdown = (e) => {
+            if (e.target.closest('.collab-node') || e.target.closest('.collab-node-flyout') || e.target.closest('.collab-port') || e.target.closest('.collab-task-dock') || e.target.closest('.collab-supervisor-panel') || e.target.closest('.collab-zoom-hud') || e.target.closest('.collab-dispatch-modal')) {
+                return;
+            }
+            if (collabMeshState.nodeFlyout.open) {
+                closeNodeFlyout();
+            }
+
+            stopCollabCameraAnimation();
+            collabMeshState.isPanning = true;
+            collabMeshState.panStartX = e.clientX;
+            collabMeshState.panStartY = e.clientY;
+            collabMeshState.initialPanX = collabMeshState.panX;
+            collabMeshState.initialPanY = collabMeshState.panY;
+            viewport.classList.add('is-panning');
+            viewport.setPointerCapture(e.pointerId);
+        };
+
+        viewport.onpointermove = (e) => {
+            if (!collabMeshState.isPanning) return;
+            const dx = e.clientX - collabMeshState.panStartX;
+            const dy = e.clientY - collabMeshState.panStartY;
+            collabMeshState.panX = collabMeshState.initialPanX + dx;
+            collabMeshState.panY = collabMeshState.initialPanY + dy;
+            applyCollabCameraTransform();
+        };
+
+        const endPan = () => {
+            if (collabMeshState.isPanning) {
+                collabMeshState.isPanning = false;
+                viewport.classList.remove('is-panning');
+            }
+        };
+
+        viewport.onpointerup = endPan;
+        viewport.onpointercancel = endPan;
+
+        viewport.onwheel = (e) => {
+            // Let side panel / dock / flyout / modal scroll natively — don't steal for canvas zoom
+            if (e.target.closest('.collab-supervisor-panel')
+                || e.target.closest('.collab-task-dock')
+                || e.target.closest('.collab-node-flyout')
+                || e.target.closest('.collab-dispatch-modal')
+                || e.target.closest('textarea')
+                || e.target.closest('input')
+                || e.target.closest('.supervisor-messages-list')
+                || e.target.closest('.collab-bb-list')
+                || e.target.closest('.supervisor-panel-body')) {
+                return;
+            }
+
+            e.preventDefault();
+            stopCollabCameraAnimation();
+
+            const rect = viewport.getBoundingClientRect();
+            const cursorX = e.clientX - rect.left;
+            const cursorY = e.clientY - rect.top;
+
+            const worldX = (cursorX - collabMeshState.panX) / collabMeshState.zoom;
+            const worldY = (cursorY - collabMeshState.panY) / collabMeshState.zoom;
+
+            const zoomFactor = Math.exp(-e.deltaY * 0.0022);
+            const targetZoom = Math.min(2.2, Math.max(0.35, collabMeshState.zoom * zoomFactor));
+
+            collabMeshState.zoom = targetZoom;
+            collabMeshState.panX = cursorX - worldX * targetZoom;
+            collabMeshState.panY = cursorY - worldY * targetZoom;
+
+            applyCollabCameraTransform();
+        };
+    }
+
+    // Draggable Task Capsules from Dock
+    bindTaskCapsuleDragEvents();
+
+    // Broadcast Modal Actions
+    const closeBroadcastBtn = $('collabCloseBroadcastModalBtn');
+    if (closeBroadcastBtn) closeBroadcastBtn.onclick = closeBroadcastDispatchModal;
+
+    const dismissModalBtn = $('collabDismissDispatchBtn');
+    if (dismissModalBtn) dismissModalBtn.onclick = closeBroadcastDispatchModal;
+
+    const submitDispatchBtn = $('collabSubmitDispatchBtn');
+    if (submitDispatchBtn) {
+        submitDispatchBtn.onclick = () => {
+            const targets = Array.from(collabMeshState.dispatchModal.selectedTargets);
+            const input = $('collabModalTaskInput');
+            const message = input ? input.value : '';
+            executeSendCollabTask(targets, message, null, false, collabMeshState.dispatchModal.reportBack);
+        };
+    }
+}
+
+function bind() {
+    hydrateIcons();
+    $('refreshBtn').onclick = () => load().then(() => toast('已刷新'));
+    $('topCollabMesh').onclick = () => openCollabMesh();
+    $('topSyncWorkspace').onclick = () => openSyncWorkspace(state.selected || 'main');
+    $('drawerClose').onclick = closeDrawer;
+    document.querySelectorAll('[data-dialog-close]').forEach(btn => btn.addEventListener('click', () => {
+        resetNewProfileForm();
+        const dialogId = btn.dataset.dialogClose;
+        if (dialogId === 'newProfileDialog' || dialogId === 'gatewayDialog') closePrimaryModal(dialogId);
+        else $(dialogId).close();
+    }));
+    document.querySelectorAll('dialog').forEach(dialog => dialog.addEventListener('click', event => {
+        if (event.target !== dialog) return;
+        if (dialog.id === 'syncConfirmDialog') { closeSyncConfirm(); return; }
+        if (dialog.id === 'collabMeshDialog') { closeCollabMesh(); return; }
+        if (dialog.id === 'newProfileDialog') resetNewProfileForm();
+        if (dialog.id === 'newProfileDialog' || dialog.id === 'gatewayDialog') closePrimaryModal(dialog.id);
+        else dialog.close();
+    }));
+    ['newProfileDialog', 'gatewayDialog'].forEach(id => $(id).addEventListener('close', () => handlePrimaryModalClose(id)));
+    $('collabMeshDialog')?.addEventListener('close', () => closeCollabMesh());
+    $('themeToggle').onclick = () => {
+        const dark = document.documentElement.dataset.theme === 'dark';
+        document.documentElement.dataset.theme = dark ? 'light' : 'dark';
+        localStorage.setItem('ccp-ui-theme', dark ? 'light' : 'dark');
+        $('themeToggle').innerHTML = dark ? iconSvg('moon') : iconSvg('sun');
+        $('themeToggle').title = dark ? '切换深色' : '切换浅色';
+        $('themeToggle').setAttribute('aria-label', dark ? '切换深色' : '切换浅色');
+    };
+    const saved = localStorage.getItem('ccp-ui-theme') || 'light';
+    document.documentElement.dataset.theme = saved;
+    $('themeToggle').innerHTML = saved === 'dark' ? iconSvg('sun') : iconSvg('moon');
+    $('themeToggle').title = saved === 'dark' ? '切换浅色' : '切换深色';
+    $('themeToggle').setAttribute('aria-label', saved === 'dark' ? '切换浅色' : '切换深色');
+    $('newProfileBtn').onclick = () => void openNewProfileDialog();
+    $('newProfileName').oninput = validateNewProfileName;
+    $('createProfileSubmit').onclick = createProfile;
+}
+
+function validateNewProfileName() {
+    const input = $('newProfileName');
+    if (!input) return;
+    const reservedNames = new Set(['main', 'web-ui', 'supervisor', '__supervisor__']);
+    input.setCustomValidity(reservedNames.has(input.value.trim().toLowerCase()) ? '该名称是多 Agent 协议保留身份，请使用其他 Profile 名称。' : '');
+}
+
+function resetNewProfileForm() {
+    const formEl = $('newProfileForm');
+    if (!formEl) return;
+    formEl.reset();
+    validateNewProfileName();
+    state.selectedPreset = 'custom-api';
+    state.presetQuery = '';
+    state.presetFilter = 'all';
+    if (state.presets.length) renderPresetPicker();
+}
+
+async function createProfile() {
+    const formEl = $('newProfileForm');
+    validateNewProfileName();
+    if (!formEl.reportValidity()) {
+        const invalid = formEl.querySelector(':invalid');
+        toast(invalid?.closest('label')?.textContent?.trim() ? ('请检查：' + invalid.closest('label').textContent.trim()) : '请完善必填项');
+        invalid?.focus();
+        return;
+    }
+    const formData = new FormData(formEl);
+    const preset = selectedPreset();
+    const kind = preset?.type || String(formData.get('kind') || '');
+    const raw = Object.fromEntries(formData.entries());
+    const name = String(raw.name || '').trim();
+    let url = '/api/profiles/preset';
+    let payload = { presetId: String(raw.presetId || ''), name, kind, token: String(raw.token || '') };
+    if (kind === 'custom-api') {
+        url = '/api/profiles/api';
+        payload = { name, baseUrl: String(raw.baseUrl || ''), token: String(raw.customToken || ''), model: String(raw.model || '') };
+    }
+    else if (kind === 'login') {
+        url = '/api/profiles/login';
+        payload = { name };
+    }
+    else if (kind === 'gateway') {
+        payload = {
+            presetId: String(raw.presetId || ''),
+            name,
+            kind: 'gateway',
+            upstreamId: String(raw.gatewayUpstream || ''),
+            model: String(raw.gatewayModel || '')
+        };
+    }
+    try {
+        await api(url, { method: 'POST', body: JSON.stringify(payload) });
+        closePrimaryModal('newProfileDialog');
+        resetNewProfileForm();
+        await load();
+        const createdName = name;
+        await selectProfile(createdName);
+        toast('Profile "' + name + '" 已创建');
+    } catch (err) {
+        toast('创建失败: ' + err.message);
+    }
+}
+
+window.openCollabMesh = openCollabMesh;
+window.closeCollabMesh = closeCollabMesh;
+window.executeSendCollabTask = executeSendCollabTask;
+window.loadCollabMeshData = loadCollabMeshData;
+
 bind();
-load().catch(err => toast(err.message));
+load().catch(err => toast('加载失败: ' + err.message));

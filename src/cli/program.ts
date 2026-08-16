@@ -45,6 +45,8 @@ import {
 import { startUiServer } from "../web/server.js";
 import { openEditor } from "../platform/editor.js";
 import { parseSelectionText, syncSessions, type SessionDisplayInfo } from "../core/sessions.js";
+import { getProjectKey } from "../core/paths.js";
+import { runMcpStdioServer } from "../collab/mcp-stdio.js";
 import { getPackageVersion } from "../core/version.js";
 import type {
   GatewayCompatibility,
@@ -939,6 +941,73 @@ export function createProgram(): Command {
     .option("--no-open", "Do not open the UI in the default browser")
     .action(async (options: { host: string; port: number; open: boolean }) => {
       await startUiServer({ host: options.host, port: options.port, open: options.open });
+    });
+
+  program
+    .command("mcp")
+    .description("Run multi-ccp collaboration MCP server (stdio transport)")
+    .option("-p, --profile <profile>", "Profile name", process.env.CCP_PROFILE || "default")
+    .option("--project <projectKey>", "Project key")
+    .action(async (options: { profile: string; project?: string }) => {
+      const projectKey = options.project || getProjectKey(process.cwd());
+      await runMcpStdioServer({
+        profile: options.profile,
+        projectKey,
+        projectDir: process.cwd()
+      });
+    });
+
+  const collab = program.command("collab").description("Multi-agent collaboration mesh utilities");
+
+  collab
+    .command("list")
+    .description("List active Agent CLI instances in the collaboration mesh")
+    .action(async () => {
+      try {
+        const url = "http://127.0.0.1:3921/api/collab/peers";
+        const res = await fetch(url);
+        if (!res.ok) {
+          console.error("Gateway is not running or returned error.");
+          return;
+        }
+        const data = (await res.json()) as { ok: boolean; peers: Array<{ peerId: string; profile: string; status: string; model?: string; currentFocus?: string }> };
+        if (!data.peers || data.peers.length === 0) {
+          console.log("No active peers online.");
+          return;
+        }
+        console.log(`Active peers (${data.peers.length}):`);
+        for (const peer of data.peers) {
+          console.log(`- @${peer.profile} [${peer.status}] (${peer.peerId}, model: ${peer.model || "default"}) - ${peer.currentFocus || "Idle"}`);
+        }
+      } catch {
+        console.log("Gateway offline. Start it with 'ccp gateway start' or launch a gateway profile.");
+      }
+    });
+
+  collab
+    .command("blackboard")
+    .description("List entries on the Agent CLI shared blackboard")
+    .action(async () => {
+      try {
+        const url = "http://127.0.0.1:3921/api/collab/blackboard";
+        const res = await fetch(url);
+        if (!res.ok) {
+          console.error("Gateway is not running or returned error.");
+          return;
+        }
+        const data = (await res.json()) as { ok: boolean; blackboard: Array<{ key: string; value: string; author: string; updatedAt: number }> };
+        if (!data.blackboard || data.blackboard.length === 0) {
+          console.log("Shared blackboard is empty.");
+          return;
+        }
+        console.log(`Agent CLI shared blackboard (${data.blackboard.length} entries):`);
+        for (const item of data.blackboard) {
+          console.log(`[${item.key}] (by @${item.author} at ${new Date(item.updatedAt).toLocaleTimeString()}):`);
+          console.log(`  ${item.value.slice(0, 120)}${item.value.length > 120 ? "..." : ""}`);
+        }
+      } catch {
+        console.log("Gateway offline.");
+      }
     });
 
   return program;

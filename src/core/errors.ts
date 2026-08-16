@@ -7,13 +7,20 @@ export class CcpError extends Error {
 
 const WINDOWS_RESERVED_PROFILE_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
 
+export const RESERVED_PROFILE_NAMES: ReadonlySet<string> = new Set([
+  "main",
+  "web-ui",
+  "supervisor",
+  "__supervisor__"
+]);
+
 export function assertProfileName(name: string): void {
   if (!name.trim()) {
     throw new CcpError("Missing profile name.");
   }
 
-  if (name.toLowerCase() === "main") {
-    throw new CcpError("'main' is reserved and cannot be used as a profile name.");
+  if (RESERVED_PROFILE_NAMES.has(name.toLowerCase())) {
+    throw new CcpError(`'${name}' is a reserved protocol identity and cannot be used as a profile name.`);
   }
 
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name) || name.endsWith(".")) {

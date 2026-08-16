@@ -7,6 +7,7 @@
     <title>multi-ccp</title>
     <link rel="stylesheet" href="/styles.css" />
     <link rel="stylesheet" href="/gateway.css" />
+    <link rel="stylesheet" href="/collab.css" />
   </head>
   <body>
     <div class="grain" aria-hidden="true"></div>
@@ -21,6 +22,7 @@
         </section>
         <section class="top-actions">
           <button class="ghost icon-action icon-only" id="themeToggle" type="button" aria-label="切换深色" title="切换深色"><span class="ui-icon" data-icon="moon"></span></button>
+          <button class="ghost icon-action" id="topCollabMesh" type="button" title="打开 Collab Mesh 智能体协作大盘"><span class="ui-icon" data-icon="cpu"></span><span>Mesh</span></button>
           <button class="ghost icon-action" id="topSyncWorkspace" type="button" title="打开 Sync Workspace"><span class="ui-icon" data-icon="history"></span><span>Sync</span></button>
           <button class="ghost icon-action icon-only" id="refreshBtn" type="button" aria-label="刷新" title="刷新"><span class="ui-icon" data-icon="refresh"></span></button>
           <button class="primary icon-action" id="newProfileBtn" type="button"><span class="ui-icon" data-icon="plus"></span><span>New</span></button>
@@ -117,6 +119,10 @@
 
     <dialog id="syncConfirmDialog" class="modal">
       <div class="modal-card sync-confirm-card" id="syncConfirmPanel"></div>
+    </dialog>
+
+    <dialog id="collabMeshDialog" class="modal">
+      <div class="modal-card collab-mesh-card" id="collabMeshPanel"></div>
     </dialog>
 
     <div class="toast-region" id="toastRegion"></div>

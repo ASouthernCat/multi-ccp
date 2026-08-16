@@ -344,7 +344,7 @@ async function waitForGateway(
 
 async function probeGateway(endpoint: string, fetchImpl: typeof fetch): Promise<ProbeResult> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 800);
+  const timeout = setTimeout(() => controller.abort(), 1500);
   try {
     const response = await fetchImpl(`${endpoint}/health`, { signal: controller.signal, redirect: "manual" });
     let health: GatewayHealth | undefined;
