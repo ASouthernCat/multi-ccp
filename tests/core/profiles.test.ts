@@ -270,6 +270,14 @@ describe("profiles", () => {
     }
   );
 
+  it.each(["main", "web-ui", "WEB-UI", "supervisor", "SUPERVISOR", "__supervisor__"])(
+    "rejects reserved protocol identity %s as a profile name",
+    async (name) => {
+      const context = await createContext();
+      await expect(createLoginProfile({ name }, context)).rejects.toThrow("reserved protocol identity");
+    }
+  );
+
   it("rejects path traversal when resolving profile directories", async () => {
     const context = await createContext();
     const escapedDir = path.join(getProfilesRoot(context), "..", "escaped-profile");

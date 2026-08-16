@@ -41,6 +41,10 @@ import {
 import { GatewayRegistry, type GatewayRouteSnapshot } from "./registry.js";
 import { OpenAIAnthropicStreamBridge } from "./streaming.js";
 import { buildGatewayModelDiscovery, resolveGatewayModel } from "./models.js";
+import { CollabHub } from "../collab/hub.js";
+import { handleMcpRpcRequest, type JsonRpcRequest } from "../collab/mcp-protocol.js";
+import type { CollabMessage } from "../collab/types.js";
+import { executePeerClaudeTask } from "../collab/cli-worker.js";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 3921;
@@ -50,11 +54,17 @@ const DEFAULT_MAX_UPSTREAM_RESPONSE_BYTES = 64 * 1024 * 1024;
 const DEFAULT_TOTAL_TIMEOUT_MS = 10 * 60 * 1000;
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 
+function withoutLocalSessionMetadata<T extends object>(record: T): Omit<T, "projectKey" | "projectDir"> {
+  const publicRecord = { ...record } as T & { projectKey?: unknown; projectDir?: unknown };
+  delete publicRecord.projectKey;
+  delete publicRecord.projectDir;
+  return publicRecord;
+}
+
 interface RegistryLike {
   resolve(profileName: string): Promise<GatewayRouteSnapshot>;
   countProfiles(): Promise<number>;
 }
-
 export type GatewayFailureStage =
   | "request_validation"
   | "upstream_connect"
@@ -127,6 +137,7 @@ export interface GatewayRequestLog {
 export interface GatewayServerOptions {
   context?: PathContext;
   registry?: RegistryLike;
+  collabHub?: CollabHub;
   fetch?: typeof fetch;
   instanceId?: string;
   maxBodyBytes?: number;
@@ -146,6 +157,7 @@ export interface GatewayListenOptions {
 export interface GatewayServerHandle {
   readonly server: Server;
   readonly instanceId: string;
+  readonly collabHub: CollabHub;
   listen(options?: GatewayListenOptions): Promise<{ host: string; port: number; endpoint: string }>;
   close(): Promise<void>;
 }
@@ -216,6 +228,7 @@ export function createGatewayServer(options: GatewayServerOptions = {}): Gateway
   const instanceId = options.instanceId ?? process.env.CCP_GATEWAY_INSTANCE_ID ?? randomUUID();
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? randomUUID;
+  const collabHub = options.collabHub ?? new CollabHub();
   const startedAt = now();
   let endpoint = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 
@@ -223,6 +236,7 @@ export function createGatewayServer(options: GatewayServerOptions = {}): Gateway
     void handleRequest(req, res, {
       ...options,
       registry,
+      collabHub,
       fetchImpl,
       instanceId,
       now,
@@ -238,9 +252,27 @@ export function createGatewayServer(options: GatewayServerOptions = {}): Gateway
     });
   });
 
+  collabHub.setAutoResponder(async (msg) => {
+    // An active terminal must produce the real reply through reply_peer. A
+    // delivery acknowledgement is not a valid answer to ask_peer.
+    const targetPeer = collabHub.findPeer(msg.to, msg.toPeerId);
+    if (collabHub.hasActiveSubscriber(msg.to, msg.toPeerId)) return undefined;
+
+    // An offline peer is executed through a dedicated background Claude CLI
+    // session. Failures remain failures instead of becoming successful replies.
+    try {
+      return { reply: await executePeerClaudeTask(msg, options.context, targetPeer?.projectDir) };
+    } catch (error) {
+      const fallback = await generatePeerAutoResponse(registry, endpoint, msg);
+      if (fallback) return { reply: fallback };
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
   return {
     server,
     instanceId,
+    collabHub,
     async listen(listenOptions = {}) {
       const host = listenOptions.host ?? DEFAULT_HOST;
       const port = listenOptions.port ?? DEFAULT_PORT;
@@ -279,6 +311,7 @@ async function handleRequest(
   res: ServerResponse,
   deps: GatewayServerOptions & {
     registry: RegistryLike;
+    collabHub: CollabHub;
     fetchImpl: typeof fetch;
     instanceId: string;
     now: () => number;
@@ -356,6 +389,329 @@ async function handleRequest(
         endpoint: deps.getEndpoint(),
         profileCount,
         uptime: Math.max(0, Math.floor((deps.now() - deps.startedAt) / 1000))
+      });
+      return;
+    }
+
+    if (url.pathname === "/mcp/collab/sse") {
+      if (url.searchParams.get("role") !== "terminal") {
+        sendError(res, 400, { type: "invalid_request_error", message: "Collaboration SSE is reserved for terminal sessions." });
+        state.status = 400;
+        return;
+      }
+      const profile = url.searchParams.get("profile") || "anonymous";
+      const project = url.searchParams.get("project") || "default";
+      const peerId = url.searchParams.get("peerId") || undefined;
+      if (deps.collabHub.isSupervisorTarget(profile)) {
+        sendError(res, 400, { type: "invalid_request_error", message: "The Web UI supervisor cannot connect as a CLI peer." });
+        state.status = 400;
+        return;
+      }
+      const model = url.searchParams.get("model") || undefined;
+      const pidStr = url.searchParams.get("pid");
+      const pid = pidStr ? Number.parseInt(pidStr, 10) : undefined;
+
+      const projectDir = url.searchParams.get("projectDir") || undefined;
+
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*"
+      });
+
+      deps.collabHub.registerPeer({
+        peerId,
+        profile,
+        projectKey: project,
+        projectDir,
+        model,
+        pid,
+        status: "idle"
+      });
+
+      const endpointPeerId = peerId ? `&peerId=${encodeURIComponent(peerId)}` : "";
+      res.write(`event: endpoint\ndata: /mcp/collab/message?profile=${encodeURIComponent(profile)}&project=${encodeURIComponent(project)}${endpointPeerId}\n\n`);
+
+      const unsubscribe = deps.collabHub.subscribe(profile, project, (msg) => {
+        if (!res.destroyed && !res.writableEnded) {
+          res.write(`event: message\ndata: ${JSON.stringify(msg)}\n\n`);
+        }
+      }, peerId);
+
+      const keepAliveTimer = setInterval(() => {
+        if (!res.destroyed && !res.writableEnded) {
+          deps.collabHub.heartbeat(profile, peerId);
+          res.write(": keepalive\n\n");
+        }
+      }, 15000);
+
+      req.on("close", () => {
+        clearInterval(keepAliveTimer);
+        unsubscribe();
+        if (!deps.collabHub.hasActiveSubscriber(profile, peerId)) {
+          deps.collabHub.unregisterPeer(profile, peerId);
+        }
+      });
+      state.status = 200;
+      return;
+    }
+
+    if (url.pathname === "/mcp/collab/message") {
+      if (req.method !== "POST") {
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        state.status = 405;
+        return;
+      }
+      const profile = url.searchParams.get("profile") || "anonymous";
+      const project = url.searchParams.get("project") || "default";
+      const peerId = url.searchParams.get("peerId") || undefined;
+      if (deps.collabHub.isSupervisorTarget(profile)) {
+        sendError(res, 400, { type: "invalid_request_error", message: "The Web UI supervisor cannot call Agent MCP tools." });
+        state.status = 400;
+        return;
+      }
+      const body = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
+      const response = await handleMcpRpcRequest(deps.collabHub, { profile, peerId, projectKey: project, context: deps.context }, body as JsonRpcRequest);
+      state.status = response ? 200 : 202;
+      if (response) {
+        sendJson(res, 200, response);
+      } else {
+        res.writeHead(202, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/collab/peers") {
+      if (req.method !== "GET") {
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        state.status = 405;
+        return;
+      }
+      const peers = deps.collabHub.listPeers().map(withoutLocalSessionMetadata);
+      state.status = 200;
+      sendJson(res, 200, { ok: true, peers });
+      return;
+    }
+
+    if (url.pathname === "/api/collab/blackboard") {
+      if (req.method === "GET") {
+        const blackboard = deps.collabHub.listBlackboard();
+        state.status = 200;
+        sendJson(res, 200, { ok: true, blackboard });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES) as Record<string, unknown>;
+        const key = typeof body.key === "string" ? body.key.trim() : "";
+        if (!key || typeof body.value !== "string") {
+          sendError(res, 400, {
+            type: "invalid_request_error",
+            message: "Blackboard writes require a non-empty string 'key' field and a string 'value'."
+          });
+          state.status = 400;
+          return;
+        }
+        const entry = deps.collabHub.setBlackboard({
+          key,
+          value: body.value,
+          author: "web-ui"
+        });
+        state.status = 201;
+        sendJson(res, 201, { ok: true, entry });
+        return;
+      }
+      sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+      state.status = 405;
+      return;
+    }
+
+    if (url.pathname === "/mcp/collab/activity") {
+      if (req.method !== "POST") {
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        state.status = 405;
+        return;
+      }
+      const peerId = String(url.searchParams.get("peerId") || "").trim();
+      const rawKind = url.searchParams.get("kind");
+      const kind = rawKind === "input" || rawKind === "tool" ? rawKind : "output";
+      if (!peerId) {
+        sendError(res, 400, { type: "invalid_request_error", message: "Missing 'peerId'." });
+        state.status = 400;
+        return;
+      }
+      const recorded = deps.collabHub.recordPeerActivity(peerId, kind);
+      state.status = recorded ? 204 : 404;
+      res.writeHead(state.status);
+      res.end();
+      return;
+    }
+
+    if (url.pathname === "/api/collab/dispatches") {
+      if (req.method !== "GET") {
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        state.status = 405;
+        return;
+      }
+      const limitValue = Number.parseInt(url.searchParams.get("limit") || "100", 10);
+      const statusValue = url.searchParams.get("status") || undefined;
+      const status = statusValue === "pending" || statusValue === "waiting" || statusValue === "processing"
+        || statusValue === "stalled" || statusValue === "disconnected" || statusValue === "completed"
+        || statusValue === "timeout" || statusValue === "error"
+        ? statusValue
+        : undefined;
+      const dispatches = deps.collabHub.listDispatches({
+        limit: Number.isFinite(limitValue) ? limitValue : 100,
+        status
+      }).map(withoutLocalSessionMetadata);
+      const summary = dispatches.reduce((counts, dispatch) => {
+        counts[dispatch.status] += 1;
+        return counts;
+      }, { pending: 0, waiting: 0, processing: 0, stalled: 0, disconnected: 0, completed: 0, timeout: 0, error: 0 });
+      state.status = 200;
+      sendJson(res, 200, { ok: true, dispatches, summary });
+      return;
+    }
+
+    if (url.pathname === "/api/collab/supervisor/messages") {
+      if (req.method === "GET") {
+        const unreadOnly = url.searchParams.get("unread") === "true";
+        const limitValue = Number.parseInt(url.searchParams.get("limit") || "100", 10);
+        const messages = deps.collabHub.listSupervisorMessages({
+          unreadOnly,
+          limit: Number.isFinite(limitValue) ? limitValue : 100
+        }).map(withoutLocalSessionMetadata);
+        state.status = 200;
+        sendJson(res, 200, {
+          ok: true,
+          unread: messages.filter((message) => !message.readAt).length,
+          messages
+        });
+        return;
+      }
+      if (req.method === "POST") {
+        const body = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES) as Record<string, unknown>;
+        const ids = Array.isArray(body.ids) ? body.ids.map(String) : undefined;
+        const marked = deps.collabHub.markSupervisorMessagesRead({
+          ids,
+          all: body.all === true
+        });
+        state.status = 200;
+        sendJson(res, 200, { ok: true, marked });
+        return;
+      }
+      sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+      state.status = 405;
+      return;
+    }
+
+    if (url.pathname === "/api/collab/supervisor/dispatch") {
+      if (req.method !== "POST") {
+        sendError(res, 405, { type: "invalid_request_error", message: "Method not allowed." });
+        state.status = 405;
+        return;
+      }
+      const body = await readJsonBody(req, deps.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES) as Record<string, unknown>;
+      const target = String(body.to ?? "").trim();
+      const targetPeerId = String(body.peerId ?? body.toPeerId ?? "").trim() || undefined;
+      const relayTo = String(body.relayTo ?? "").trim();
+      const relayPeerId = String(body.relayPeerId ?? "").trim() || undefined;
+      const message = String(body.message ?? "").trim();
+      const mode = body.mode === "relay" ? "relay" : body.mode === "ask" ? "ask" : "task";
+      const reportBack = mode === "relay" ? body.reportBack === true : body.reportBack !== false;
+      if (!target || !message || (mode === "relay" && !relayTo)) {
+        sendError(res, 400, { type: "invalid_request_error", message: "Missing dispatch target, relay target, or message." });
+        state.status = 400;
+        return;
+      }
+      if (mode === "relay" && target.toLowerCase() === relayTo.toLowerCase()
+        && (!targetPeerId || !relayPeerId || targetPeerId === relayPeerId)) {
+        sendError(res, 400, { type: "invalid_request_error", message: "Relay source and target must be different agents." });
+        state.status = 400;
+        return;
+      }
+
+      const targetLower = target.toLowerCase();
+      const matchingPeers = deps.collabHub
+        .listPeers()
+        .filter((candidate) => candidate.profile.trim().toLowerCase() === targetLower);
+      const selectedTarget = targetPeerId
+        ? matchingPeers.find((candidate) => candidate.peerId === targetPeerId)
+        : matchingPeers.length === 1 ? matchingPeers[0] : undefined;
+      if (targetPeerId && !selectedTarget) {
+        sendError(res, 404, {
+          type: "not_found_error",
+          message: `No active Agent CLI '@${target}' with peerId '${targetPeerId}' was found.`
+        });
+        state.status = 404;
+        return;
+      }
+      if (!targetPeerId && matchingPeers.length > 1) {
+        const peerIds = matchingPeers.map((candidate) => candidate.peerId).sort().join(", ");
+        sendError(res, 409, {
+          type: "invalid_request_error",
+          message: `Agent '@${target}' has multiple active CLI instances (${peerIds}). Specify 'peerId'.`
+        });
+        state.status = 409;
+        return;
+      }
+      if (!selectedTarget) {
+        sendError(res, 404, { type: "not_found_error", message: `No active Agent CLI '@${target}' was found.` });
+        state.status = 404;
+        return;
+      }
+      const relayMatches = mode === "relay"
+        ? deps.collabHub.listPeers().filter((candidate) => candidate.profile.trim().toLowerCase() === relayTo.toLowerCase())
+        : [];
+      const selectedRelay = mode !== "relay" ? undefined : relayPeerId
+        ? relayMatches.find((candidate) => candidate.peerId === relayPeerId)
+        : relayMatches.length === 1 ? relayMatches[0] : undefined;
+      if (mode === "relay" && !selectedRelay) {
+        const detail = relayMatches.length > 1 && !relayPeerId
+          ? `Agent '@${relayTo}' has multiple active CLI instances. Specify 'relayPeerId'.`
+          : `No active Agent CLI '@${relayTo}'${relayPeerId ? ` with peerId '${relayPeerId}'` : ""} was found.`;
+        sendError(res, relayMatches.length > 1 ? 409 : 404, { type: "invalid_request_error", message: detail });
+        state.status = relayMatches.length > 1 ? 409 : 404;
+        return;
+      }
+      // The working session is local execution metadata, not a routing or visibility scope.
+      const projectKey = selectedTarget.projectKey || "global";
+      const relayIdentityHint = selectedRelay ? `，并在工具参数 peer_id 中指定 "${selectedRelay.peerId}"` : "";
+      const instructionContent = mode === "relay"
+        ? `请联系 @${relayTo}${relayIdentityHint}，向其传达以下协作请求：${message}`
+        : mode === "ask"
+          ? `请处理并回答监管台的问题：${message}`
+          : message;
+      const instructionContext = mode === "relay"
+        ? "这是用户通过 Web UI 可视化协作面板发出的路由指令。Web UI 只负责监管和调度，不是 Agent CLI。"
+        : "这是用户通过 Web UI 可视化协作面板直接发出的监管指令。Web UI 不是 Agent CLI。";
+
+      const result = await deps.collabHub.sendMessage({
+        from: "web-ui",
+        to: target,
+        toPeerId: selectedTarget.peerId,
+        projectKey,
+        type: "task",
+        content: instructionContent,
+        context: instructionContext,
+        waitForReply: false,
+        origin: "supervisor",
+        responsePolicy: reportBack ? "supervisor" : "none",
+        relayTo: mode === "relay" ? relayTo : undefined
+      });
+      state.status = 200;
+      sendJson(res, 200, {
+        ok: true,
+        mode,
+        instructionTarget: target,
+        peerId: selectedTarget.peerId,
+        relayTo: mode === "relay" ? relayTo : undefined,
+        relayPeerId: selectedRelay?.peerId,
+        reportBack,
+        messageId: result.messageId,
+        status: result.status,
+        responseStatus: result.responseStatus
       });
       return;
     }
@@ -1202,4 +1558,43 @@ function emitRequestLog(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+async function generatePeerAutoResponse(
+  registry: RegistryLike,
+  endpoint: string,
+  msg: CollabMessage
+): Promise<string | undefined> {
+  try {
+    const route = await registry.resolve(msg.to);
+    if (!route) return undefined;
+
+    const systemPrompt = `You are the AI coding agent '${msg.to}'. Another AI agent in the project, '@${msg.from}', is collaborating with you and sent you the following message:\n"${msg.content}"\n${msg.context ? `Context: ${msg.context}\n` : ""}${msg.expectedFormat ? `Expected format: ${msg.expectedFormat}\n` : ""}\nReply directly, professionally, and concisely to @${msg.from}.`;
+
+    const requestBody = {
+      model: route.models[0] || route.config.model,
+      messages: [{ role: "user", content: systemPrompt }],
+      max_tokens: 1024
+    };
+
+    const res = await fetch(`${endpoint}/p/${encodeURIComponent(msg.to)}/v1/messages`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": route.secret.localToken,
+        "anthropic-version": "2023-06-01"
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as any;
+    if (data.content && Array.isArray(data.content)) {
+      const textBlock = data.content.find((c: any) => c.type === "text");
+      return textBlock?.text;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
