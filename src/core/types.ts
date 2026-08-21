@@ -3,6 +3,7 @@ export type ProfileType = "api" | "login" | "gateway" | "unknown";
 export type GatewayProvider = "openai" | "openai-compatible";
 
 export type GatewayUpstreamProtocol = "openai_chat_completions" | "openai_responses";
+export type GatewayRequestHeaders = Record<string, string>;
 
 // Temporary Chat compatibility alias for existing management and converter callers.
 export interface GatewayCompatibility {
@@ -47,6 +48,7 @@ interface GatewayProfileConfigBase {
   provider: GatewayProvider;
   endpointUrl: string;
   model: string;
+  requestHeaders: GatewayRequestHeaders;
 }
 
 export type GatewayProfileConfig =
@@ -80,6 +82,7 @@ interface GatewayUpstreamConfigBase {
   provider: GatewayProvider;
   endpointUrl: string;
   models: string[];
+  requestHeaders: GatewayRequestHeaders;
 }
 
 export type GatewayUpstreamConfig =
@@ -166,6 +169,7 @@ export interface CreateGatewayUpstreamInput {
   apiKey: string;
   models: string[];
   compatibility?: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
+  requestHeaders?: GatewayRequestHeaders;
 }
 
 export interface UpdateGatewayUpstreamInput {
@@ -177,4 +181,5 @@ export interface UpdateGatewayUpstreamInput {
   apiKey?: string;
   models: string[];
   compatibility: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
+  requestHeaders?: GatewayRequestHeaders;
 }

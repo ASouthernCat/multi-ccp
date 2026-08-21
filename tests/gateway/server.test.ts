@@ -56,6 +56,7 @@ async function createTestGatewayProfile(
     protocol?: GatewayUpstreamProtocol;
     endpointUrl?: string;
     compatibility?: Partial<GatewayCompatibility> | Partial<GatewayResponsesCompatibility>;
+    requestHeaders?: Record<string, string>;
   },
   context: { homeDir: string }
 ) {
@@ -68,7 +69,8 @@ async function createTestGatewayProfile(
     chatCompletionsUrl: input.chatCompletionsUrl,
     apiKey: input.apiKey,
     models: input.models ?? [input.model],
-    compatibility: input.compatibility
+    compatibility: input.compatibility,
+    requestHeaders: input.requestHeaders
   }, context);
   return createStoredGatewayProfile({ name: input.name, upstreamId, model: input.model }, context);
 }
@@ -401,9 +403,15 @@ describe("gateway HTTP protocol", () => {
 
   it("dispatches Responses requests to their endpoint with their key and parses non-stream output", async () => {
     const context = await createContext();
-    let received: { url: string; authorization?: string; body: Record<string, unknown> } | undefined;
+    let received: { url: string; authorization?: string; userAgent?: string; providerClient?: string; body: Record<string, unknown> } | undefined;
     const upstream = await listenLoopback(async (req, res) => {
-      received = { url: req.url ?? "", authorization: req.headers.authorization, body: await readRequestJson(req) };
+      received = {
+        url: req.url ?? "",
+        authorization: req.headers.authorization,
+        userAgent: req.headers["user-agent"],
+        providerClient: req.headers["x-provider-client"] as string | undefined,
+        body: await readRequestJson(req)
+      };
       res.writeHead(200, { "content-type": "application/json" });
       res.end(JSON.stringify({
         id: "resp_server",
@@ -424,7 +432,11 @@ describe("gateway HTTP protocol", () => {
       endpointUrl: `${upstream.endpoint}/v1/responses?trace=visible-in-upstream#fragment`,
       chatCompletionsUrl: `${upstream.endpoint}/v1/chat/completions`,
       apiKey: "responses-key",
-      model: "responses-model"
+      model: "responses-model",
+      requestHeaders: {
+        "user-agent": "codex_cli_rs/0.148.0",
+        "x-provider-client": "multi-ccp"
+      }
     }, context);
     const secret = await readGatewayProfileSecret(profile.dir);
     const logs: GatewayRequestLog[] = [];
@@ -448,6 +460,8 @@ describe("gateway HTTP protocol", () => {
     expect(received).toMatchObject({
       url: "/v1/responses?trace=visible-in-upstream",
       authorization: "Bearer responses-key",
+      userAgent: "codex_cli_rs/0.148.0",
+      providerClient: "multi-ccp",
       body: { model: "responses-model", store: false, stream: false }
     });
     expect(received?.body.messages).toBeUndefined();

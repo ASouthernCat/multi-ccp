@@ -1,4 +1,5 @@
 import { readdir, rm, stat } from "node:fs/promises";
+import { validateHeaderName, validateHeaderValue } from "node:http";
 import path from "node:path";
 import { assertProfileName, CcpError } from "./errors.js";
 import {
@@ -14,6 +15,7 @@ import type {
   GatewayCompatibility,
   GatewayProtocolCompatibility,
   GatewayProvider,
+  GatewayRequestHeaders,
   GatewayResponsesCompatibility,
   GatewayUpstreamConfig,
   GatewayUpstreamProtocol,
@@ -35,6 +37,7 @@ export interface GatewayModelDiscoveryInput {
   baseUrl?: string;
   endpointUrl?: string;
   apiKey: string;
+  requestHeaders?: GatewayRequestHeaders;
 }
 
 export interface GatewayModelDiscoveryOptions {
@@ -183,6 +186,50 @@ export function normalizeGatewayModels(value: unknown): string[] {
   return models;
 }
 
+const GATEWAY_MANAGED_REQUEST_HEADERS = new Set([
+  "accept",
+  "authorization",
+  "connection",
+  "content-length",
+  "content-type",
+  "host",
+  "proxy-authorization",
+  "transfer-encoding"
+]);
+
+export function validateGatewayRequestHeaders(value: unknown): GatewayRequestHeaders {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CcpError("Gateway request headers must be an object.");
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length > 32) throw new CcpError("Gateway request headers may contain at most 32 entries.");
+  const headers: GatewayRequestHeaders = {};
+  let totalBytes = 0;
+  for (const [rawName, rawValue] of entries) {
+    const name = rawName.trim().toLowerCase();
+    if (!name) throw new CcpError("Gateway request header names must not be empty.");
+    if (GATEWAY_MANAGED_REQUEST_HEADERS.has(name)) {
+      throw new CcpError(`Gateway request header '${rawName}' is managed by the gateway and cannot be overridden.`);
+    }
+    if (typeof rawValue !== "string") {
+      throw new CcpError(`Gateway request header '${rawName}' must have a string value.`);
+    }
+    const headerValue = rawValue.trim();
+    if (!headerValue) throw new CcpError(`Gateway request header '${rawName}' must not be empty.`);
+    try {
+      validateHeaderName(name);
+      validateHeaderValue(name, headerValue);
+    } catch {
+      throw new CcpError(`Gateway request header '${rawName}' is invalid.`);
+    }
+    totalBytes += Buffer.byteLength(name, "utf8") + Buffer.byteLength(headerValue, "utf8");
+    if (totalBytes > 16 * 1024) throw new CcpError("Gateway request headers exceed the 16 KiB limit.");
+    headers[name] = headerValue;
+  }
+  return headers;
+}
+
 function validateGatewayDiscoveryUrl(value: string): URL {
   let parsed: URL;
   try {
@@ -302,7 +349,11 @@ export async function fetchGatewayModels(
   try {
     response = await fetchImpl(modelsUrl, {
       method: "GET",
-      headers: { accept: "application/json", authorization: `Bearer ${apiKey}` },
+      headers: {
+        ...validateGatewayRequestHeaders(input.requestHeaders),
+        accept: "application/json",
+        authorization: `Bearer ${apiKey}`
+      },
       signal: controller.signal
     });
     const body = await readGatewayDiscoveryBody(response, maxResponseBytes);
@@ -349,6 +400,7 @@ export function validateGatewayUpstreamConfig(value: unknown): GatewayUpstreamCo
       protocol: "openai_chat_completions",
       endpointUrl: resolveGatewayChatCompletionsUrl(provider, String(config.chatCompletionsUrl ?? "")),
       models: normalizeGatewayModels(config.models),
+      requestHeaders: validateGatewayRequestHeaders(config.requestHeaders),
       compatibility: {
         protocol: "openai_chat_completions",
         ...validateGatewayCompatibility(provider, config.compatibility as Partial<GatewayCompatibility> | undefined)
@@ -365,7 +417,8 @@ export function validateGatewayUpstreamConfig(value: unknown): GatewayUpstreamCo
     id,
     provider,
     endpointUrl: normalizeGatewayEndpoint(protocol, provider, String(config.endpointUrl ?? "")),
-    models: normalizeGatewayModels(config.models)
+    models: normalizeGatewayModels(config.models),
+    requestHeaders: validateGatewayRequestHeaders(config.requestHeaders)
   };
   if (protocol === "openai_responses") {
     return {
@@ -482,7 +535,8 @@ export async function createGatewayUpstream(
     protocol,
     endpointUrl,
     models: input.models,
-    compatibility: input.compatibility
+    compatibility: input.compatibility,
+    requestHeaders: input.requestHeaders
   });
   const secret = validateGatewayUpstreamSecret({ version: 1, apiKey: input.apiKey });
   const existingId = await findCaseInsensitiveGatewayUpstreamId(config.id, context);
@@ -545,7 +599,8 @@ export async function updateGatewayUpstream(
     protocol,
     endpointUrl,
     models: input.models,
-    compatibility: input.compatibility
+    compatibility: input.compatibility,
+    requestHeaders: input.requestHeaders ?? current.config.requestHeaders
   });
   const bindings = await findGatewayUpstreamBindings(id, context);
   const invalidBindings = bindings.filter((binding) => !config.models.includes(binding.model));

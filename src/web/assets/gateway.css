@@ -141,8 +141,27 @@ body {
 }
 
 .gateway-upstream-drawer input:not([type="checkbox"]),
-.gateway-upstream-drawer select {
+.gateway-upstream-drawer select,
+.gateway-upstream-drawer textarea {
   min-height: 38px;
+}
+
+.gateway-upstream-drawer textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 9px;
+  background: var(--panel-2);
+  color: var(--ink);
+  outline: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.gateway-upstream-drawer textarea:focus {
+  border-color: var(--accent);
 }
 
 .secret-field {
@@ -639,6 +658,58 @@ body {
 }
 
 .gateway-advanced[hidden] {
+  display: none;
+}
+
+.gateway-request-options {
+  margin: 0 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.gateway-request-options summary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  color: var(--ink);
+  font-size: 11.5px;
+}
+
+.gateway-request-options summary span {
+  color: var(--faint);
+  font-size: 10px;
+}
+
+.gateway-request-options-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px 10px;
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--line);
+}
+
+.gateway-request-options-body label {
+  margin-top: 10px;
+}
+
+.gateway-user-agent-row {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.gateway-user-agent-row > * {
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0;
+}
+
+.gateway-user-agent-row > [hidden] {
   display: none;
 }
 
@@ -1550,8 +1621,13 @@ body {
 
   .gateway-form-grid,
   .gateway-advanced,
+  .gateway-request-options-body,
   .gateway-toggles {
     grid-template-columns: 1fr;
+  }
+
+  .gateway-user-agent-row {
+    flex-direction: column;
   }
 
   .gateway-card {

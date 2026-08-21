@@ -567,6 +567,14 @@ function gatewayModels(value: unknown): string[] {
   return [...new Set(source.map((model) => String(model).trim()).filter(Boolean))];
 }
 
+function gatewayRequestHeaders(value: unknown): Record<string, string> | undefined {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CcpError("Gateway request headers must be an object.");
+  }
+  return value as Record<string, string>;
+}
+
 function gatewayRequestUrl(
   body: Record<string, unknown>,
   protocol: GatewayUpstreamProtocol,
@@ -1038,7 +1046,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
           endpointUrl: gatewayRequestUrl(body, protocol, provider),
           apiKey: String(body.apiKey ?? ""),
           models: gatewayModels(body.models),
-          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
+          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility),
+          requestHeaders: gatewayRequestHeaders(body.requestHeaders)
         });
         addActivity("success", `Created gateway upstream '${created.id}'.`);
         return json(res, 201, { upstream: { ...created, profileNames: [] } });
@@ -1056,7 +1065,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
         provider,
         protocol,
         endpointUrl,
-        apiKey: String(body.apiKey ?? "")
+        apiKey: String(body.apiKey ?? ""),
+        requestHeaders: gatewayRequestHeaders(body.requestHeaders)
       });
       return json(res, 200, result);
     }
@@ -1099,7 +1109,8 @@ async function handleApi(req: IncomingMessage, res: ServerResponse, pathname: st
           endpointUrl: gatewayRequestUrl(body, protocol, provider),
           apiKey: typeof body.apiKey === "string" ? body.apiKey : undefined,
           models: gatewayModels(body.models),
-          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility)
+          compatibility: resolveWebGatewayCompatibility(protocol, provider, mode, body.compatibility),
+          requestHeaders: gatewayRequestHeaders(body.requestHeaders)
         });
         addActivity("success", `Updated gateway upstream '${id}'${updated.id === id ? "" : ` as '${updated.id}'`}.`);
         return json(res, 200, {

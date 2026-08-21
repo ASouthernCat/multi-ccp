@@ -69,11 +69,12 @@ async function createCompatibleUpstream(
 
 describe("gateway upstream and profile storage", () => {
   it("discovers OpenAI and Gemini-style model catalogs from a gateway base URL", async () => {
-    const requests: Array<{ url: string; authorization: string }> = [];
+    const requests: Array<{ url: string; authorization: string; userAgent: string }> = [];
     const fetchMock: typeof globalThis.fetch = async (url, init): Promise<Response> => {
       requests.push({
         url: String(url),
-        authorization: String((init?.headers as Record<string, string>).authorization)
+        authorization: String((init?.headers as Record<string, string>).authorization),
+        userAgent: String((init?.headers as Record<string, string>)["user-agent"])
       });
       const payload = String(url).includes("gemini")
         ? { models: [{ name: "models/gemini-3.6-flash" }, { name: "models/gemini-3.5-flash" }] }
@@ -85,13 +86,15 @@ describe("gateway upstream and profile storage", () => {
       provider: "openai-compatible",
       protocol: "openai_responses",
       baseUrl: "https://gateway.example/v1",
-      apiKey: "secret"
+      apiKey: "secret",
+      requestHeaders: { "user-agent": "codex_cli_rs/0.148.0" }
     }, { fetch: fetchMock });
     const gemini = await fetchGatewayModels({
       provider: "openai-compatible",
       protocol: "openai_chat_completions",
       baseUrl: "https://api.aicodemirror.com/api/gemini/v1",
-      apiKey: "secret"
+      apiKey: "secret",
+      requestHeaders: { "User-Agent": "claude-cli/2.1.230" }
     }, { fetch: fetchMock });
 
     expect(openai).toEqual({ models: ["gpt-5.6", "gpt-5.5"], modelsUrl: "https://gateway.example/v1/models" });
@@ -100,9 +103,34 @@ describe("gateway upstream and profile storage", () => {
       modelsUrl: "https://api.aicodemirror.com/api/gemini/v1/models"
     });
     expect(requests).toEqual([
-      { url: "https://gateway.example/v1/models", authorization: "Bearer secret" },
-      { url: "https://api.aicodemirror.com/api/gemini/v1/models", authorization: "Bearer secret" }
+      { url: "https://gateway.example/v1/models", authorization: "Bearer secret", userAgent: "codex_cli_rs/0.148.0" },
+      { url: "https://api.aicodemirror.com/api/gemini/v1/models", authorization: "Bearer secret", userAgent: "claude-cli/2.1.230" }
     ]);
+  });
+
+  it("normalizes custom request headers and protects gateway-managed headers", () => {
+    const config = validateGatewayUpstreamConfig({
+      version: 2,
+      id: "custom-headers",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://example.test/v1/responses",
+      models: ["model"],
+      requestHeaders: { "User-Agent": "claude-cli/2.1.230", "X-Provider-Client": "multi-ccp" }
+    });
+    expect(config.requestHeaders).toEqual({
+      "user-agent": "claude-cli/2.1.230",
+      "x-provider-client": "multi-ccp"
+    });
+    expect(() => validateGatewayUpstreamConfig({
+      version: 2,
+      id: "managed-header",
+      provider: "openai-compatible",
+      protocol: "openai_responses",
+      endpointUrl: "https://example.test/v1/responses",
+      models: ["model"],
+      requestHeaders: { Authorization: "Basic unsafe" }
+    })).toThrow("managed by the gateway");
   });
 
   it("rejects unsafe, invalid, and empty model discovery responses", async () => {

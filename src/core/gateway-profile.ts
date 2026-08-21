@@ -15,7 +15,8 @@ import {
 import {
   readGatewayUpstream,
   readGatewayUpstreamConfig,
-  validateGatewayProtocolCompatibility
+  validateGatewayProtocolCompatibility,
+  validateGatewayRequestHeaders
 } from "./gateway-upstreams.js";
 import type {
   ClaudeSettings,
@@ -123,6 +124,7 @@ export function validateGatewayProfileConfig(value: unknown): GatewayProfileConf
       protocol,
       endpointUrl,
       model,
+      requestHeaders: validateGatewayRequestHeaders(config.requestHeaders),
       compatibility: validateGatewayProtocolCompatibility(
         protocol,
         config.provider,
@@ -135,6 +137,7 @@ export function validateGatewayProfileConfig(value: unknown): GatewayProfileConf
     protocol,
     endpointUrl,
     model,
+    requestHeaders: validateGatewayRequestHeaders(config.requestHeaders),
     compatibility: validateGatewayProtocolCompatibility(
       protocol,
       config.provider,

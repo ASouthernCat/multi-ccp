@@ -1064,6 +1064,7 @@ async function fetchUpstream(
     const response = await fetchImpl(snapshot.config.endpointUrl, {
       method: "POST",
       headers: {
+        ...snapshot.config.requestHeaders,
         authorization: `Bearer ${snapshot.secret.apiKey}`,
         "content-type": "application/json",
         accept: body.stream === true ? "text/event-stream" : "application/json"
