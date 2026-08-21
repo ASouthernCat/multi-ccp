@@ -121,6 +121,7 @@ export interface GatewayRequestLog {
   outputTokens?: number;
   cacheReadInputTokens?: number;
   cacheCreationInputTokens?: number;
+  cacheMissInputTokens?: number;
   failureStage?: GatewayFailureStage;
   failureCode?: GatewayFailureCode;
   errorType?: GatewayErrorType;
@@ -195,6 +196,7 @@ interface RequestState {
   outputTokens?: number;
   cacheReadInputTokens?: number;
   cacheCreationInputTokens?: number;
+  cacheMissInputTokens?: number;
   failureStage?: GatewayFailureStage;
   failureCode?: GatewayFailureCode;
   errorType?: GatewayErrorType;
@@ -831,6 +833,7 @@ async function handleRequest(
         state.outputTokens = result.usage.outputTokens;
         state.cacheReadInputTokens = result.usage.cacheReadInputTokens;
         state.cacheCreationInputTokens = result.usage.cacheCreationInputTokens;
+        state.cacheMissInputTokens = result.usage.cacheMissInputTokens;
         state.firstEventMs = result.firstEventMs;
         state.lastEventType = result.lastEventType;
         state.terminalEventReceived = result.terminalEventReceived;
@@ -855,6 +858,7 @@ async function handleRequest(
       state.outputTokens = convertedResponse.response.usage.outputTokens;
       state.cacheReadInputTokens = convertedResponse.response.usage.cacheReadInputTokens;
       state.cacheCreationInputTokens = convertedResponse.response.usage.cacheCreationInputTokens;
+      state.cacheMissInputTokens = convertedResponse.response.usage.cacheMissInputTokens;
       state.status = 200;
       state.activeStage = undefined;
       sendJson(res, 200, canonicalResponseToAnthropic(convertedResponse.response));
@@ -898,6 +902,7 @@ async function handleRequest(
       state.outputTokens = result.usage.outputTokens;
       state.cacheReadInputTokens = result.usage.cacheReadInputTokens;
       state.cacheCreationInputTokens = result.usage.cacheCreationInputTokens;
+      state.cacheMissInputTokens = result.usage.cacheMissInputTokens;
       state.firstEventMs = result.firstEventMs;
       if (result.error) {
         setFailure(state, "stream_protocol", result.error.code ?? "upstream_response_error", result.error);
@@ -918,6 +923,7 @@ async function handleRequest(
     state.outputTokens = response.usage.outputTokens;
     state.cacheReadInputTokens = response.usage.cacheReadInputTokens;
     state.cacheCreationInputTokens = response.usage.cacheCreationInputTokens;
+    state.cacheMissInputTokens = response.usage.cacheMissInputTokens;
     state.status = 200;
     state.activeStage = undefined;
     sendJson(res, 200, canonicalResponseToAnthropic(response));
@@ -1552,6 +1558,9 @@ function emitRequestLog(
       ...(state.cacheCreationInputTokens === undefined
         ? {}
         : { cacheCreationInputTokens: state.cacheCreationInputTokens }),
+      ...(state.cacheMissInputTokens === undefined
+        ? {}
+        : { cacheMissInputTokens: state.cacheMissInputTokens }),
       ...(state.failureStage ? { failureStage: state.failureStage } : {}),
       ...(state.failureCode ? { failureCode: state.failureCode } : {}),
       ...(state.errorType ? { errorType: state.errorType } : {}),

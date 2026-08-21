@@ -359,6 +359,9 @@ export interface WebGatewayLogEntry {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
+  cacheMissInputTokens?: number;
   message?: string;
 }
 
@@ -418,7 +421,10 @@ function parseGatewayLogLine(line: string): WebGatewayLogEntry | undefined {
         status: numbers("status"),
         durationMs: numbers("durationMs"),
         inputTokens: numbers("inputTokens"),
-        outputTokens: numbers("outputTokens")
+        outputTokens: numbers("outputTokens"),
+        cacheReadInputTokens: numbers("cacheReadInputTokens"),
+        cacheCreationInputTokens: numbers("cacheCreationInputTokens"),
+        cacheMissInputTokens: numbers("cacheMissInputTokens")
       };
     }
   } catch {

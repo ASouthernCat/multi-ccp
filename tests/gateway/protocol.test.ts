@@ -738,6 +738,106 @@ describe("OpenAI Chat non-streaming response", () => {
     });
   });
 
+  it("parses DeepSeek prompt_cache_hit_tokens and prompt_cache_miss_tokens", () => {
+    const response = parseOpenAIChatResponse({
+      id: "chatcmpl_ds",
+      model: "deepseek-chat",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "DeepSeek response" },
+        finish_reason: "stop"
+      }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        prompt_cache_hit_tokens: 80,
+        prompt_cache_miss_tokens: 20
+      }
+    });
+
+    expect(response.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadInputTokens: 80,
+      cacheMissInputTokens: 20
+    });
+  });
+
+  it("parses Gemini-compatible proxy usage metadata dialects", () => {
+    const responseWithUsageMetadata = parseOpenAIChatResponse({
+      id: "chatcmpl_gemini_1",
+      model: "gemini-2.5-flash",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "Gemini response" },
+        finish_reason: "stop"
+      }],
+      usage: {
+        prompt_tokens: 500,
+        completion_tokens: 50,
+        usageMetadata: {
+          cachedContentTokenCount: 400
+        }
+      }
+    });
+
+    expect(responseWithUsageMetadata.usage).toEqual({
+      inputTokens: 500,
+      outputTokens: 50,
+      cacheReadInputTokens: 400
+    });
+
+    const responseWithBillingMetadata = parseOpenAIChatResponse({
+      id: "chatcmpl_gemini_2",
+      model: "gemini-2.5-pro",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "Gemini response 2" },
+        finish_reason: "stop"
+      }],
+      usage: {
+        prompt_tokens: 600,
+        completion_tokens: 60,
+        billing_usage: {
+          gemini_usage_metadata: {
+            cachedContentTokenCount: 550
+          }
+        }
+      }
+    });
+
+    expect(responseWithBillingMetadata.usage).toEqual({
+      inputTokens: 600,
+      outputTokens: 60,
+      cacheReadInputTokens: 550
+    });
+  });
+
+  it("gives standard prompt_tokens_details precedence over provider fallback fields", () => {
+    const response = parseOpenAIChatResponse({
+      id: "chatcmpl_precedence",
+      model: "test-model",
+      choices: [{
+        index: 0,
+        message: { role: "assistant", content: "Precedence test" },
+        finish_reason: "stop"
+      }],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 10,
+        prompt_tokens_details: { cached_tokens: 70 },
+        prompt_cache_hit_tokens: 50,
+        usageMetadata: { cachedContentTokenCount: 30 }
+      }
+    });
+
+    expect(response.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 10,
+      cacheReadInputTokens: 70
+    });
+  });
+
   it.each([
     [{ id: "x", model: "m", choices: [] }, "response.choices"],
     [{ id: "x", model: "m", choices: [{ message: {}, finish_reason: null }] }, "finish_reason"],
@@ -1043,6 +1143,52 @@ describe("OpenAI Responses target", () => {
         cache_read_input_tokens: 8,
         cache_creation_input_tokens: 2
       }
+    });
+  });
+
+  it("parses DeepSeek and Gemini usage metadata dialects in Responses responses", () => {
+    const dsParsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_ds",
+      model: "deepseek-reasoner",
+      status: "completed",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "DeepSeek output" }] }
+      ],
+      usage: {
+        input_tokens: 200,
+        output_tokens: 30,
+        prompt_cache_hit_tokens: 150,
+        prompt_cache_miss_tokens: 50
+      }
+    });
+
+    expect(dsParsed.response.usage).toEqual({
+      inputTokens: 200,
+      outputTokens: 30,
+      cacheReadInputTokens: 150,
+      cacheMissInputTokens: 50
+    });
+
+    const geminiParsed = parseOpenAIResponsesResponseWithMetadata({
+      id: "resp_gemini",
+      model: "gemini-2.5-flash",
+      status: "completed",
+      output: [
+        { type: "message", content: [{ type: "output_text", text: "Gemini output" }] }
+      ],
+      usage: {
+        input_tokens: 300,
+        output_tokens: 40,
+        usageMetadata: {
+          cachedContentTokenCount: 250
+        }
+      }
+    });
+
+    expect(geminiParsed.response.usage).toEqual({
+      inputTokens: 300,
+      outputTokens: 40,
+      cacheReadInputTokens: 250
     });
   });
 

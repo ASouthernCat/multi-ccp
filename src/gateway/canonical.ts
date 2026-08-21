@@ -49,6 +49,7 @@ export interface CanonicalUsage {
   outputTokens: number;
   cacheReadInputTokens?: number;
   cacheCreationInputTokens?: number;
+  cacheMissInputTokens?: number;
 }
 
 export interface CanonicalMessage {

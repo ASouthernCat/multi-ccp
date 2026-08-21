@@ -118,6 +118,82 @@ describe("OpenAI stream conversion", () => {
     });
   });
 
+  it("parses DeepSeek prompt_cache_hit_tokens in OpenAI Chat terminal usage chunk", () => {
+    const bridge = new OpenAIAnthropicStreamBridge({ messageId: "request_ds", model: "deepseek-chat" });
+    const first = openAIEvent({
+      id: "chatcmpl_ds",
+      model: "deepseek-chat",
+      choices: [{ index: 0, delta: { content: "streaming ds" }, finish_reason: "stop" }]
+    });
+    const usage = openAIEvent({
+      id: "chatcmpl_ds",
+      model: "deepseek-chat",
+      choices: [],
+      usage: {
+        prompt_tokens: 50,
+        completion_tokens: 10,
+        prompt_cache_hit_tokens: 40,
+        prompt_cache_miss_tokens: 10
+      }
+    });
+    const wire = `${first}${usage}data: [DONE]\n\n`;
+    const events = parseOutput([...bridge.push(wire), ...bridge.finish()]);
+
+    expect(events.at(-2)?.data).toMatchObject({
+      delta: { stop_reason: "end_turn" },
+      usage: {
+        input_tokens: 50,
+        output_tokens: 10,
+        cache_read_input_tokens: 40
+      }
+    });
+    expect(bridge.usage).toEqual({
+      inputTokens: 50,
+      outputTokens: 10,
+      cacheReadInputTokens: 40,
+      cacheMissInputTokens: 10
+    });
+  });
+
+  it("parses Gemini metadata in OpenAI Chat terminal usage chunk", () => {
+    const bridge = new OpenAIAnthropicStreamBridge({ messageId: "request_gemini", model: "gemini-2.5-flash" });
+    const first = openAIEvent({
+      id: "chatcmpl_gemini",
+      model: "gemini-2.5-flash",
+      choices: [{ index: 0, delta: { content: "streaming gemini" }, finish_reason: "stop" }]
+    });
+    const usage = openAIEvent({
+      id: "chatcmpl_gemini",
+      model: "gemini-2.5-flash",
+      choices: [],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 15,
+        billing_usage: {
+          gemini_usage_metadata: {
+            cachedContentTokenCount: 80
+          }
+        }
+      }
+    });
+    const wire = `${first}${usage}data: [DONE]\n\n`;
+    const events = parseOutput([...bridge.push(wire), ...bridge.finish()]);
+
+    expect(events.at(-2)?.data).toMatchObject({
+      delta: { stop_reason: "end_turn" },
+      usage: {
+        input_tokens: 100,
+        output_tokens: 15,
+        cache_read_input_tokens: 80
+      }
+    });
+    expect(bridge.usage).toEqual({
+      inputTokens: 100,
+      outputTokens: 15,
+      cacheReadInputTokens: 80
+    });
+  });
+
   it("tracks multiple tool indexes, buffers arguments until fragmented names arrive, and restores names", () => {
     const toolNames = createToolNameMapping(["mcp.alpha", "mcp.beta"]);
     const converter = new OpenAIStreamConverter({ messageId: "req", model: "gpt", toolNames });
@@ -480,6 +556,88 @@ describe("OpenAI Responses stream conversion", () => {
     expect(events.some((event) => event.event === "message_stop")).toBe(true);
     expect(events.find((event) => event.event === "content_block_delta")?.data.delta.text).toBe("Found it");
     expect(bridge.metadata.upstreamItemTypes).toEqual(["web_search_call", "message"]);
+  });
+
+  it("parses DeepSeek and Gemini usage in Responses stream completed event", () => {
+    const dsBridge = new OpenAIResponsesAnthropicStreamBridge({ model: "deepseek-reasoner" });
+    const dsWire = [
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0, item: { id: "msg_1", type: "message", role: "assistant", content: [] }
+      }),
+      responsesEvent("response.content_part.added", {
+        item_id: "msg_1", output_index: 0, content_index: 0, part: { type: "output_text", text: "ds text" }
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "msg_1", type: "message", content: [{ type: "output_text", text: "ds text" }] }
+      }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({
+          status: "completed",
+          usage: {
+            input_tokens: 150,
+            output_tokens: 25,
+            prompt_cache_hit_tokens: 120,
+            prompt_cache_miss_tokens: 30
+          }
+        })
+      })
+    ].join("");
+    const dsEvents = parseOutput([...dsBridge.push(dsWire), ...dsBridge.finish()]);
+    expect(dsEvents.at(-2)?.data).toMatchObject({
+      usage: {
+        input_tokens: 150,
+        output_tokens: 25,
+        cache_read_input_tokens: 120
+      }
+    });
+    expect(dsBridge.usage).toEqual({
+      inputTokens: 150,
+      outputTokens: 25,
+      cacheReadInputTokens: 120,
+      cacheMissInputTokens: 30
+    });
+
+    const geminiBridge = new OpenAIResponsesAnthropicStreamBridge({ model: "gemini-2.5-flash" });
+    const geminiWire = [
+      responsesEvent("response.created", { response: responseEnvelope() }),
+      responsesEvent("response.output_item.added", {
+        output_index: 0, item: { id: "msg_2", type: "message", role: "assistant", content: [] }
+      }),
+      responsesEvent("response.content_part.added", {
+        item_id: "msg_2", output_index: 0, content_index: 0, part: { type: "output_text", text: "gemini text" }
+      }),
+      responsesEvent("response.output_item.done", {
+        output_index: 0,
+        item: { id: "msg_2", type: "message", content: [{ type: "output_text", text: "gemini text" }] }
+      }),
+      responsesEvent("response.completed", {
+        response: responseEnvelope({
+          status: "completed",
+          usage: {
+            input_tokens: 250,
+            output_tokens: 35,
+            usageMetadata: {
+              cachedContentTokenCount: 200
+            }
+          }
+        })
+      })
+    ].join("");
+    const geminiEvents = parseOutput([...geminiBridge.push(geminiWire), ...geminiBridge.finish()]);
+    expect(geminiEvents.at(-2)?.data).toMatchObject({
+      usage: {
+        input_tokens: 250,
+        output_tokens: 35,
+        cache_read_input_tokens: 200
+      }
+    });
+    expect(geminiBridge.usage).toEqual({
+      inputTokens: 250,
+      outputTokens: 35,
+      cacheReadInputTokens: 200
+    });
   });
 
   it.each([
