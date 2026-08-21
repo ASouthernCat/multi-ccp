@@ -8,6 +8,7 @@ import { EMPTY_TOOL_NAME_MAPPING } from "./canonical.js";
 import { asGatewayError, type GatewayError, type GatewayErrorType, upstreamProtocolError } from "./errors.js";
 import type { GeneratedImageStore, PreparedGeneratedImage } from "./generated-image.js";
 import { normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
+import { parseOpenAICachedUsage } from "./usage.js";
 import { AnthropicSseEmitter, SseParser, type SseEvent } from "./streaming.js";
 
 type JsonObject = Record<string, unknown>;
@@ -765,7 +766,11 @@ export class OpenAIResponsesStreamConverter {
       }
       return usage[field] as number;
     };
-    return { inputTokens: parse("input_tokens"), outputTokens: parse("output_tokens") };
+    return {
+      inputTokens: parse("input_tokens"),
+      outputTokens: parse("output_tokens"),
+      ...parseOpenAICachedUsage(usage, "input_tokens_details")
+    };
   }
 
   private recordType(type: string, seen: Set<string>, values: string[]): void {

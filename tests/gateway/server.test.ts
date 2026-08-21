@@ -410,7 +410,11 @@ describe("gateway HTTP protocol", () => {
         model: "responses-model",
         status: "completed",
         output: [{ type: "message", content: [{ type: "output_text", text: "responses-ok" }] }],
-        usage: { input_tokens: 7, output_tokens: 2 }
+        usage: {
+          input_tokens: 7,
+          output_tokens: 2,
+          input_tokens_details: { cached_tokens: 5, cache_write_tokens: 1 }
+        }
       }));
     });
     const profile = await createTestGatewayProfile({
@@ -435,6 +439,12 @@ describe("gateway HTTP protocol", () => {
 
     expect(response.status).toBe(200);
     expect(body.content[0].text).toBe("responses-ok");
+    expect(body.usage).toMatchObject({
+      input_tokens: 7,
+      output_tokens: 2,
+      cache_read_input_tokens: 5,
+      cache_creation_input_tokens: 1
+    });
     expect(received).toMatchObject({
       url: "/v1/responses?trace=visible-in-upstream",
       authorization: "Bearer responses-key",
@@ -449,6 +459,8 @@ describe("gateway HTTP protocol", () => {
       upstreamItemTypes: ["message"],
       inputTokens: 7,
       outputTokens: 2,
+      cacheReadInputTokens: 5,
+      cacheCreationInputTokens: 1,
       status: 200
     });
   });

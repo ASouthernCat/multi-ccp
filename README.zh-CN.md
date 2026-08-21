@@ -236,7 +236,7 @@ Responses reasoning summary 当前会被省略，不会映射为 Anthropic think
 
 本地 Web UI 默认遮罩 API Key。打开 API Profile 或 Upstream 编辑器时，会通过受 UI Token 保护且禁止缓存的 POST 接口读取已保存密钥；普通 Profile 和 Upstream GET 响应不会暴露密钥明文。
 
-网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。失败请求还会记录稳定的 `failureStage` / `failureCode`、可用的上游 HTTP 状态和受长度限制的 request ID，以及 SSE 首事件耗时和终止事件元数据，用于区分上游 HTTP 错误、流转换错误和缺少终止事件的上游断流。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
+网关会在 `~/.claude-profiles/.gateway/gateway.log` 中为每个 profile 请求写入一行脱敏 JSON，记录 profile、模型、protocol、endpoint host、脱敏后的 endpoint URL、Claude effort、实际上游字段名、状态、耗时与可用 token usage，以及上游报告的 prompt-cache 读写 token；不会记录 prompt、响应正文、Authorization、local token、API key、URL userinfo、query string 或 fragment。失败请求还会记录稳定的 `failureStage` / `failureCode`、可用的上游 HTTP 状态和受长度限制的 request ID，以及 SSE 首事件耗时和终止事件元数据，用于区分上游 HTTP 错误、流转换错误和缺少终止事件的上游断流。若 SSE 已经以 HTTP 200 开始、随后发生协议转换错误，内部日志状态会记录为 `502`。网关启动时若日志达到 10 MiB，会轮转为 `gateway.log.1`。
 
 网关支持 Messages 请求、非流式和 SSE 响应、文本、原生图片输入、原生图片型 tool result、工具调用、并行工具调用、`output_config.effort`、JSON Schema 结构化输出、usage 转换、客户端取消，以及 Claude Code 的 `?beta=true` 和 `HEAD` 探测。每个 Gateway Profile 会通过带显示信息的 Default 别名，把 Claude Code 的 `Default` 行路由到 Profile Binding 默认模型，同时用 option 别名把当前 Upstream 的全部模型列为可选的 `From gateway` 条目。本地模型目录会预先注册该 Upstream 每个模型对应的 Default 展示别名，因此修改 Binding 后，现有会话 `/model` 中的当前默认模型名称会同步刷新，正在使用 Default 的会话也会在下一次请求切换，无需重启网关；通过 `/model` 显式选择的模型只要在新 Upstream 中仍可用，就继续固定使用该模型。Default 能显示可读模型名，同一模型也能作为独立选项出现，且不会暴露内置 Opus 行。
 

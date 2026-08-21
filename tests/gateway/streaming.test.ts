@@ -334,7 +334,14 @@ describe("OpenAI Responses stream conversion", () => {
         item: { id: "msg_1", type: "message", content: [{ type: "output_text", text: "hello" }] }
       }),
       responsesEvent("response.completed", {
-        response: responseEnvelope({ status: "completed", usage: { input_tokens: 7, output_tokens: 2 } })
+        response: responseEnvelope({
+          status: "completed",
+          usage: {
+            input_tokens: 7,
+            output_tokens: 2,
+            input_tokens_details: { cached_tokens: 5, cache_write_tokens: 1 }
+          }
+        })
       })
     ].join("");
     const bytes = new TextEncoder().encode(wire);
@@ -353,7 +360,13 @@ describe("OpenAI Responses stream conversion", () => {
     expect(events.filter((event) => event.event === "content_block_delta").map((event) => event.data.delta.text))
       .toEqual(["hel", "lo"]);
     expect(events.at(-2)?.data).toMatchObject({
-      delta: { stop_reason: "end_turn" }, usage: { input_tokens: 7, output_tokens: 2 }
+      delta: { stop_reason: "end_turn" },
+      usage: {
+        input_tokens: 7,
+        output_tokens: 2,
+        cache_read_input_tokens: 5,
+        cache_creation_input_tokens: 1
+      }
     });
     expect(bridge.metadata.upstreamItemTypes).toEqual(["message"]);
     expect(bridge.metadata.upstreamEventTypes).toContain("response.completed");

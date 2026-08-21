@@ -658,14 +658,23 @@ describe("OpenAI Chat non-streaming response", () => {
         },
         finish_reason: "stop"
       }],
-      usage: { prompt_tokens: 10, completion_tokens: 4 }
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 4,
+        prompt_tokens_details: { cached_tokens: 8, cache_write_tokens: 2 }
+      }
     });
 
     expect(response).toMatchObject({
       model: "mimo-v2.5-pro",
       content: [{ type: "text", text: "你好" }],
       finishReason: "end_turn",
-      usage: { inputTokens: 10, outputTokens: 4 }
+      usage: {
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadInputTokens: 8,
+        cacheCreationInputTokens: 2
+      }
     });
   });
 
@@ -688,7 +697,11 @@ describe("OpenAI Chat non-streaming response", () => {
         },
         finish_reason: "tool_calls"
       }],
-      usage: { prompt_tokens: 10, completion_tokens: 4 }
+      usage: {
+        prompt_tokens: 10,
+        completion_tokens: 4,
+        prompt_tokens_details: { cached_tokens: 8, cache_write_tokens: 2 }
+      }
     }, { toolNames });
 
     expect(response).toEqual({
@@ -705,13 +718,23 @@ describe("OpenAI Chat non-streaming response", () => {
         }
       ],
       finishReason: "tool_use",
-      usage: { inputTokens: 10, outputTokens: 4 }
+      usage: {
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadInputTokens: 8,
+        cacheCreationInputTokens: 2
+      }
     });
     expect(canonicalResponseToAnthropic(response)).toMatchObject({
       type: "message",
       role: "assistant",
       stop_reason: "tool_use",
-      usage: { input_tokens: 10, output_tokens: 4 }
+      usage: {
+        input_tokens: 10,
+        output_tokens: 4,
+        cache_read_input_tokens: 8,
+        cache_creation_input_tokens: 2
+      }
     });
   });
 
@@ -987,7 +1010,11 @@ describe("OpenAI Responses target", () => {
         { type: "function_call", call_id: "call:one", name: "mcp_tool", arguments: "{\"a\":1}" },
         { type: "function_call", call_id: "call:two", name: "mcp_tool", arguments: "{}" }
       ],
-      usage: { input_tokens: 10, output_tokens: 4 }
+      usage: {
+        input_tokens: 10,
+        output_tokens: 4,
+        input_tokens_details: { cached_tokens: 8, cache_write_tokens: 2 }
+      }
     }, { toolNames: mapping });
 
     expect(parsed.upstreamItemTypes).toEqual(["reasoning", "message", "function_call"]);
@@ -995,7 +1022,12 @@ describe("OpenAI Responses target", () => {
       id: "msg_resp_123",
       model: "gpt-5",
       finishReason: "tool_use",
-      usage: { inputTokens: 10, outputTokens: 4 },
+      usage: {
+        inputTokens: 10,
+        outputTokens: 4,
+        cacheReadInputTokens: 8,
+        cacheCreationInputTokens: 2
+      },
       content: [
         { type: "text", text: "Working" },
         { type: "text", text: "No more" },
@@ -1003,7 +1035,15 @@ describe("OpenAI Responses target", () => {
         { type: "tool_use", name: "mcp.tool", input: {} }
       ]
     });
-    expect(canonicalResponseToAnthropic(parsed.response)).toMatchObject({ stop_reason: "tool_use" });
+    expect(canonicalResponseToAnthropic(parsed.response)).toMatchObject({
+      stop_reason: "tool_use",
+      usage: {
+        input_tokens: 10,
+        output_tokens: 4,
+        cache_read_input_tokens: 8,
+        cache_creation_input_tokens: 2
+      }
+    });
   });
 
   it("records and ignores Responses web search output items while preserving message content", () => {
@@ -1094,6 +1134,7 @@ describe("OpenAI Responses target", () => {
     [{ id: "r", model: "m", status: "completed", output: [{ type: "web_search_call" }] }, "No representable output"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "reasoning" }] }, "No representable output"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: { input_tokens: -1 } }, "non-negative safe integer"],
+    [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: { input_tokens: 1, input_tokens_details: { cached_tokens: -1 } } }, "cached_tokens"],
     [{ id: "r", model: "m", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "ok" }] }], usage: null }, "response.usage"]
   ])("handles Responses status and protocol errors", (response, expected) => {
     if (expected === "max_tokens") {

@@ -47,6 +47,8 @@ export function isCanonicalWebSearchTool(tool: CanonicalTool): tool is Canonical
 export interface CanonicalUsage {
   inputTokens: number;
   outputTokens: number;
+  cacheReadInputTokens?: number;
+  cacheCreationInputTokens?: number;
 }
 
 export interface CanonicalMessage {

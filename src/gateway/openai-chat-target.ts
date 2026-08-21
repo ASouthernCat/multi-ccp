@@ -1,5 +1,6 @@
 import type { GatewayCompatibility } from "../core/types.js";
 import type {
+  CanonicalUsage,
   CanonicalFinishReason,
   CanonicalImageSource,
   CanonicalInputPart,
@@ -27,6 +28,7 @@ import {
   canonicalResponseToAnthropic,
   type JsonObject
 } from "./utils.js";
+import { parseOpenAICachedUsage } from "./usage.js";
 
 export type OpenAICompatibility = GatewayCompatibility;
 
@@ -340,7 +342,7 @@ export function serializeOpenAIChatRequest(
   return { body, toolNames };
 }
 
-function parseUsage(value: unknown) {
+function parseUsage(value: unknown): CanonicalUsage {
   if (!isObject(value)) {
     return { inputTokens: 0, outputTokens: 0 };
   }
@@ -350,7 +352,11 @@ function parseUsage(value: unknown) {
   const outputTokens = Number.isSafeInteger(value.completion_tokens) && (value.completion_tokens as number) >= 0
     ? value.completion_tokens as number
     : 0;
-  return { inputTokens, outputTokens };
+  return {
+    inputTokens,
+    outputTokens,
+    ...parseOpenAICachedUsage(value, "prompt_tokens_details")
+  };
 }
 
 function parseToolCall(

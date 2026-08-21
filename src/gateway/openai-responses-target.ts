@@ -31,6 +31,7 @@ import {
   parseArguments,
   type JsonObject
 } from "./utils.js";
+import { parseOpenAICachedUsage } from "./usage.js";
 
 export interface OpenAIResponsesRequestOptions {
   model: string;
@@ -283,7 +284,7 @@ export function serializeOpenAIResponsesRequest(
   return { body, toolNames };
 }
 
-function parseUsage(value: unknown): { inputTokens: number; outputTokens: number } {
+function parseUsage(value: unknown): CanonicalResponse["usage"] {
   if (value === undefined) return { inputTokens: 0, outputTokens: 0 };
   const usage = requireObject(value, "response.usage");
   const parse = (field: string): number => {
@@ -293,7 +294,11 @@ function parseUsage(value: unknown): { inputTokens: number; outputTokens: number
     }
     return usage[field] as number;
   };
-  return { inputTokens: parse("input_tokens"), outputTokens: parse("output_tokens") };
+  return {
+    inputTokens: parse("input_tokens"),
+    outputTokens: parse("output_tokens"),
+    ...parseOpenAICachedUsage(usage, "input_tokens_details")
+  };
 }
 
 function parseMessageContent(

@@ -9,7 +9,8 @@ import { EMPTY_TOOL_NAME_MAPPING } from "./canonical.js";
 import { asGatewayError, type GatewayError, type GatewayErrorType, upstreamProtocolError } from "./errors.js";
 import { formatGeneratedImageSavedText } from "./generated-image.js";
 import { mapOpenAIFinishReason } from "./openai-chat-target.js";
-import { normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
+import { canonicalUsageToAnthropic, normalizeToolCallId, toAnthropicMessageId } from "./utils.js";
+import { parseOpenAICachedUsage } from "./usage.js";
 import type { AnthropicStreamBridge } from "./openai-responses-streaming.js";
 
 
@@ -159,7 +160,11 @@ function parseStreamUsage(value: unknown): CanonicalUsage | undefined {
   const outputTokens = Number.isSafeInteger(value.completion_tokens) && (value.completion_tokens as number) >= 0
     ? value.completion_tokens as number
     : 0;
-  return { inputTokens, outputTokens };
+  return {
+    inputTokens,
+    outputTokens,
+    ...parseOpenAICachedUsage(value, "prompt_tokens_details")
+  };
 }
 
 function extractUpstreamError(value: unknown, fallback: string): GatewayError {
@@ -493,7 +498,7 @@ export class AnthropicSseEmitter {
           content: [],
           stop_reason: null,
           stop_sequence: null,
-          usage: { input_tokens: 0, output_tokens: 0 }
+          usage: canonicalUsageToAnthropic({ inputTokens: 0, outputTokens: 0 })
         }
       })];
     }
@@ -594,10 +599,7 @@ export class AnthropicSseEmitter {
       formatSse("message_delta", {
         type: "message_delta",
         delta: { stop_reason: event.reason, stop_sequence: null },
-        usage: {
-          input_tokens: this.usage.inputTokens,
-          output_tokens: this.usage.outputTokens
-        }
+        usage: canonicalUsageToAnthropic(this.usage)
       }),
       formatSse("message_stop", { type: "message_stop" })
     ];

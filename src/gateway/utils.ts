@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { invalidRequest, upstreamProtocolError } from "./errors.js";
-import type { CanonicalResponse, ToolNameMapping } from "./canonical.js";
+import type { CanonicalResponse, CanonicalUsage, ToolNameMapping } from "./canonical.js";
 
 export type JsonObject = Record<string, unknown>;
 
@@ -139,9 +139,19 @@ export function canonicalResponseToAnthropic(response: CanonicalResponse): Recor
       : { type: "tool_use", id: block.id, name: block.name, input: block.input }),
     stop_reason: response.finishReason,
     stop_sequence: null,
-    usage: {
-      input_tokens: response.usage.inputTokens,
-      output_tokens: response.usage.outputTokens
-    }
+    usage: canonicalUsageToAnthropic(response.usage)
+  };
+}
+
+export function canonicalUsageToAnthropic(usage: CanonicalUsage): Record<string, number> {
+  return {
+    input_tokens: usage.inputTokens,
+    output_tokens: usage.outputTokens,
+    ...(usage.cacheReadInputTokens === undefined ? {} : {
+      cache_read_input_tokens: usage.cacheReadInputTokens
+    }),
+    ...(usage.cacheCreationInputTokens === undefined ? {} : {
+      cache_creation_input_tokens: usage.cacheCreationInputTokens
+    })
   };
 }
